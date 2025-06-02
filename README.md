@@ -69,10 +69,16 @@ colorflux myprotein, processed_flux_data_FIXED.csv
 
 ## Theory
 
-FluxMD implements three principles:
-1. Ligands follow Brownian trajectories based on molecular physics
-2. Non-covalent interactions create measurable energy flux
-3. Binding sites appear as flux convergence points
+FluxMD calculates energy flux differential Φᵢ for each residue:
+
+Φᵢ = ⟨|Eᵢ|⟩ · Cᵢ · (1 + τᵢ)
+
+where:
+- ⟨|Eᵢ|⟩ = mean energy magnitude from all interactions
+- Cᵢ = directional consistency (0-1)
+- τᵢ = temporal fluctuation rate
+
+High Φᵢ indicates energy convergence (binding site). See [bioRxiv preprint] for details.
 
 ## Citation
 
