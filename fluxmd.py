@@ -203,11 +203,12 @@ def run_complete_workflow():
     # Step 2: Set parameters
     print("\nSTEP 2: PARAMETERS")
     print("-" * 40)
-    n_steps = int(input("Steps per approach (default 100): ") or "100")
-    n_iterations = int(input("Number of iterations (default 100): ") or "100")
+    print("\nPRESS ENTERS FOR REPRODUCIBLE RESULTS")
+    n_steps = int(input("Steps per approach (default 1000): ") or "100")
+    n_iterations = int(input("Number of iterations (default 50): ") or "100")
     n_approaches = int(input("Number of approaches (default 5): ") or "5")
     approach_distance = float(input("Approach distance in Å (default 2.5): ") or "2.5")
-    starting_distance = float(input("Starting distance in Å (default 35): ") or "35")
+    starting_distance = float(input("Starting distance in Å (default 15): ") or "35")
     output_dir = input("Output directory (default 'flux_analysis'): ").strip() or "flux_analysis"
     
     # Check for GPU
