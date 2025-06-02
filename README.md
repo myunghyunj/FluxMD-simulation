@@ -87,7 +87,7 @@ FluxMD implements three principles:
 
 ## Acknowledgments
 
-FluxMD builds upon the protein-ligand analysis framework from https://github.com/jaehee831/protein-folding-analysis-bioinformatics
+FluxMD builds upon the protein-ligand analysis my legacy framework from <https://github.com/jaehee831/protein-folding-analysis-bioinformatics>
 
 ## License
 
@@ -95,7 +95,7 @@ MIT License. See LICENSE file.
 
 ## Support
 
-Please reach out to <mailto:mhjonathan@gm.gist.ac.kr>
+Please reach out to <mhjonathan@gm.gist.ac.kr>
 
 ---
 
