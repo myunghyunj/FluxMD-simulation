@@ -2,7 +2,7 @@
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![GPU Support](https://img.shields.io/badge/GPU-Apple%20Silicon%20%7C%20CUDA-orange.svg)]
+[![GPU Support](https://img.shields.io/badge/GPU-Apple%20Silicon%20%7C%20CUDA-orange.svg)
 
 ## Overview
 
