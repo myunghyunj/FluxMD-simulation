@@ -1,0 +1,1226 @@
+"""
+GPU-Accelerated Flux Calculations with Spatial Hashing Optimization
+Optimized for Apple Silicon (MPS) and NVIDIA CUDA GPUs
+"""
+
+import torch
+import numpy as np
+import pandas as pd
+from typing import Dict, List, Tuple, Optional, Union
+import platform
+import warnings
+import time
+from dataclasses import dataclass
+from scipy.spatial import cKDTree
+
+# Check for Apple Silicon and available backends
+def get_device():
+    """Detect and return the best available device (MPS, CUDA, or CPU)"""
+    if platform.system() == 'Darwin' and platform.processor() == 'arm':
+        # Apple Silicon detected
+        if torch.backends.mps.is_available():
+            device = torch.device("mps")
+            print("🚀 Apple Silicon GPU (Metal Performance Shaders) detected!")
+            print("   Unified memory architecture - optimal for large proteins")
+            return device
+        else:
+            print("⚠️  Apple Silicon detected but MPS not available.")
+            print("   Update PyTorch: pip install torch>=2.0")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+        print("🚀 NVIDIA GPU detected!")
+        print(f"   GPU: {torch.cuda.get_device_name()}")
+        print(f"   Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+        return device
+    
+    print("💻 Using CPU (GPU not available)")
+    return torch.device("cpu")
+
+
+@dataclass
+class InteractionResult:
+    """Container for GPU computation results"""
+    indices: torch.Tensor      # [N, 2] protein-ligand pairs
+    distances: torch.Tensor    # [N] distances
+    types: torch.Tensor       # [N] interaction types
+    energies: torch.Tensor    # [N] energies
+    residue_ids: torch.Tensor # [N] residue IDs
+
+
+class GPUSpatialHash:
+    """GPU-based spatial hashing for ultra-fast neighbor queries"""
+    
+    def __init__(self, device, table_size=100000, cell_size=10.0):
+        self.device = device
+        self.table_size = table_size
+        self.cell_size = cell_size
+        
+        # Hash table: stores start index for each cell
+        self.hash_table = torch.zeros(table_size, dtype=torch.long, device=device)
+        # Linked list: next index for each atom (-1 if end)
+        self.next_idx = torch.zeros(0, dtype=torch.long, device=device)
+        
+    def _hash_function(self, cell_coords):
+        """Hash 3D grid coordinates to 1D index"""
+        # Simple multiplicative hash
+        prime1, prime2, prime3 = 73856093, 19349663, 83492791
+        return ((cell_coords[:, 0] * prime1) ^
+                (cell_coords[:, 1] * prime2) ^
+                (cell_coords[:, 2] * prime3)) % self.table_size
+    
+    def build(self, coords):
+        """Build spatial hash table on GPU"""
+        n_atoms = len(coords)
+        self.next_idx = torch.full((n_atoms,), -1, dtype=torch.long, device=self.device)
+        self.hash_table.fill_(-1)
+        
+        # Convert coords to cell indices
+        cell_coords = (coords / self.cell_size).long()
+        hash_indices = self._hash_function(cell_coords)
+        
+        # Build linked list for each cell (reverse order for simplicity)
+        for i in range(n_atoms - 1, -1, -1):
+            hash_idx = hash_indices[i]
+            self.next_idx[i] = self.hash_table[hash_idx]
+            self.hash_table[hash_idx] = i
+    
+    def query_neighbors_batch(self, query_coords, radius):
+        """Query neighbors for multiple points in parallel"""
+        n_queries = len(query_coords)
+        cell_radius = int(torch.ceil(torch.tensor(radius / self.cell_size)).item())
+        
+        # Generate all cell offsets to check
+        offsets = []
+        for dx in range(-cell_radius, cell_radius + 1):
+            for dy in range(-cell_radius, cell_radius + 1):
+                for dz in range(-cell_radius, cell_radius + 1):
+                    offsets.append([dx, dy, dz])
+        offsets = torch.tensor(offsets, device=self.device)
+        
+        # Get cell coords for all queries
+        query_cells = (query_coords / self.cell_size).long()
+        
+        # For each query, check all neighboring cells
+        neighbor_lists = []
+        for q_idx in range(n_queries):
+            neighbors = []
+            cells_to_check = query_cells[q_idx] + offsets
+            hash_indices = self._hash_function(cells_to_check)
+            
+            for hash_idx in hash_indices:
+                atom_idx = self.hash_table[hash_idx].item()
+                while atom_idx != -1:
+                    neighbors.append(atom_idx)
+                    atom_idx = self.next_idx[atom_idx].item()
+            
+            neighbor_lists.append(torch.tensor(neighbors, device=self.device))
+        
+        return neighbor_lists
+
+
+class GPUOctree:
+    """GPU-accelerated octree for adaptive spatial subdivision"""
+    
+    def __init__(self, device, min_cell_size=2.0, max_cell_size=10.0, max_atoms_per_cell=50):
+        self.device = device
+        self.min_cell_size = min_cell_size
+        self.max_cell_size = max_cell_size
+        self.max_atoms_per_cell = max_atoms_per_cell
+        
+    def build(self, coords):
+        """Build octree on GPU"""
+        # Simplified version - full implementation would use recursive GPU kernels
+        bounds_min = coords.min(dim=0)[0]
+        bounds_max = coords.max(dim=0)[0]
+        
+        # Start with root node covering all space
+        root_size = (bounds_max - bounds_min).max().item()
+        
+        # For now, return a simple grid structure
+        # Full implementation would recursively subdivide based on density
+        return {
+            'bounds_min': bounds_min,
+            'bounds_max': bounds_max,
+            'root_size': root_size,
+            'coords': coords
+        }
+    
+    def query_radius(self, octree, point, radius):
+        """Find all points within radius using octree"""
+        # Simplified - full implementation would traverse octree
+        distances = torch.norm(octree['coords'] - point, dim=1)
+        return torch.where(distances <= radius)[0]
+
+
+class HierarchicalDistanceFilter:
+    """Process interactions in order of distance cutoffs"""
+    
+    def __init__(self, device):
+        self.device = device
+        # Cutoffs in ascending order
+        self.cutoff_stages = [
+            (3.5, ['hbond']),           # Stage 1: Very close
+            (5.0, ['vdw', 'salt']),     # Stage 2: Medium
+            (6.0, ['pi_cation']),       # Stage 3: Extended
+            (7.0, ['pi_stacking'])      # Stage 4: Long range
+        ]
+    
+    def filter_pairs_hierarchical(self, coords1, coords2, interaction_detector):
+        """Filter atom pairs by increasing distance cutoffs"""
+        n1, n2 = len(coords1), len(coords2)
+        
+        # Start with all possible pairs
+        all_indices1 = torch.arange(n1, device=self.device).repeat_interleave(n2)
+        all_indices2 = torch.arange(n2, device=self.device).repeat(n1)
+        
+        results = []
+        processed_mask = torch.zeros(len(all_indices1), dtype=torch.bool, device=self.device)
+        
+        for cutoff, interaction_types in self.cutoff_stages:
+            # Calculate distances for unprocessed pairs
+            unprocessed = ~processed_mask
+            if not unprocessed.any():
+                break
+                
+            idx1 = all_indices1[unprocessed]
+            idx2 = all_indices2[unprocessed]
+            
+            distances = torch.norm(coords1[idx1] - coords2[idx2], dim=1)
+            
+            # Find pairs within this cutoff
+            within_cutoff = distances <= cutoff
+            if within_cutoff.any():
+                valid_idx1 = idx1[within_cutoff]
+                valid_idx2 = idx2[within_cutoff]
+                valid_distances = distances[within_cutoff]
+                
+                # Check interactions only for these types
+                interactions = interaction_detector.detect_specific_types(
+                    valid_idx1, valid_idx2, valid_distances, interaction_types
+                )
+                
+                results.append(interactions)
+                
+                # Mark these pairs as processed
+                unprocessed_indices = torch.where(unprocessed)[0]
+                processed_indices = unprocessed_indices[within_cutoff]
+                processed_mask[processed_indices] = True
+        
+        return self._combine_results(results) if results else None
+    
+    def _combine_results(self, results):
+        """Combine multiple interaction results"""
+        # Implementation depends on interaction result format
+        return results
+
+
+class GPUAcceleratedInteractionCalculator:
+    """Fully GPU-accelerated non-covalent interaction calculator with optimizations"""
+    
+    def __init__(self, device=None):
+        self.device = device or get_device()
+        
+        # Interaction cutoffs in Angstroms
+        self.cutoffs = {
+            'hbond': 3.5,      # Slightly increased for better coverage
+            'salt_bridge': 5.0,
+            'pi_pi': 7.0,      # Increased for pi-stacking
+            'pi_cation': 6.0,
+            'vdw': 5.0
+        }
+        
+        # Batch size optimized for device
+        if 'mps' in str(self.device):
+            # Apple Silicon has unified memory, can handle larger batches
+            self.batch_size = 100000
+        elif 'cuda' in str(self.device):
+            # Adjust based on GPU memory
+            gpu_memory = torch.cuda.get_device_properties(0).total_memory
+            self.batch_size = min(50000, int(gpu_memory / 1e7))
+        else:
+            self.batch_size = 10000
+        
+        # Residue properties
+        self._init_residue_properties()
+        
+        # Pre-computed tensors
+        self.protein_properties = None
+        self.ligand_properties = None
+        
+        # Initialize optimization components
+        self.spatial_hash = GPUSpatialHash(self.device)
+        self.octree = GPUOctree(self.device)
+        self.hierarchical_filter = HierarchicalDistanceFilter(self.device)
+        
+    def _init_residue_properties(self):
+        """Initialize residue property definitions"""
+        self.DONORS = {
+            'ARG': ['NE', 'NH1', 'NH2', 'NZ'], 'ASN': ['ND2'], 'GLN': ['NE2'],
+            'HIS': ['ND1', 'NE2'], 'LYS': ['NZ'], 'SER': ['OG'],
+            'THR': ['OG1'], 'TRP': ['NE1'], 'TYR': ['OH'], 'CYS': ['SG']
+        }
+        
+        self.ACCEPTORS = {
+            'ASP': ['OD1', 'OD2'], 'GLU': ['OE1', 'OE2'],
+            'ASN': ['OD1'], 'GLN': ['OE1'], 'HIS': ['ND1', 'NE2'],
+            'SER': ['OG'], 'THR': ['OG1'], 'TYR': ['OH'],
+            'MET': ['SD'], 'CYS': ['SG']
+        }
+        
+        self.CHARGED_POS = {
+            'ARG': ['CZ', 'NH1', 'NH2'], 'LYS': ['NZ'], 'HIS': ['CE1', 'ND1', 'NE2']
+        }
+        
+        self.CHARGED_NEG = {
+            'ASP': ['CG', 'OD1', 'OD2'], 'GLU': ['CD', 'OE1', 'OE2']
+        }
+        
+        self.AROMATIC = {
+            'PHE': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],
+            'TYR': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],
+            'TRP': ['CG', 'CD1', 'CD2', 'NE1', 'CE2', 'CE3', 'CZ2', 'CZ3', 'CH2'],
+            'HIS': ['CG', 'ND1', 'CD2', 'CE1', 'NE2']
+        }
+        
+        # VDW radii in Angstroms
+        self.VDW_RADII = {
+            'H': 1.20, 'C': 1.70, 'N': 1.55, 'O': 1.52,
+            'F': 1.47, 'P': 1.80, 'S': 1.80, 'CL': 1.75,
+            'BR': 1.85, 'I': 1.98, 'default': 1.70
+        }
+    
+    def precompute_protein_properties_gpu(self, protein_atoms: pd.DataFrame) -> Dict[str, torch.Tensor]:
+        """Pre-compute all protein properties as GPU tensors"""
+        n_atoms = len(protein_atoms)
+        
+        print(f"   Pre-computing properties for {n_atoms} protein atoms on {self.device}...")
+        
+        # Initialize property tensors on GPU
+        properties = {
+            'coords': torch.zeros((n_atoms, 3), device=self.device, dtype=torch.float32),
+            'is_donor': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'is_acceptor': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'is_aromatic': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'is_charged_pos': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'is_charged_neg': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'residue_ids': torch.zeros(n_atoms, device=self.device, dtype=torch.long),
+            'vdw_radii': torch.zeros(n_atoms, device=self.device, dtype=torch.float32),
+            'aromatic_centers': [],  # Will store ring centers
+            'aromatic_normals': [],  # Will store ring normals
+            'aromatic_residues': []  # Will store residue IDs
+        }
+        
+        # Process atoms and build property tensors
+        coords_list = []
+        residue_ids_list = []
+        vdw_radii_list = []
+        
+        # Track aromatic ring atoms by residue
+        aromatic_ring_atoms = {}
+        
+        for i, (_, atom) in enumerate(protein_atoms.iterrows()):
+            # Coordinates
+            coords_list.append([atom['x'], atom['y'], atom['z']])
+            
+            # Residue info
+            res_name = atom['resname']
+            res_id = atom.get('residue_id', atom.get('resSeq', i))
+            residue_ids_list.append(res_id)
+            
+            # Atom info
+            atom_name = atom['name']
+            element = atom.get('element', atom_name[0]).upper()
+            
+            # VDW radius
+            vdw_radii_list.append(self.VDW_RADII.get(element, self.VDW_RADII['default']))
+            
+            # Properties
+            if res_name in self.DONORS and atom_name in self.DONORS[res_name]:
+                properties['is_donor'][i] = True
+            
+            if res_name in self.ACCEPTORS and atom_name in self.ACCEPTORS[res_name]:
+                properties['is_acceptor'][i] = True
+            
+            if res_name in self.CHARGED_POS and atom_name in self.CHARGED_POS[res_name]:
+                properties['is_charged_pos'][i] = True
+            
+            if res_name in self.CHARGED_NEG and atom_name in self.CHARGED_NEG[res_name]:
+                properties['is_charged_neg'][i] = True
+            
+            # Track aromatic atoms for ring calculation
+            if res_name in self.AROMATIC and atom_name in self.AROMATIC[res_name]:
+                properties['is_aromatic'][i] = True
+                
+                if res_id not in aromatic_ring_atoms:
+                    aromatic_ring_atoms[res_id] = {
+                        'atoms': [],
+                        'coords': [],
+                        'res_name': res_name
+                    }
+                
+                aromatic_ring_atoms[res_id]['atoms'].append(atom_name)
+                aromatic_ring_atoms[res_id]['coords'].append([atom['x'], atom['y'], atom['z']])
+        
+        # Convert lists to tensors
+        properties['coords'] = torch.tensor(coords_list, device=self.device, dtype=torch.float32)
+        properties['residue_ids'] = torch.tensor(residue_ids_list, device=self.device, dtype=torch.long)
+        properties['vdw_radii'] = torch.tensor(vdw_radii_list, device=self.device, dtype=torch.float32)
+        
+        # Calculate aromatic ring centers and normals
+        print("   Calculating aromatic ring geometries...")
+        for res_id, ring_data in aromatic_ring_atoms.items():
+            if len(ring_data['coords']) >= 3:  # Need at least 3 atoms for a plane
+                ring_coords = torch.tensor(ring_data['coords'], device=self.device, dtype=torch.float32)
+                
+                # Calculate ring center
+                center = ring_coords.mean(dim=0)
+                properties['aromatic_centers'].append(center)
+                
+                # Calculate ring normal using SVD
+                centered_coords = ring_coords - center
+                # For finding the normal to a plane, we need the eigenvector
+                # corresponding to the smallest singular value from U, not V
+                u, s, _ = torch.linalg.svd(centered_coords.T, full_matrices=False)
+                # u has shape [3, 3], the last column is the normal vector
+                normal = u[:, -1]  # Normal vector (3D)
+                
+                properties['aromatic_normals'].append(normal)
+                properties['aromatic_residues'].append(res_id)
+        
+        # Convert aromatic lists to tensors
+        if properties['aromatic_centers']:
+            properties['aromatic_centers'] = torch.stack(properties['aromatic_centers'])
+            properties['aromatic_normals'] = torch.stack(properties['aromatic_normals'])
+            properties['aromatic_residues'] = torch.tensor(properties['aromatic_residues'],
+                                                         device=self.device, dtype=torch.long)
+        else:
+            properties['aromatic_centers'] = torch.zeros((0, 3), device=self.device)
+            properties['aromatic_normals'] = torch.zeros((0, 3), device=self.device)
+            properties['aromatic_residues'] = torch.zeros(0, device=self.device, dtype=torch.long)
+        
+        print(f"   ✓ Properties computed: {len(properties['aromatic_centers'])} aromatic rings found")
+        
+        self.protein_properties = properties
+        return properties
+    
+    def precompute_ligand_properties_gpu(self, ligand_atoms: pd.DataFrame) -> Dict[str, torch.Tensor]:
+        """Pre-compute ligand properties on GPU"""
+        n_atoms = len(ligand_atoms)
+        
+        print(f"   Pre-computing properties for {n_atoms} ligand atoms on {self.device}...")
+        
+        # Initialize property tensors
+        properties = {
+            'coords': torch.zeros((n_atoms, 3), device=self.device, dtype=torch.float32),
+            'has_donor': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'has_acceptor': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'likely_pos': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'likely_neg': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'likely_aromatic': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'vdw_radii': torch.zeros(n_atoms, device=self.device, dtype=torch.float32),
+            'aromatic_centers': [],
+            'aromatic_normals': []
+        }
+        
+        coords_list = []
+        vdw_radii_list = []
+        potential_aromatic_atoms = []
+        
+        for i, (_, atom) in enumerate(ligand_atoms.iterrows()):
+            coords_list.append([atom['x'], atom['y'], atom['z']])
+            
+            # Get element with robust fallback
+            element = str(atom.get('element', '')).strip().upper()
+            if not element:
+                atom_name = str(atom.get('name', '')).strip().upper()
+                # Try to extract element from atom name
+                if atom_name[:2] in ['CL', 'BR']:
+                    element = atom_name[:2]
+                elif atom_name and atom_name[0] in ['C', 'N', 'O', 'S', 'P', 'H', 'F']:
+                    element = atom_name[0]
+                else:
+                    element = 'C'  # Default to carbon
+                    print(f"     Warning: Unknown element for {atom_name}, defaulting to C")
+            
+            atom_name = str(atom.get('name', '')).upper()
+            
+            # VDW radius
+            vdw_radii_list.append(self.VDW_RADII.get(element, self.VDW_RADII['default']))
+            
+            # Enhanced property detection based on element ONLY
+            # Don't rely on atom names which might not follow conventions
+            
+            # H-bond acceptors: electronegative atoms
+            properties['has_acceptor'][i] = element in ['O', 'N', 'S', 'F', 'CL', 'BR', 'I']
+            
+            # H-bond donors: H or atoms that commonly have H
+            if element == 'H':
+                properties['has_donor'][i] = True
+            elif element in ['N', 'O', 'S']:
+                # These elements often have H attached
+                properties['has_donor'][i] = True
+            
+            # Simplified charge detection based on element
+            if element == 'N':
+                # Most nitrogens are positive in drug-like molecules
+                properties['likely_pos'][i] = True
+            elif element in ['O', 'S'] and element == 'O':
+                # Oxygen can be negative (carboxylate, phosphate, etc)
+                properties['likely_neg'][i] = True
+            
+            # Aromatic detection - all C and N could be aromatic
+            if element in ['C', 'N']:
+                properties['likely_aromatic'][i] = True
+                potential_aromatic_atoms.append({
+                    'index': i,
+                    'coord': [atom['x'], atom['y'], atom['z']],
+                    'name': atom_name,
+                    'element': element
+                })
+        
+        # Convert to tensors
+        properties['coords'] = torch.tensor(coords_list, device=self.device, dtype=torch.float32)
+        properties['vdw_radii'] = torch.tensor(vdw_radii_list, device=self.device, dtype=torch.float32)
+        
+        # Detect ligand aromatic rings (improved)
+        if len(potential_aromatic_atoms) >= 3:
+            try:
+                # Simple clustering for aromatic rings
+                aromatic_coords = [a['coord'] for a in potential_aromatic_atoms]
+                aromatic_coords_tensor = torch.tensor(aromatic_coords, device=self.device, dtype=torch.float32)
+                
+                # Use distance-based clustering
+                distances = torch.cdist(aromatic_coords_tensor, aromatic_coords_tensor)
+                
+                # Find connected components (atoms within 1.6 Å)
+                connected = distances < 1.6
+                
+                # Look for ring patterns (5-7 connected atoms)
+                n_connected = torch.sum(connected, dim=1)
+                
+                # If we have a reasonable number of connected aromatic atoms
+                if torch.any((n_connected >= 5) & (n_connected <= 7)):
+                    center = aromatic_coords_tensor.mean(dim=0)
+                    
+                    # Ensure center has correct shape
+                    if center.shape == torch.Size([3]):
+                        # Calculate normal
+                        centered = aromatic_coords_tensor - center
+                        
+                        # Ensure we have enough points for SVD
+                        if centered.shape[0] >= 3:
+                            try:
+                                u, s, vh = torch.linalg.svd(centered, full_matrices=False)
+                                normal = vh[-1]  # Last row for smallest singular value
+                                
+                                # Ensure normal has correct shape
+                                if normal.shape == torch.Size([3]):
+                                    properties['aromatic_centers'].append(center)
+                                    properties['aromatic_normals'].append(normal)
+                                else:
+                                    print(f"     Warning: Ligand normal has shape {normal.shape}, expected [3]")
+                            except Exception as e:
+                                print(f"     Warning: SVD failed for ligand aromatic ring: {e}")
+                    else:
+                        print(f"     Warning: Ligand center has shape {center.shape}, expected [3]")
+                        
+            except Exception as e:
+                print(f"     Warning: Failed to process ligand aromatic rings: {e}")
+        
+        # Convert aromatic lists to tensors
+        if properties['aromatic_centers']:
+            try:
+                # Validate shapes before stacking
+                valid_centers = []
+                valid_normals = []
+                
+                for center, normal in zip(properties['aromatic_centers'], properties['aromatic_normals']):
+                    if center.shape == torch.Size([3]) and normal.shape == torch.Size([3]):
+                        valid_centers.append(center)
+                        valid_normals.append(normal)
+                
+                if valid_centers:
+                    properties['aromatic_centers'] = torch.stack(valid_centers)
+                    properties['aromatic_normals'] = torch.stack(valid_normals)
+                else:
+                    properties['aromatic_centers'] = torch.zeros((0, 3), device=self.device)
+                    properties['aromatic_normals'] = torch.zeros((0, 3), device=self.device)
+                    
+            except Exception as e:
+                print(f"     ⚠️  GPU tensor stacking failed for ligand: {e}")
+                properties['aromatic_centers'] = torch.zeros((0, 3), device=self.device)
+                properties['aromatic_normals'] = torch.zeros((0, 3), device=self.device)
+        else:
+            properties['aromatic_centers'] = torch.zeros((0, 3), device=self.device)
+            properties['aromatic_normals'] = torch.zeros((0, 3), device=self.device)
+        
+        # Print summary of detected properties
+        print(f"   ✓ Ligand properties computed:")
+        print(f"     Elements found: {ligand_atoms['element'].value_counts().to_dict() if 'element' in ligand_atoms else 'N/A'}")
+        print(f"     Potential H-bond donors: {torch.sum(properties['has_donor']).item()}")
+        print(f"     Potential H-bond acceptors: {torch.sum(properties['has_acceptor']).item()}")
+        print(f"     Likely positive charges: {torch.sum(properties['likely_pos']).item()}")
+        print(f"     Likely negative charges: {torch.sum(properties['likely_neg']).item()}")
+        print(f"     Aromatic atoms: {torch.sum(properties['likely_aromatic']).item()}")
+        print(f"     Aromatic rings detected: {len(properties['aromatic_centers'])}")
+        
+        self.ligand_properties = properties
+        return properties
+    
+    def detect_all_interactions_ultra_optimized(self,
+                                              protein_coords: torch.Tensor,
+                                              ligand_coords: torch.Tensor,
+                                              max_distance: float = None) -> InteractionResult:
+        """
+        Ultra-optimized GPU interaction detection combining all techniques
+        """
+        if max_distance is None:
+            max_distance = max(self.cutoffs.values())
+        
+        # Ensure on GPU
+        if not protein_coords.is_cuda and not protein_coords.device.type == 'mps':
+            protein_coords = protein_coords.to(self.device)
+        if not ligand_coords.is_cuda and not ligand_coords.device.type == 'mps':
+            ligand_coords = ligand_coords.to(self.device)
+        
+        # Choose strategy based on system size
+        n_protein = len(protein_coords)
+        n_ligand = len(ligand_coords)
+        total_pairs = n_protein * n_ligand
+        
+        print(f"   System size: {n_protein} protein atoms × {n_ligand} ligand atoms = {total_pairs:,} pairs")
+        
+        if total_pairs < 1e6:  # Small systems - direct GPU
+            print("   Using direct GPU computation (small system)")
+            return self.detect_all_interactions_gpu(protein_coords, ligand_coords, max_distance)
+        
+        elif total_pairs < 1e8:  # Medium - spatial hashing
+            print("   Using spatial hashing optimization (medium system)")
+            # Build spatial hash for protein
+            self.spatial_hash.build(protein_coords)
+            
+            all_results = []
+            batch_size = 1000
+            
+            for i in range(0, n_ligand, batch_size):
+                end_i = min(i + batch_size, n_ligand)
+                ligand_batch = ligand_coords[i:end_i]
+                
+                # Query neighbors for batch
+                neighbor_lists = self.spatial_hash.query_neighbors_batch(ligand_batch, max_distance)
+                
+                # Process each ligand atom
+                for lig_idx, neighbors in enumerate(neighbor_lists):
+                    if len(neighbors) > 0:
+                        # Calculate distances
+                        prot_coords = protein_coords[neighbors]
+                        lig_coord = ligand_batch[lig_idx].unsqueeze(0).expand_as(prot_coords)
+                        
+                        distances = torch.norm(prot_coords - lig_coord, dim=1)
+                        
+                        # Create indices
+                        indices = torch.stack([
+                            neighbors,
+                            torch.full_like(neighbors, i + lig_idx)
+                        ], dim=1)
+                        
+                        # Process interactions
+                        interaction_types = self._detect_interaction_types_gpu(indices, distances)
+                        energies = self._calculate_energies_gpu(distances, interaction_types)
+                        residue_ids = self.protein_properties['residue_ids'][indices[:, 0]]
+                        
+                        all_results.append(InteractionResult(
+                            indices=indices,
+                            distances=distances,
+                            types=interaction_types,
+                            energies=energies,
+                            residue_ids=residue_ids
+                        ))
+            
+            return self._combine_results(all_results) if all_results else self._empty_result()
+        
+        else:  # Very large - octree + hierarchical
+            print("   Using octree + hierarchical filtering (large system)")
+            # Build octree
+            octree = self.octree.build(protein_coords)
+            
+            # Use hierarchical distance filtering
+            return self._process_with_octree_hierarchical(
+                protein_coords, ligand_coords, octree, max_distance
+            )
+    
+    def detect_all_interactions_gpu(self,
+                                  protein_coords: torch.Tensor,
+                                  ligand_coords: torch.Tensor,
+                                  max_distance: float = None) -> InteractionResult:
+        """
+        Fully GPU-based interaction detection - NO CPU TRANSFERS!
+        Auto-switches to optimized version for large systems.
+        """
+        # Check system size
+        n_protein = len(protein_coords)
+        n_ligand = len(ligand_coords)
+        total_pairs = n_protein * n_ligand
+        
+        # Auto-switch to optimized version for large systems
+        if total_pairs > 1e6:
+            print(f"   Large system detected ({total_pairs:,} pairs) - switching to optimized algorithm")
+            return self.detect_all_interactions_ultra_optimized(protein_coords, ligand_coords, max_distance)
+        
+        # Continue with standard GPU implementation for smaller systems
+        if max_distance is None:
+            max_distance = max(self.cutoffs.values())
+        
+        # Ensure inputs are on GPU
+        if not protein_coords.is_cuda and not protein_coords.device.type == 'mps':
+            protein_coords = protein_coords.to(self.device)
+        if not ligand_coords.is_cuda and not ligand_coords.device.type == 'mps':
+            ligand_coords = ligand_coords.to(self.device)
+        
+        # Process in chunks to manage memory
+        all_results = []
+        
+        for i in range(0, n_protein, self.batch_size):
+            end_i = min(i + self.batch_size, n_protein)
+            
+            # Calculate distances for chunk
+            protein_chunk = protein_coords[i:end_i]
+            distances_chunk = torch.cdist(protein_chunk, ligand_coords)
+            
+            # Find pairs within cutoff
+            within_cutoff = distances_chunk <= max_distance
+            indices = torch.nonzero(within_cutoff, as_tuple=False)
+            
+            if len(indices) > 0:
+                # Adjust protein indices for chunk
+                indices[:, 0] += i
+                
+                # Extract distance values
+                chunk_distances = distances_chunk[within_cutoff]
+                
+                # Detect interaction types (all on GPU!)
+                interaction_types = self._detect_interaction_types_gpu(
+                    indices, chunk_distances
+                )
+                
+                # Calculate energies
+                energies = self._calculate_energies_gpu(chunk_distances, interaction_types)
+                
+                # Get residue IDs
+                residue_ids = self.protein_properties['residue_ids'][indices[:, 0]]
+                
+                # Store result
+                all_results.append(InteractionResult(
+                    indices=indices,
+                    distances=chunk_distances,
+                    types=interaction_types,
+                    energies=energies,
+                    residue_ids=residue_ids
+                ))
+        
+        # Combine results
+        if all_results:
+            combined = self._combine_results(all_results)
+            
+            # Sort by distance (closest first)
+            sorted_idx = torch.argsort(combined.distances)
+            
+            return InteractionResult(
+                indices=combined.indices[sorted_idx],
+                distances=combined.distances[sorted_idx],
+                types=combined.types[sorted_idx],
+                energies=combined.energies[sorted_idx],
+                residue_ids=combined.residue_ids[sorted_idx]
+            )
+        else:
+            # Return empty result
+            return self._empty_result()
+    
+    def _process_with_octree_hierarchical(self, protein_coords, ligand_coords, octree, max_distance):
+        """Process very large systems with octree and hierarchical filtering"""
+        all_results = []
+        
+        # Process ligand atoms in small batches
+        for i in range(0, len(ligand_coords), 100):
+            ligand_atom = ligand_coords[i]
+            
+            # Query octree for nearby protein atoms
+            nearby_protein_idx = self.octree.query_radius(octree, ligand_atom, max_distance)
+            
+            if len(nearby_protein_idx) > 0:
+                # Use hierarchical filtering on this subset
+                nearby_protein_coords = protein_coords[nearby_protein_idx]
+                
+                # Calculate distances
+                distances = torch.norm(nearby_protein_coords - ligand_atom, dim=1)
+                
+                # Filter by stages
+                for cutoff, _ in self.hierarchical_filter.cutoff_stages:
+                    mask = distances <= cutoff
+                    if mask.any():
+                        valid_idx = nearby_protein_idx[mask]
+                        valid_dist = distances[mask]
+                        
+                        indices = torch.stack([
+                            valid_idx,
+                            torch.full_like(valid_idx, i)
+                        ], dim=1)
+                        
+                        # Process this batch
+                        types = self._detect_interaction_types_gpu(indices, valid_dist)
+                        energies = self._calculate_energies_gpu(valid_dist, types)
+                        res_ids = self.protein_properties['residue_ids'][indices[:, 0]]
+                        
+                        all_results.append(InteractionResult(
+                            indices=indices,
+                            distances=valid_dist,
+                            types=types,
+                            energies=energies,
+                            residue_ids=res_ids
+                        ))
+        
+        return self._combine_results(all_results) if all_results else self._empty_result()
+    
+    def _empty_result(self):
+        """Return empty InteractionResult"""
+        return InteractionResult(
+            indices=torch.zeros((0, 2), device=self.device, dtype=torch.long),
+            distances=torch.zeros(0, device=self.device),
+            types=torch.zeros(0, device=self.device, dtype=torch.int8),
+            energies=torch.zeros(0, device=self.device),
+            residue_ids=torch.zeros(0, device=self.device, dtype=torch.long)
+        )
+    
+    def _detect_interaction_types_gpu(self,
+                                    indices: torch.Tensor,
+                                    distances: torch.Tensor) -> torch.Tensor:
+        """Detect interaction types entirely on GPU"""
+        n_interactions = len(indices)
+        interaction_types = torch.zeros(n_interactions, device=self.device, dtype=torch.int8)
+        
+        # Extract indices
+        protein_idx = indices[:, 0]
+        ligand_idx = indices[:, 1]
+        
+        # Get property masks for these specific atoms
+        p_donor = self.protein_properties['is_donor'][protein_idx]
+        p_acceptor = self.protein_properties['is_acceptor'][protein_idx]
+        p_pos = self.protein_properties['is_charged_pos'][protein_idx]
+        p_neg = self.protein_properties['is_charged_neg'][protein_idx]
+        p_aromatic = self.protein_properties['is_aromatic'][protein_idx]
+        
+        l_donor = self.ligand_properties['has_donor'][ligand_idx]
+        l_acceptor = self.ligand_properties['has_acceptor'][ligand_idx]
+        l_pos = self.ligand_properties['likely_pos'][ligand_idx]
+        l_neg = self.ligand_properties['likely_neg'][ligand_idx]
+        l_aromatic = self.ligand_properties['likely_aromatic'][ligand_idx]
+        
+        # Vectorized interaction detection
+        # 0: Van der Waals, 1: HBond, 2: Salt Bridge, 3: Pi-Pi, 4: Pi-Cation
+        
+        # Hydrogen bonds
+        hbond_mask = (distances <= self.cutoffs['hbond']) & \
+                     ((p_donor & l_acceptor) | (p_acceptor & l_donor))
+        interaction_types[hbond_mask] = 1
+        
+        # Salt bridges
+        salt_mask = (distances <= self.cutoffs['salt_bridge']) & \
+                    ((p_pos & l_neg) | (p_neg & l_pos))
+        interaction_types[salt_mask] = 2
+        
+        # Pi-cation
+        pi_cation_mask = (distances <= self.cutoffs['pi_cation']) & \
+                        ((p_aromatic & l_pos) | (p_pos & l_aromatic))
+        interaction_types[pi_cation_mask] = 4
+        
+        # Pi-pi stacking (if aromatic rings are detected)
+        if len(self.protein_properties['aromatic_centers']) > 0 and \
+           len(self.ligand_properties['aromatic_centers']) > 0:
+            pi_pi_types = self._detect_pi_stacking_gpu(indices, distances)
+            pi_pi_mask = pi_pi_types > 0
+            interaction_types[pi_pi_mask] = pi_pi_types[pi_pi_mask]
+        
+        # Default to Van der Waals for close contacts
+        vdw_mask = (interaction_types == 0) & (distances <= self.cutoffs['vdw'])
+        interaction_types[vdw_mask] = 0
+        
+        return interaction_types
+    
+    def _detect_pi_stacking_gpu(self,
+                               indices: torch.Tensor,
+                               distances: torch.Tensor) -> torch.Tensor:
+        """
+        Detect pi-stacking interactions on GPU
+        Returns: 0: none, 3: parallel, 5: T-shaped, 6: offset
+        """
+        n_interactions = len(indices)
+        pi_types = torch.zeros(n_interactions, device=self.device, dtype=torch.int8)
+        
+        # Get protein aromatic centers
+        p_centers = self.protein_properties['aromatic_centers']
+        p_normals = self.protein_properties['aromatic_normals']
+        p_res_ids = self.protein_properties['aromatic_residues']
+        
+        # Get ligand aromatic centers
+        l_centers = self.ligand_properties['aromatic_centers']
+        l_normals = self.ligand_properties['aromatic_normals']
+        
+        if len(p_centers) == 0 or len(l_centers) == 0:
+            return pi_types
+        
+        # For each protein atom in the interaction list
+        protein_residues = self.protein_properties['residue_ids'][indices[:, 0]]
+        
+        # Check which interactions involve aromatic residues
+        for i, (p_idx, l_idx, dist, p_res) in enumerate(
+            zip(indices[:, 0], indices[:, 1], distances, protein_residues)):
+            
+            # Check if this residue has an aromatic ring
+            aromatic_mask = p_res_ids == p_res
+            if not torch.any(aromatic_mask):
+                continue
+            
+            # Get the aromatic ring for this residue
+            ring_idx = torch.where(aromatic_mask)[0][0]
+            p_center = p_centers[ring_idx]
+            p_normal = p_normals[ring_idx]
+            
+            # Check distance to all ligand aromatic centers
+            for l_ring_idx in range(len(l_centers)):
+                l_center = l_centers[l_ring_idx]
+                l_normal = l_normals[l_ring_idx]
+                
+                # Calculate ring-ring distance
+                ring_dist = torch.norm(p_center - l_center)
+                
+                if ring_dist <= self.cutoffs['pi_pi']:
+                    # Calculate angle between normals
+                    cos_angle = torch.abs(torch.dot(p_normal, l_normal))
+                    angle = torch.acos(torch.clamp(cos_angle, -1, 1)) * 180 / np.pi
+                    
+                    # Calculate offset
+                    center_vector = l_center - p_center
+                    center_vector_norm = center_vector / (torch.norm(center_vector) + 1e-10)
+                    offset = torch.norm(center_vector - torch.dot(center_vector, p_normal) * p_normal)
+                    
+                    # Classify pi-stacking type
+                    if angle < 30:  # Parallel
+                        if offset < 2.0:
+                            pi_types[i] = 3  # Perfect parallel
+                        else:
+                            pi_types[i] = 6  # Offset parallel
+                    elif 60 < angle < 120:  # T-shaped
+                        pi_types[i] = 5
+                    elif offset < 4.0:  # Angled but close
+                        pi_types[i] = 6  # Offset/angled
+        
+        return pi_types
+    
+    def _calculate_energies_gpu(self,
+                               distances: torch.Tensor,
+                               interaction_types: torch.Tensor) -> torch.Tensor:
+        """Calculate interaction energies entirely on GPU"""
+        # Energy parameters (in appropriate units)
+        energies = torch.zeros_like(distances)
+        
+        # Van der Waals (Lennard-Jones 6-12)
+        vdw_mask = interaction_types == 0
+        if torch.any(vdw_mask):
+            # E = 4ε[(σ/r)^12 - (σ/r)^6]
+            sigma = 3.4  # Å
+            epsilon = 0.238  # kcal/mol
+            r = distances[vdw_mask]
+            sigma_over_r = sigma / r
+            energies[vdw_mask] = 4 * epsilon * (sigma_over_r**12 - sigma_over_r**6)
+            # Cap very high repulsive energies
+            energies[vdw_mask] = torch.clamp(energies[vdw_mask], -10, 10)
+        
+        # Hydrogen bonds
+        hbond_mask = interaction_types == 1
+        if torch.any(hbond_mask):
+            # E = -ε * (5*(d0/r)^12 - 6*(d0/r)^10)
+            d0 = 2.8  # Optimal H-bond distance
+            epsilon_hb = 5.0  # kcal/mol
+            r = distances[hbond_mask]
+            energies[hbond_mask] = -epsilon_hb * (5*(d0/r)**12 - 6*(d0/r)**10)
+        
+        # Salt bridges
+        salt_mask = interaction_types == 2
+        if torch.any(salt_mask):
+            # Coulombic with distance-dependent dielectric
+            q1q2 = 1.0  # Normalized charges
+            dielectric = 4.0 * distances[salt_mask]  # Distance-dependent
+            energies[salt_mask] = -332.0 * q1q2 / (dielectric * distances[salt_mask])
+        
+        # Pi-pi stacking
+        pi_pi_mask = (interaction_types == 3) | (interaction_types == 5) | (interaction_types == 6)
+        if torch.any(pi_pi_mask):
+            # Different energies for different orientations
+            r = distances[pi_pi_mask]
+            base_energy = -2.5 * torch.exp(-((r - 3.8) / 1.0)**2)
+            
+            # Parallel (type 3) is most favorable
+            energies[pi_pi_mask & (interaction_types == 3)] = base_energy[interaction_types[pi_pi_mask] == 3] * 1.2
+            # T-shaped (type 5)
+            energies[pi_pi_mask & (interaction_types == 5)] = base_energy[interaction_types[pi_pi_mask] == 5] * 1.0
+            # Offset (type 6)
+            energies[pi_pi_mask & (interaction_types == 6)] = base_energy[interaction_types[pi_pi_mask] == 6] * 0.8
+        
+        # Pi-cation
+        pi_cation_mask = interaction_types == 4
+        if torch.any(pi_cation_mask):
+            r = distances[pi_cation_mask]
+            energies[pi_cation_mask] = -3.0 * torch.exp(-((r - 3.5) / 1.5)**2)
+        
+        return energies
+    
+    def _combine_results(self, results: List[InteractionResult]) -> InteractionResult:
+        """Combine multiple interaction results"""
+        return InteractionResult(
+            indices=torch.cat([r.indices for r in results], dim=0),
+            distances=torch.cat([r.distances for r in results]),
+            types=torch.cat([r.types for r in results]),
+            energies=torch.cat([r.energies for r in results]),
+            residue_ids=torch.cat([r.residue_ids for r in results])
+        )
+    
+    def process_trajectory_batch_gpu(self,
+                                   trajectory: np.ndarray,
+                                   ligand_coords: np.ndarray,
+                                   n_rotations: int = 36) -> List[Dict]:
+        """
+        Process entire trajectory batch on GPU
+        """
+        # Ensure properties are precomputed
+        if self.protein_properties is None:
+            raise ValueError("Protein properties not precomputed! Call precompute_protein_properties_gpu first.")
+        
+        # Convert trajectory to GPU tensor
+        trajectory_gpu = torch.tensor(trajectory, device=self.device, dtype=torch.float32)
+        ligand_base_gpu = torch.tensor(ligand_coords, device=self.device, dtype=torch.float32)
+        
+        # Calculate ligand center for translations
+        ligand_center = ligand_base_gpu.mean(dim=0)
+        
+        results = []
+        
+        print(f"\n   Processing {len(trajectory)} frames with {n_rotations} rotations each...")
+        
+        for frame_idx, position in enumerate(trajectory_gpu):
+            frame_results = {
+                'frame': frame_idx,
+                'position': position.cpu().numpy(),
+                'interactions_by_rotation': [],
+                'best_rotation': None,
+                'best_energy': float('inf')
+            }
+            
+            # Generate rotation matrices
+            for rot_idx in range(n_rotations):
+                angle = 2 * np.pi * rot_idx / n_rotations
+                
+                # Create rotation matrix (around z-axis for simplicity)
+                cos_a = torch.cos(torch.tensor(angle, device=self.device))
+                sin_a = torch.sin(torch.tensor(angle, device=self.device))
+                
+                rot_matrix = torch.tensor([
+                    [cos_a, -sin_a, 0],
+                    [sin_a, cos_a, 0],
+                    [0, 0, 1]
+                ], device=self.device, dtype=torch.float32)
+                
+                # Rotate ligand around its center
+                ligand_centered = ligand_base_gpu - ligand_center
+                ligand_rotated = torch.matmul(ligand_centered, rot_matrix.T)
+                
+                # Translate to target position
+                ligand_transformed = ligand_rotated + position
+                
+                # Detect interactions (all on GPU!)
+                interactions = self.detect_all_interactions_gpu(
+                    self.protein_properties['coords'],
+                    ligand_transformed
+                )
+                
+                # Calculate total energy
+                total_energy = interactions.energies.sum().item()
+                
+                # Store rotation results
+                rotation_result = {
+                    'rotation': rot_idx,
+                    'angle': angle,
+                    'total_energy': total_energy,
+                    'n_interactions': len(interactions.indices),
+                    'interaction_summary': self._summarize_interactions(interactions)
+                }
+                
+                frame_results['interactions_by_rotation'].append(rotation_result)
+                
+                # Track best rotation
+                if total_energy < frame_results['best_energy']:
+                    frame_results['best_energy'] = total_energy
+                    frame_results['best_rotation'] = rot_idx
+                    frame_results['best_interactions'] = interactions
+            
+            results.append(frame_results)
+            
+            # Progress update
+            if (frame_idx + 1) % 10 == 0:
+                print(f"\r   Processed {frame_idx + 1}/{len(trajectory)} frames...", end="")
+        
+        print(f"\n   ✓ GPU processing complete!")
+        
+        return results
+    
+    def _summarize_interactions(self, interactions: InteractionResult) -> Dict:
+        """Summarize interaction types and counts"""
+        if len(interactions.types) == 0:
+            return {'total': 0}
+        
+        # Count interaction types
+        type_names = {
+            0: 'Van der Waals',
+            1: 'Hydrogen Bond',
+            2: 'Salt Bridge',
+            3: 'Pi-Pi Parallel',
+            4: 'Pi-Cation',
+            5: 'Pi-Pi T-Shaped',
+            6: 'Pi-Pi Offset'
+        }
+        
+        summary = {'total': len(interactions.types)}
+        
+        for type_id, type_name in type_names.items():
+            count = torch.sum(interactions.types == type_id).item()
+            if count > 0:
+                summary[type_name] = count
+        
+        return summary
+
+
+class GPUFluxCalculator:
+    """GPU-accelerated flux differential calculator"""
+    
+    def __init__(self, device=None):
+        self.device = device or get_device()
+        
+    def calculate_flux_tensor_gpu(self,
+                                residue_energy_tensors: Dict[int, torch.Tensor],
+                                n_residues: int) -> torch.Tensor:
+        """
+        Calculate flux differentials using GPU tensor operations
+        """
+        # Initialize flux tensor
+        flux_tensor = torch.zeros(n_residues, device=self.device)
+        
+        for res_id, energy_tensor in residue_energy_tensors.items():
+            if res_id < n_residues and len(energy_tensor) > 0:
+                # Ensure tensor is on GPU
+                if not energy_tensor.is_cuda and not energy_tensor.device.type == 'mps':
+                    energy_tensor = energy_tensor.to(self.device)
+                
+                # Calculate magnitudes
+                magnitudes = torch.norm(energy_tensor, dim=1)
+                
+                # Calculate directional consistency
+                mean_direction = torch.mean(energy_tensor, dim=0)
+                mean_direction_norm = torch.norm(mean_direction)
+                
+                if mean_direction_norm > 1e-10:
+                    mean_direction = mean_direction / mean_direction_norm
+                    
+                    # Normalize vectors
+                    norms = torch.norm(energy_tensor, dim=1, keepdim=True)
+                    normalized = energy_tensor / (norms + 1e-10)
+                    
+                    # Calculate consistency
+                    consistencies = torch.matmul(normalized, mean_direction)
+                    directional_consistency = torch.mean(consistencies)
+                    directional_consistency = (directional_consistency + 1) / 2
+                else:
+                    directional_consistency = 0.5
+                
+                # Calculate rate of change
+                if len(magnitudes) > 1:
+                    mag_diff = torch.diff(magnitudes)
+                    rate_of_change = torch.sqrt(torch.mean(mag_diff ** 2))
+                else:
+                    rate_of_change = torch.tensor(0.0, device=self.device)
+                
+                # Calculate flux
+                mean_magnitude = torch.mean(magnitudes)
+                flux_value = mean_magnitude * directional_consistency * (1 + rate_of_change)
+                
+                flux_tensor[res_id] = flux_value
+        
+        return flux_tensor
+    
+    def smooth_flux_gpu(self, flux_tensor: torch.Tensor, sigma: float = 2.0) -> torch.Tensor:
+        """
+        Apply Gaussian smoothing on GPU using 1D convolution
+        """
+        # Create Gaussian kernel
+        kernel_size = int(4 * sigma) + 1
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+        
+        # Generate kernel
+        x = torch.arange(-kernel_size // 2 + 1, kernel_size // 2 + 1,
+                        dtype=torch.float32, device=self.device)
+        kernel = torch.exp(-0.5 * (x / sigma) ** 2)
+        kernel = kernel / kernel.sum()
+        
+        # Reshape for conv1d
+        kernel = kernel.view(1, 1, -1)
+        flux_tensor = flux_tensor.view(1, 1, -1)
+        
+        # Apply convolution with reflection padding
+        flux_padded = torch.nn.functional.pad(
+            flux_tensor,
+            (kernel_size // 2, kernel_size // 2),
+            mode='reflect'
+        )
+        
+        flux_smoothed = torch.nn.functional.conv1d(
+            flux_padded, kernel, stride=1
+        )
+        
+        return flux_smoothed.squeeze()
+    
+    def process_trajectory_to_flux(self,
+                                 trajectory_results: List[Dict],
+                                 n_residues: int) -> torch.Tensor:
+        """
+        Convert trajectory interaction results to flux values
+        """
+        # Accumulate energy vectors by residue
+        residue_energy_accumulator = {i: [] for i in range(n_residues)}
+        
+        for frame_result in trajectory_results:
+            if 'best_interactions' in frame_result:
+                interactions = frame_result['best_interactions']
+                
+                # Group by residue
+                for i in range(len(interactions.indices)):
+                    residue_id = interactions.residue_ids[i].item()
+                    energy = interactions.energies[i].item()
+                    
+                    # Create energy vector (simplified - could use actual vectors)
+                    energy_vector = torch.tensor([energy, 0, 0], device=self.device)
+                    
+                    if residue_id in residue_energy_accumulator:
+                        residue_energy_accumulator[residue_id].append(energy_vector)
+        
+        # Convert to tensors
+        residue_energy_tensors = {}
+        for res_id, vectors in residue_energy_accumulator.items():
+            if vectors:
+                residue_energy_tensors[res_id] = torch.stack(vectors)
+        
+        # Calculate flux
+        flux_tensor = self.calculate_flux_tensor_gpu(residue_energy_tensors, n_residues)
+        
+        # Apply smoothing
+        flux_smoothed = self.smooth_flux_gpu(flux_tensor)
+        
+        return flux_smoothed
