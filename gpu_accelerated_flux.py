@@ -1,7 +1,7 @@
 """
 GPU-Accelerated Flux Calculations with Spatial Hashing Optimization
 Optimized for Apple Silicon (MPS) and NVIDIA CUDA GPUs
-FIXED: Proper hydrogen bond detection with geometric criteria
+FIXED v2: Proper hydrogen bond detection with geometric criteria and tensor stacking fix
 """
 
 import torch
@@ -436,28 +436,69 @@ class GPUAcceleratedInteractionCalculator:
         print("   Calculating aromatic ring geometries...")
         for res_id, ring_data in aromatic_ring_atoms.items():
             if len(ring_data['coords']) >= 3:  # Need at least 3 atoms for a plane
-                ring_coords = torch.tensor(ring_data['coords'], device=self.device, dtype=torch.float32)
-                
-                # Calculate ring center
-                center = ring_coords.mean(dim=0)
-                properties['aromatic_centers'].append(center)
-                
-                # Calculate ring normal using SVD
-                centered_coords = ring_coords - center
-                # For finding the normal to a plane, we need the eigenvector
-                # corresponding to the smallest singular value
-                _, _, vh = torch.linalg.svd(centered_coords.T, full_matrices=False)
-                normal = vh[2]  # Normal vector (smallest singular value)
-                
-                properties['aromatic_normals'].append(normal)
-                properties['aromatic_residues'].append(res_id)
+                try:
+                    ring_coords = torch.tensor(ring_data['coords'], device=self.device, dtype=torch.float32)
+                    
+                    # Calculate ring center
+                    center = ring_coords.mean(dim=0)
+                    
+                    # Calculate ring normal using SVD
+                    centered_coords = ring_coords - center
+                    
+                    # Ensure we have a matrix of appropriate shape
+                    if centered_coords.shape[0] >= 3:
+                        # SVD to find the normal to the plane
+                        _, _, vh = torch.linalg.svd(centered_coords.T, full_matrices=False)
+                        
+                        # The normal is the eigenvector corresponding to smallest singular value
+                        # For a [3, n_atoms] matrix, vh has shape [3, 3]
+                        # We want the last column of vh (not row!)
+                        normal = vh[:, -1]  # Last column = smallest singular value's eigenvector
+                        
+                        # Ensure the tensors have correct dimensions
+                        if center.numel() == 3 and normal.numel() == 3:
+                            # Reshape if needed to ensure 1D tensors
+                            center = center.reshape(3)
+                            normal = normal.reshape(3)
+                            properties['aromatic_centers'].append(center)
+                            properties['aromatic_normals'].append(normal)
+                            properties['aromatic_residues'].append(res_id)
+                        else:
+                            print(f"     Error: Aromatic ring {res_id} has invalid dimensions - "
+                                  f"center: {center.shape} ({center.numel()} elements), "
+                                  f"normal: {normal.shape} ({normal.numel()} elements)")
+                except Exception as e:
+                    print(f"     Warning: Failed to process aromatic ring for residue {res_id}: {e}")
         
-        # Convert aromatic lists to tensors
+        # Convert aromatic lists to tensors with proper error handling
         if properties['aromatic_centers']:
-            properties['aromatic_centers'] = torch.stack(properties['aromatic_centers'])
-            properties['aromatic_normals'] = torch.stack(properties['aromatic_normals'])
-            properties['aromatic_residues'] = torch.tensor(properties['aromatic_residues'],
-                                                         device=self.device, dtype=torch.long)
+            try:
+                # Ensure all centers and normals have the correct dimensions
+                valid_indices = []
+                for i, (center, normal) in enumerate(zip(properties['aromatic_centers'],
+                                                        properties['aromatic_normals'])):
+                    if center.numel() == 3 and normal.numel() == 3:
+                        valid_indices.append(i)
+                    else:
+                        print(f"     Error: Aromatic ring {i} has invalid tensor size - "
+                              f"center: {center.numel()} elements, normal: {normal.numel()} elements")
+                
+                if valid_indices:
+                    properties['aromatic_centers'] = torch.stack([properties['aromatic_centers'][i]
+                                                                 for i in valid_indices])
+                    properties['aromatic_normals'] = torch.stack([properties['aromatic_normals'][i]
+                                                                 for i in valid_indices])
+                    properties['aromatic_residues'] = torch.tensor([properties['aromatic_residues'][i]
+                                                                   for i in valid_indices],
+                                                                  device=self.device, dtype=torch.long)
+                else:
+                    raise ValueError("No valid aromatic rings after filtering")
+                    
+            except Exception as e:
+                print(f"     ⚠️  Error stacking aromatic tensors: {e}")
+                properties['aromatic_centers'] = torch.zeros((0, 3), device=self.device)
+                properties['aromatic_normals'] = torch.zeros((0, 3), device=self.device)
+                properties['aromatic_residues'] = torch.zeros(0, device=self.device, dtype=torch.long)
         else:
             properties['aromatic_centers'] = torch.zeros((0, 3), device=self.device)
             properties['aromatic_normals'] = torch.zeros((0, 3), device=self.device)
@@ -628,10 +669,13 @@ class GPUAcceleratedInteractionCalculator:
                         if centered.shape[0] >= 3:
                             try:
                                 _, _, vh = torch.linalg.svd(centered.T, full_matrices=False)
-                                normal = vh[2]  # Smallest singular value eigenvector
+                                # Get the eigenvector corresponding to smallest singular value
+                                # vh has shape [3, 3], we want the last column
+                                normal = vh[:, -1]  # Last column
                                 
-                                if normal.shape == torch.Size([3]):
-                                    properties['aromatic_centers'].append(center)
+                                if normal.numel() == 3:
+                                    normal = normal.reshape(3)  # Ensure 1D tensor
+                                    properties['aromatic_centers'].append(center.reshape(3))
                                     properties['aromatic_normals'].append(normal)
                             except Exception as e:
                                 print(f"     Warning: SVD failed for ligand aromatic ring: {e}")
@@ -642,9 +686,24 @@ class GPUAcceleratedInteractionCalculator:
         # Convert aromatic lists to tensors
         if properties['aromatic_centers']:
             try:
-                properties['aromatic_centers'] = torch.stack(properties['aromatic_centers'])
-                properties['aromatic_normals'] = torch.stack(properties['aromatic_normals'])
+                # Validate shapes before stacking
+                valid_centers = []
+                valid_normals = []
+                
+                for center, normal in zip(properties['aromatic_centers'], properties['aromatic_normals']):
+                    if center.numel() == 3 and normal.numel() == 3:
+                        valid_centers.append(center.reshape(3))
+                        valid_normals.append(normal.reshape(3))
+                
+                if valid_centers:
+                    properties['aromatic_centers'] = torch.stack(valid_centers)
+                    properties['aromatic_normals'] = torch.stack(valid_normals)
+                else:
+                    properties['aromatic_centers'] = torch.zeros((0, 3), device=self.device)
+                    properties['aromatic_normals'] = torch.zeros((0, 3), device=self.device)
+                    
             except Exception as e:
+                print(f"     ⚠️  GPU tensor stacking failed for ligand: {e}")
                 properties['aromatic_centers'] = torch.zeros((0, 3), device=self.device)
                 properties['aromatic_normals'] = torch.zeros((0, 3), device=self.device)
         else:
