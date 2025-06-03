@@ -1,1 +1,6 @@
 .DS_Store
+__pycache__/flux_analyzer.cpython-312.pyc
+__pycache__/gpu_accelerated_flux.cpython-312.pyc
+__pycache__/intra_protein_interactions.cpython-312.pyc
+__pycache__/trajectory_generator.cpython-312.pyc
+CLAUDE.md
