@@ -1,11 +1,16 @@
 #!/usr/bin/env python
 """
-pymol_multiflux.py - Color multiple proteins by flux values in grid view
+pymol_multiflux.py - Color multiple proteins by flux values in PyMOL grid view
+
+This script is designed specifically for PyMOL's native visualization system.
+For matplotlib-based ribbon visualization, use visualize_multiflux.py instead.
 
 Usage in PyMOL:
     run /path/to/pymol_multiflux.py
     multiflux              # Interactively select CSV for each loaded protein
     multiflux GPX4-wt=wt.csv,GPX4-single=single.csv,GPX4-double=double.csv
+
+Note: This script must be run from within PyMOL.
 """
 
 from pymol import cmd
@@ -13,10 +18,18 @@ import csv
 import os
 import math
 
-# 10-color flux palette (blue to red)
+# Berlin color palette - professional blue-white-red diverging colormap
 PALETTE_HEX = [
-    '#000080', '#0000ff', '#0080ff', '#00ffff', '#00ff80',
-    '#80ff00', '#ffff00', '#ff8000', '#ff0000', '#800000'
+    '#053061',  # Deep blue
+    '#2166ac',  # Blue
+    '#4393c3',  # Light blue
+    '#92c5de',  # Pale blue
+    '#d1e5f0',  # Very pale blue
+    '#fddbc7',  # Very pale red
+    '#f4a582',  # Pale red
+    '#d6604d',  # Light red
+    '#b2182b',  # Red
+    '#67001f'   # Deep red
 ]
 
 
@@ -142,14 +155,34 @@ def multiflux(mappings=None):
                 else:
                     print(f"[multiflux] Warning: Invalid mapping {mapping}")
     else:
-        # Interactive mode
-        print("\n[multiflux] Enter CSV file for each protein (or press Enter to skip):")
+        # Interactive mode - use PyMOL's askstring dialog
+        print("\n[multiflux] Interactive mode - dialog boxes will appear for each protein")
         for obj in objects:
-            csv_file = input(f"  {obj}: ").strip()
-            if csv_file and os.path.isfile(csv_file):
-                obj_csv_map[obj] = csv_file
-            elif csv_file:
-                print(f"    File not found: {csv_file}")
+            try:
+                # Use PyMOL's GUI dialog
+                csv_file = cmd.get_raw_input(f"Enter CSV file for {obj} (or Cancel to skip):")
+                if csv_file:
+                    csv_file = csv_file.strip()
+                    if os.path.isfile(csv_file):
+                        obj_csv_map[obj] = csv_file
+                        print(f"[multiflux] {obj} -> {csv_file}")
+                    else:
+                        print(f"[multiflux] File not found: {csv_file}")
+            except:
+                # If dialog fails, try looking for common locations
+                common_paths = [
+                    f"{obj}_flux_analysis/processed_flux_data.csv",
+                    f"flux_analysis_{obj}/processed_flux_data.csv",
+                    f"{obj}/flux_analysis/processed_flux_data.csv",
+                    "flux_analysis/processed_flux_data.csv",
+                    "processed_flux_data.csv"
+                ]
+                
+                for path in common_paths:
+                    if os.path.isfile(path):
+                        obj_csv_map[obj] = path
+                        print(f"[multiflux] Auto-found for {obj}: {path}")
+                        break
     
     if not obj_csv_map:
         print("[multiflux] No valid CSV files provided.")
@@ -185,6 +218,15 @@ def multiflux(mappings=None):
         # Show as cartoon
         cmd.show('cartoon', obj)
         
+        # Hide ions, waters, and other non-protein elements
+        cmd.hide('everything', f'{obj} and (resn HOH,WAT,SOL,NA,CL,K,CA,MG,ZN,FE,CU,MN,CO,NI)')
+        cmd.hide('everything', f'{obj} and solvent')
+        cmd.hide('everything', f'{obj} and inorganic')
+        cmd.hide('everything', f'{obj} and not polymer')
+        
+        # Ensure only polymer (protein) is shown
+        cmd.show('cartoon', f'{obj} and polymer')
+        
         # Set grid position
         row = grid_pos // cols
         col = grid_pos % cols
@@ -201,6 +243,9 @@ def multiflux(mappings=None):
     if n_mapped > 1:
         cmd.set('grid_spacing', 40)  # Adjust spacing between grid cells
     
+    # Set white background for better contrast with Berlin palette
+    cmd.bg_color('white')
+    
     # Reset view for all objects
     cmd.zoom('visible')
     cmd.orient()
@@ -210,7 +255,7 @@ def multiflux(mappings=None):
     print(f"[multiflux] Grid: {rows}x{cols}")
     for stat in stats:
         print(f"[multiflux] {stat}")
-    print(f"[multiflux] Color palette: blue (low flux) to red (high flux)")
+    print(f"[multiflux] Color palette: Berlin (blue-white-red diverging)")
     
     # Add labels to identify proteins
     if n_mapped > 1:
@@ -226,3 +271,81 @@ def fluxgrid():
     multiflux()
 
 cmd.extend("fluxgrid", fluxgrid)
+
+# Direct loading command - better handling for PyMOL
+def fluxload(pdb_file, csv_file=None, label=None):
+    """
+    Load PDB and color by flux in one command
+    
+    Usage: 
+        fluxload pdb_file, csv_file [, label]
+        fluxload "pdb_file", "csv_file" [, "label"]  # For paths with spaces
+    
+    Example:
+        fluxload protein.pdb, flux.csv, WT
+        fluxload "/path with spaces/protein.pdb", "/path with spaces/flux.csv", "My Protein"
+    """
+    # Handle if all args come as single string (PyMOL quirk)
+    if csv_file is None and ',' in str(pdb_file):
+        # Parse as comma-separated string
+        parts = pdb_file.split(',')
+        if len(parts) >= 2:
+            pdb_file = parts[0].strip().strip('"\'')
+            csv_file = parts[1].strip().strip('"\'')
+            label = parts[2].strip().strip('"\'') if len(parts) > 2 else None
+        else:
+            print("[fluxload] Error: Usage: fluxload pdb_file, csv_file [, label]")
+            return
+    
+    # Clean up paths
+    pdb_file = str(pdb_file).strip().strip('"\'')
+    csv_file = str(csv_file).strip().strip('"\'') if csv_file else None
+    label = str(label).strip().strip('"\'') if label else None
+    
+    if not os.path.exists(pdb_file):
+        print(f"[fluxload] Error: PDB file not found: {pdb_file}")
+        return
+    
+    if not os.path.exists(csv_file):
+        print(f"[fluxload] Error: CSV file not found: {csv_file}")
+        return
+    
+    # Determine label
+    if label is None:
+        label = os.path.basename(pdb_file).replace('.pdb', '')
+    
+    # Load PDB
+    cmd.load(pdb_file, label)
+    
+    # Hide non-protein elements
+    cmd.hide('everything', f'{label} and (resn HOH,WAT,SOL,NA,CL,K,CA,MG,ZN,FE,CU,MN,CO,NI)')
+    cmd.hide('everything', f'{label} and solvent')
+    cmd.hide('everything', f'{label} and inorganic')
+    cmd.hide('everything', f'{label} and not polymer')
+    
+    # Color by flux
+    palette = _register_palette()
+    flux_data = _load_flux(csv_file)
+    
+    if flux_data:
+        result = _color_by_flux(label, flux_data, palette)
+        if result:
+            v_min, v_max = result
+            print(f"[fluxload] {label}: flux range {v_min:.3g} to {v_max:.3g}")
+        
+        cmd.show('cartoon', f'{label} and polymer')
+        cmd.bg_color('white')
+        print(f"[fluxload] Loaded and colored {label}")
+    else:
+        print(f"[fluxload] Failed to load flux data from {csv_file}")
+
+cmd.extend("fluxload", fluxload)
+
+print("""
+PyMOL MultiFlux loaded! Commands available:
+  multiflux - Interactive mode for multiple loaded proteins
+  fluxload pdb_file, csv_file [, label] - Direct loading and coloring
+  
+Example: fluxload /path/to/GPX4-wt.pdb, /path/to/flux.csv, WT
+Note: Use commas to separate arguments (required for paths with spaces)
+""")

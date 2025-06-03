@@ -18,6 +18,7 @@ warnings.filterwarnings('ignore')
 from trajectory_generator import ProteinLigandFluxAnalyzer
 from flux_analyzer import TrajectoryFluxAnalyzer
 from gpu_accelerated_flux import get_device
+from visualize_multiflux import visualize_multiflux
 
 
 def print_banner(text):
@@ -351,9 +352,10 @@ def main():
     print("\nOptions:")
     print("1. Run complete workflow")
     print("2. Convert SMILES to PDBQT")
-    print("3. Exit")
+    print("3. Visualize multiple proteins (compare flux)")
+    print("4. Exit")
     
-    choice = input("\nEnter choice (1-3): ").strip()
+    choice = input("\nEnter choice (1-4): ").strip()
     
     if choice == "1":
         run_complete_workflow()
@@ -364,6 +366,31 @@ def main():
             name = input("Enter output name: ").strip() or "ligand"
             convert_smiles_to_pdbqt(smiles, name)
     elif choice == "3":
+        print_banner("MULTI-PROTEIN FLUX COMPARISON")
+        n_proteins = int(input("How many proteins to compare? "))
+        
+        protein_flux_pairs = []
+        for i in range(n_proteins):
+            print(f"\nProtein {i+1}:")
+            pdb_file = input("  PDB file: ").strip()
+            csv_file = input("  Flux CSV file: ").strip()
+            label = input("  Label: ").strip()
+            
+            if os.path.exists(pdb_file) and os.path.exists(csv_file):
+                protein_flux_pairs.append((pdb_file, csv_file, label))
+            else:
+                print(f"  Error: File not found, skipping this protein")
+        
+        if protein_flux_pairs:
+            output_file = input("\nOutput filename (default: multiflux_comparison.png): ").strip()
+            if not output_file:
+                output_file = "multiflux_comparison.png"
+            
+            print(f"\nCreating visualization for {len(protein_flux_pairs)} proteins...")
+            visualize_multiflux(protein_flux_pairs, output_file)
+        else:
+            print("No valid protein-flux pairs provided.")
+    elif choice == "4":
         print("\nThank you for using FluxMD!")
     else:
         print("Invalid choice!")

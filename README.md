@@ -150,12 +150,188 @@ Red regions in visualizations indicate high-flux binding sites with statistical 
 
 ## PyMOL Visualization
 
-Create a PyMOL script to visualize flux values:
+FluxMD provides two visualization approaches for PyMOL users:
+
+### Method 1: PyMOL Native Visualization (Recommended for PyMOL)
+
+This method uses PyMOL's built-in rendering and grid system with the professional Berlin color palette (blue-white-red diverging colormap):
+
+#### Direct Loading Method (Simplest)
+
+Load and color proteins directly with their flux data:
+
 ```python
-# In PyMOL console
-run visualize_flux.py
-load protein.pdb
-colorflux protein, flux_analysis/processed_flux_data.csv
+# In PyMOL console - use the simpler fload command
+run pymol_fluxload.py
+
+# Load single protein with flux coloring
+fload pdb_path csv_path [label]
+
+# Examples
+fload /Users/myunghyun/Desktop/proteins/GPX4.pdb /Users/myunghyun/Desktop/flux.csv WT
+fload protein.pdb processed_flux_data.csv
+
+# Or use the full multiflux script
+run pymol_multiflux.py
+fluxload "pdb_file", "csv_file", "label"
+```
+
+
+**Option 1: Direct loading for multiple proteins**
+```python
+# Load multiple proteins one by one (use commas!)
+fluxload wt.pdb, wt_flux.csv, WT
+fluxload single.pdb, single_flux.csv, Single
+fluxload double.pdb, double_flux.csv, Double
+
+# Then enable grid view
+set grid_mode, 1
+```
+
+**Option 2: Interactive mode for already loaded proteins**
+
+1. **Navigate to FluxMD directory in PyMOL:**
+```python
+cd /Users/myunghyun/Documents/GitHub/FluxMD
+```
+
+2. **Run the script:**
+```python
+run pymol_multiflux.py
+```
+
+3. **Load your protein structures:**
+```python
+load /path/to/GPX4-wt.pdb
+load /path/to/GPX4-single.pdb
+load /path/to/GPX4-double.pdb
+```
+
+4. **Apply flux coloring (interactive mode):**
+```python
+multiflux
+# Dialog boxes will appear for each protein
+# Enter the path to each CSV file or click Cancel to skip
+# The script will also auto-search common locations if dialog is cancelled
+```
+
+**Alternative: Specify all CSV files at once:**
+```python
+# Format: protein_name=csv_path,protein_name=csv_path,...
+multiflux GPX4-wt=/path/to/wt.csv,GPX4-single=/path/to/single.csv,GPX4-double=/path/to/double.csv
+```
+
+**Where to find CSV files:**
+- After running FluxMD analysis, look in the output directory
+- The file is named `processed_flux_data.csv`
+- Typical path: `your_analysis_output/flux_analysis/processed_flux_data.csv`
+
+**Common mistakes to avoid:**
+- ❌ `python pymol_multiflux.py` (wrong - use `run` instead)
+- ❌ `import pymol_multiflux` (wrong - use `run` instead)
+- ✅ `run pymol_multiflux.py` (correct!)
+
+**Available commands after running pymol_multiflux.py:**
+- `fluxload pdb, csv [, label]` - Direct loading with flux coloring (note the commas!)
+- `multiflux` - Interactive mode for already loaded proteins
+- `multiflux obj1=csv1,obj2=csv2` - Specify mappings directly
+
+**Features of PyMOL native method:**
+- Uses PyMOL's cartoon representation
+- Native PyMOL grid view (set grid_mode)
+- Berlin color palette for professional figures
+- White background for optimal contrast
+- Automatically hides ions, waters, and non-protein elements
+- Interactive dialog boxes for file selection
+- Auto-searches common flux data locations
+- Interactive 3D manipulation
+- Best for exploring structures interactively
+
+### Method 2: Matplotlib Visualization (Publication Figures)
+
+This creates static publication-quality figures using matplotlib:
+
+#### From Terminal (Recommended)
+```bash
+# Interactive mode
+python visualize_multiflux.py
+
+# Command-line mode
+python visualize_multiflux.py \
+  --proteins GPX4-wt.pdb GPX4-single.pdb GPX4-double.pdb \
+  --fluxes wt_flux.csv single_flux.csv double_flux.csv \
+  --labels "GPX4-WT" "GPX4-Single" "GPX4-Double" \
+  --output comparison.png
+```
+
+#### From PyMOL Console (If matplotlib is available)
+```python
+# Check if matplotlib is available in PyMOL
+import matplotlib
+print("Matplotlib available!")
+
+# Change to your FluxMD directory first
+cd /path/to/FluxMD
+
+# Run the visualization
+run visualize_multiflux.py
+# Follow the interactive prompts
+# Note: This creates a separate matplotlib window
+```
+
+**Important for PyMOL users:**
+- Most PyMOL installations don't include matplotlib by default
+- To check: `import matplotlib` in PyMOL console
+- If missing, use Method 1 (pymol_multiflux.py) instead
+- Or run visualize_multiflux.py from terminal outside PyMOL
+
+**Features of matplotlib method:**
+- Publication-ready PNG output
+- Smooth spline-interpolated ribbons using BioPython
+- Grid layout for multiple proteins
+- Consistent viewing angles
+- Berlin color palette (same as PyMOL version)
+- Best for figures and presentations
+- Creates static images (not interactive)
+
+### File Requirements
+
+Both methods require:
+- **PDB files**: Your protein structures
+- **CSV files**: The `processed_flux_data.csv` file from FluxMD analysis (typically in `flux_analysis/` directory)
+
+### Which Method to Use?
+
+| Use Case | Recommended Method | Script |
+|----------|-------------------|---------|
+| Interactive exploration in PyMOL | Method 1 | `pymol_multiflux.py` |
+| Publication figures | Method 2 | `visualize_multiflux.py` |
+| Quick visualization in PyMOL | Method 1 | `pymol_multiflux.py` |
+| Batch processing many proteins | Method 2 | `visualize_multiflux.py` |
+| No PyMOL available | Method 2 | `visualize_multiflux.py` |
+
+### Key Differences Between Scripts
+
+| Feature | pymol_multiflux.py | visualize_multiflux.py |
+|---------|-------------------|----------------------|
+| **Environment** | Runs INSIDE PyMOL | Standalone Python script |
+| **Output** | Interactive 3D in PyMOL | Static PNG images |
+| **Visualization** | PyMOL's cartoon | Custom ribbon with BioPython |
+| **Interactivity** | Full 3D rotation/zoom | Fixed viewing angle |
+| **Color palette** | Berlin (blue-white-red) | Berlin (blue-white-red) |
+| **Best for** | Exploration & analysis | Publications & reports |
+| **Commands** | `fluxload`, `multiflux` | Command-line or interactive |
+
+### Important: Using fluxload with file paths
+
+PyMOL requires comma-separated arguments for custom commands. This is especially important for paths with spaces:
+
+```python
+# Correct usage - with commas:
+fluxload /path/to/protein.pdb, /path/to/flux.csv, MyLabel
+
+# Will NOT work - without commas:
+fluxload /path/to/protein.pdb /path/to/flux.csv MyLabel  # ❌ ERROR
 ```
 
 ## Performance
