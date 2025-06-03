@@ -421,6 +421,103 @@ class ProteinLigandFluxAnalyzer:
         
         return pd.DataFrame(atoms)
     
+    def parse_structure_robust(self, pdb_file, parse_heterogens=True):
+        """
+        Parse PDB structure with fallback to manual parsing for problematic files
+        
+        Args:
+            pdb_file: Path to PDB file
+            parse_heterogens: If True, include HETATM records (needed for ligands)
+        
+        Returns:
+            pd.DataFrame: Parsed atom information
+        """
+        # First try BioPython parsing
+        try:
+            bio_atoms = self.parse_structure(pdb_file, parse_heterogens)
+            
+            # Check if we got reasonable number of atoms
+            with open(pdb_file, 'r') as f:
+                lines = f.readlines()
+            
+            expected_atoms = sum(1 for line in lines if line.startswith(('ATOM', 'HETATM')))
+            
+            if len(bio_atoms) >= expected_atoms * 0.9:  # Got at least 90% of atoms
+                return bio_atoms
+            else:
+                print(f"  ⚠️  BioPython only parsed {len(bio_atoms)}/{expected_atoms} atoms")
+                print(f"  Switching to manual parsing...")
+                
+        except Exception as e:
+            print(f"  BioPython parsing failed: {e}")
+            print(f"  Switching to manual parsing...")
+        
+        # Manual parsing fallback
+        manual_atoms = []
+        
+        with open(pdb_file, 'r') as f:
+            lines = f.readlines()
+        
+        for line in lines:
+            if line.startswith(('ATOM', 'HETATM')):
+                try:
+                    record_type = line[0:6].strip()
+                    atom_serial = int(line[6:11].strip())
+                    atom_name = line[12:16].strip()
+                    res_name = line[17:20].strip()
+                    chain_id = line[21:22].strip()
+                    res_seq = int(line[22:26].strip())
+                    x = float(line[30:38].strip())
+                    y = float(line[38:46].strip())
+                    z = float(line[46:54].strip())
+                    
+                    # Element detection
+                    element = ''
+                    if len(line) >= 78:
+                        element = line[76:78].strip()
+                    
+                    if not element:
+                        # Guess from atom name
+                        if atom_name.startswith('CL'):
+                            element = 'Cl'
+                        elif atom_name.startswith('BR'):
+                            element = 'Br'
+                        elif atom_name and atom_name[0] in ['C', 'N', 'O', 'S', 'P', 'H', 'F']:
+                            element = atom_name[0].upper()
+                        else:
+                            element = 'C'  # Default
+                    
+                    # Skip water
+                    if res_name in ['HOH', 'WAT']:
+                        continue
+                    
+                    # Apply parse_heterogens filter
+                    is_hetatm = record_type == 'HETATM'
+                    if not parse_heterogens and is_hetatm:
+                        continue
+                    
+                    manual_atoms.append({
+                        'chain': chain_id if chain_id else 'A',
+                        'resname': res_name,
+                        'resSeq': res_seq,
+                        'name': atom_name,
+                        'element': element,
+                        'x': x,
+                        'y': y,
+                        'z': z,
+                        'atom_id': atom_serial,
+                        'is_hetatm': is_hetatm,
+                        'residue_id': res_seq
+                    })
+                    
+                except Exception as e:
+                    continue
+        
+        df = pd.DataFrame(manual_atoms)
+        print(f"  ✓ Manual parsing succeeded: {len(df)} atoms")
+        
+        return df
+    
     def calculate_pi_stacking(self, aromatic_atoms1, aromatic_atoms2):
         """Calculate pi-stacking interactions between aromatic rings"""
         if len(aromatic_atoms1) < 3 or len(aromatic_atoms2) < 3:
@@ -843,8 +940,8 @@ class ProteinLigandFluxAnalyzer:
         print("Parsing structures...")
         # Parse protein (exclude heterogens)
         protein_atoms = self.parse_structure(protein_file, parse_heterogens=False)
-        # Parse ligand (include heterogens)
-        ligand_atoms = self.parse_structure(ligand_file, parse_heterogens=True)
+        # Parse ligand (include heterogens) - use robust parser for ligands
+        ligand_atoms = self.parse_structure_robust(ligand_file, parse_heterogens=True)
         
         # For ligands, filter to only HETATM records if mixed file
         if 'is_hetatm' in ligand_atoms.columns:
