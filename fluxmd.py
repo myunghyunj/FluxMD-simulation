@@ -162,11 +162,12 @@ def run_complete_workflow():
     print_banner("FLUXMD - PROTEIN-LIGAND FLUX ANALYSIS")
     
     print("This workflow will:")
-    print("1. Generate ligand trajectories around protein surface")
-    print("2. Calculate non-covalent interactions")
-    print("3. Compute energy flux differentials")
-    print("4. Identify binding sites with statistical validation")
-    print("5. Create visualizations and reports\n")
+    print("1. Calculate static intra-protein force field (one-time)")
+    print("2. Generate ligand trajectories around protein surface")
+    print("3. Calculate non-covalent interactions with combined forces")
+    print("4. Compute energy flux differentials (합벡터 analysis)")
+    print("5. Identify binding sites with statistical validation")
+    print("6. Create visualizations and reports\n")
     
     # Step 1: Get input files
     print("STEP 1: INPUT FILES")
@@ -330,6 +331,8 @@ def run_complete_workflow():
     print("• Purple markers = Aromatic residues capable of π-stacking")
     print("• Error bars = 95% confidence intervals from bootstrap")
     print("• P-values indicate statistical significance of each residue")
+    print("• Flux values now include both inter & intra-protein forces (합벡터)")
+    print("• Higher flux = stronger combined force convergence at binding site")
     
     # Offer comparison
     another = input("\nAnalyze another ligand for comparison? (y/n): ").strip().lower()

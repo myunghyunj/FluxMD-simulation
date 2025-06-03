@@ -7,12 +7,21 @@ FluxMD identifies protein-ligand binding sites through energy flux differential 
 
 ## Method
 
-FluxMD tracks ligands approaching proteins from multiple angles. It calculates energy flux from non-covalent interactions and identifies regions of high flux as binding sites. Bootstrap analysis validates statistical significance.
+FluxMD combines static intra-protein force fields with dynamic protein-ligand interactions to identify binding sites. The method:
+
+1. Pre-calculates internal protein forces (one-time computation)
+2. Simulates ligand approach trajectories using Brownian motion
+3. Calculates combined force vectors (합벡터) at each residue
+4. Identifies binding sites where forces converge
+5. Validates results using bootstrap statistical analysis
+
+This approach reveals how proteins' internal stress fields guide ligand recognition.
 
 ## Features
 
 - **Physics-based trajectories**: Brownian motion with molecular weight-dependent diffusion
 - **Complete interaction detection**: Hydrogen bonds, salt bridges, π-π stacking, van der Waals
+- **Intra-protein force field**: Static internal protein forces combined with ligand interactions
 - **GPU acceleration**: 10-100x faster on Apple Silicon (NVIDIA CUDA implemented, untested)
 - **Statistical validation**: Bootstrap confidence intervals and p-values
 
@@ -23,16 +32,86 @@ git clone https://github.com/panelarin/FluxMD.git
 cd FluxMD
 conda create -n fluxmd python=3.8
 conda activate fluxmd
-pip install numpy pandas scipy matplotlib biopython joblib
+pip install -r requirements.txt
 conda install -c conda-forge openbabel
-python setup_gpu.py
+pip install torch  # For GPU support
+pip install networkx  # For aromatic ring detection
 ```
+
+### Requirements
+
+- Python 3.8+
+- NumPy >= 1.20.0
+- Pandas >= 1.3.0
+- SciPy >= 1.7.0
+- Matplotlib >= 3.4.0
+- BioPython >= 1.79
+- PyTorch >= 2.0.0 (for GPU acceleration)
+- Joblib >= 1.0.0
+- NetworkX (for aromatic ring detection)
+- OpenBabel (for file conversions)
+
+## Code Structure
+
+### Core Modules
+
+- **`fluxmd.py`** - Main entry point and workflow orchestrator
+  - Interactive command-line interface
+  - File format conversions (CIF→PDB, SMILES→PDBQT)
+  - Parameter configuration and validation
+  - Coordinates the complete analysis pipeline
+
+- **`trajectory_generator.py`** - Ligand trajectory simulation engine
+  - Brownian motion with molecular weight-dependent diffusion
+  - Collision detection using VDW radii and KD-trees
+  - Surface point generation for approach angles
+  - Interaction detection (H-bonds, salt bridges, π-π stacking, etc.)
+  - Integrated intra-protein force field calculations
+
+- **`gpu_accelerated_flux.py`** - GPU acceleration module
+  - Auto-detects Apple Silicon (MPS) or NVIDIA CUDA
+  - Spatial hashing for systems >10K atoms
+  - Octree optimization for very large systems
+  - Batch processing with memory-aware algorithms
+  - Supports combined inter/intra force calculations
+
+- **`flux_analyzer.py`** - Statistical analysis and visualization
+  - Energy flux differential calculation: Φᵢ = ⟨|Eᵢ|⟩ · Cᵢ · (1 + τᵢ)
+  - Bootstrap validation (1000 iterations)
+  - P-value and confidence interval computation
+  - Heatmap generation and result reporting
+  - Tracks separate inter/intra-protein contributions
+
+- **`intra_protein_interactions.py`** - Static protein force field calculator
+  - Pre-computes internal protein interactions (one-time)
+  - Calculates H-bonds, salt bridges, π-π, π-cation, VDW forces
+  - Generates residue-level force vectors
+  - O(1) lookup during trajectory analysis
+
+### Key Features by Module
+
+| Module | Primary Function | Key Features |
+|--------|-----------------|--------------|
+| fluxmd.py | Workflow control | File conversions, GPU detection, user interface |
+| trajectory_generator.py | Dynamics simulation | Brownian motion, collision detection, interaction mapping |
+| gpu_accelerated_flux.py | Performance optimization | 10-100x speedup, memory-efficient algorithms |
+| flux_analyzer.py | Results analysis | Statistical validation, visualization, reporting |
+| intra_protein_interactions.py | Internal forces | Static force field, 합벡터 (combined vector) analysis |
 
 ## Usage
 
 Run the complete workflow:
 ```bash
-python complete_workflow_fixed.py
+python fluxmd.py
+```
+
+Or run individual components:
+```bash
+# Generate trajectories only
+python trajectory_generator.py
+
+# Analyze existing trajectory data
+python flux_analyzer.py
 ```
 
 Input files:
@@ -44,20 +123,38 @@ The program guides you through parameter selection.
 ## Output
 
 ```
-results/
-├── processed_flux_data_FIXED.csv          # Binding site rankings with statistics
-├── {protein}_flux_report_FIXED.txt        # Detailed analysis
-├── {protein}_trajectory_flux_analysis_FIXED.png  # Flux heatmap
-└── iteration_*/                           # Trajectory data
+flux_analysis/
+├── processed_flux_data.csv               # Binding site rankings with statistics
+├── {protein}_flux_report.txt             # Detailed statistical analysis
+├── {protein}_trajectory_flux_analysis.png # Flux heatmap visualization
+├── all_iterations_flux.csv               # Raw flux data from all iterations
+└── iteration_*/                          # Per-iteration trajectory data
+    ├── trajectory_data_*.csv             # Ligand positions per frame
+    └── flux_iteration_*_output_vectors.csv # Interaction vectors
 ```
 
-Red regions in visualizations indicate high-flux binding sites.
+### Output Data Columns
+
+**processed_flux_data.csv** contains:
+- `residue_index`, `residue_name`: Residue identification
+- `average_flux`, `std_flux`: Flux statistics across iterations
+- `inter_protein_flux`: Contribution from protein-ligand interactions
+- `intra_protein_flux`: Contribution from internal protein forces
+- `inter_intra_ratio`: Ratio indicating dominant force type
+- `p_value`, `is_significant`: Statistical significance (p < 0.05)
+- `ci_lower_95`, `ci_upper_95`: Bootstrap confidence intervals
+- `is_aromatic`: Marks residues capable of π-π stacking
+
+Red regions in visualizations indicate high-flux binding sites with statistical significance.
 
 ## PyMOL Visualization
 
+Create a PyMOL script to visualize flux values:
 ```python
-run visualize_coloraf.py
-colorflux myprotein, processed_flux_data_FIXED.csv
+# In PyMOL console
+run visualize_flux.py
+load protein.pdb
+colorflux protein, flux_analysis/processed_flux_data.csv
 ```
 
 ## Performance
@@ -69,16 +166,21 @@ colorflux myprotein, processed_flux_data_FIXED.csv
 
 ## Theory
 
-FluxMD calculates energy flux differential Φᵢ for each residue:
+FluxMD calculates energy flux differential Φᵢ for each residue using combined force analysis:
 
-Φᵢ = ⟨|Eᵢ|⟩ · Cᵢ · (1 + τᵢ)
+Φᵢ = ⟨|E̅ᵢ|⟩ · Cᵢ · (1 + τᵢ)
 
 where:
-- ⟨|Eᵢ|⟩ = mean energy magnitude from all interactions
+- E̅ᵢ = E_inter + E_intra (합벡터 - combined force vector)
+- ⟨|E̅ᵢ|⟩ = mean magnitude of combined energy vectors
 - Cᵢ = directional consistency (0-1)
 - τᵢ = temporal fluctuation rate
 
-High Φᵢ indicates energy convergence (binding site). See [bioRxiv preprint] for details.
+The method uniquely considers both:
+1. **Inter-protein forces** (E_inter): Dynamic protein-ligand interactions
+2. **Intra-protein forces** (E_intra): Static internal protein stress field
+
+High Φᵢ indicates energy convergence where internal protein forces align with ligand interactions, revealing true binding sites. This combined approach captures how proteins are "pre-stressed" to recognize specific ligands.
 
 ## Citation
 
@@ -98,6 +200,30 @@ FluxMD builds upon the protein-ligand analysis my legacy framework from <https:/
 ## License
 
 MIT License. See LICENSE file.
+
+## Troubleshooting
+
+### Common Issues
+
+1. **GPU not detected on Apple Silicon**
+   ```bash
+   pip install --upgrade torch torchvision torchaudio
+   ```
+
+2. **OpenBabel installation fails**
+   ```bash
+   # Use conda instead of pip
+   conda install -c conda-forge openbabel
+   ```
+
+3. **Memory errors on large proteins**
+   - The code automatically switches to memory-efficient algorithms for systems >50K atoms
+   - Reduce batch size if needed by modifying `batch_size` in gpu_accelerated_flux.py
+
+4. **No interactions detected**
+   - Check ligand file format (HETATM records required for PDB ligands)
+   - Verify protein and ligand are within interaction distance
+   - Try increasing approach distance parameter
 
 ## Support
 

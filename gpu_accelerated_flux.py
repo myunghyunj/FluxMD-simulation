@@ -2,7 +2,7 @@
 GPU-Accelerated Flux Calculations with Spatial Hashing Optimization
 Optimized for Apple Silicon (MPS) and NVIDIA CUDA GPUs
 FIXED v13: Enhanced aromatic detection + smooth pi-stacking energies
-
+Now with integrated intra-protein force field support
 """
 
 import torch
@@ -271,6 +271,10 @@ class GPUAcceleratedInteractionCalculator:
         self.ligand_properties = None
         self.pi_stacking_energies = None  # Store continuous pi-stacking energies
         
+        # Intra-protein force field vectors
+        self.intra_protein_vectors = None
+        self.intra_protein_vectors_gpu = None
+        
         # Initialize optimization components
         self.spatial_hash = GPUSpatialHash(self.device)
         self.octree = GPUOctree(self.device)
@@ -318,6 +322,31 @@ class GPUAcceleratedInteractionCalculator:
             'F': 1.47, 'P': 1.80, 'S': 1.80, 'CL': 1.75,
             'BR': 1.85, 'I': 1.98, 'default': 1.70
         }
+    
+    def set_intra_protein_vectors(self, intra_vectors_dict):
+        """
+        Set pre-computed intra-protein force field vectors.
+        
+        Args:
+            intra_vectors_dict: Dictionary mapping residue IDs (chain:resnum) to 3D vectors
+        """
+        self.intra_protein_vectors = intra_vectors_dict
+        
+        # Pre-allocate GPU tensor for efficient lookup
+        if self.protein_properties and intra_vectors_dict:
+            n_atoms = len(self.protein_properties['residue_ids'])
+            self.intra_protein_vectors_gpu = torch.zeros((n_atoms, 3), device=self.device, dtype=torch.float32)
+            
+            # Map vectors to atom indices
+            for i in range(n_atoms):
+                res_id = self.protein_properties['residue_ids'][i].item()
+                # Assuming chain is 'A' for simplicity - could be enhanced
+                res_key = f"A:{res_id}"
+                if res_key in intra_vectors_dict:
+                    vector = intra_vectors_dict[res_key]
+                    self.intra_protein_vectors_gpu[i] = torch.tensor(vector, device=self.device, dtype=torch.float32)
+            
+            print(f"   ✓ Loaded intra-protein vectors for {len(intra_vectors_dict)} residues onto GPU")
     
     def precompute_protein_properties_gpu(self, protein_atoms: pd.DataFrame) -> Dict[str, torch.Tensor]:
         """Pre-compute all protein properties as GPU tensors with proper H-bond detection"""
@@ -943,8 +972,18 @@ class GPUAcceleratedInteractionCalculator:
                     indices, chunk_distances
                 )
                 
-                # Calculate energies
-                energies = self._calculate_energies_gpu(chunk_distances, interaction_types)
+                # Calculate combined vectors if intra-protein forces available
+                combined_vectors = None
+                if self.intra_protein_vectors_gpu is not None:
+                    # Get coordinates for interaction pairs
+                    p_coords = protein_coords[indices[:, 0]]
+                    l_coords = ligand_coords[indices[:, 1]]
+                    _, combined_vectors = self._calculate_combined_vectors(
+                        indices[:, 0], l_coords, p_coords
+                    )
+                
+                # Calculate energies with vector modulation
+                energies = self._calculate_energies_gpu(chunk_distances, interaction_types, combined_vectors)
                 
                 # Get residue IDs
                 residue_ids = self.protein_properties['residue_ids'][indices[:, 0]]
@@ -1177,12 +1216,43 @@ class GPUAcceleratedInteractionCalculator:
         
         return pi_energies
     
+    def _calculate_combined_vectors(self,
+                                  protein_indices: torch.Tensor,
+                                  ligand_coords: torch.Tensor,
+                                  protein_coords: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Calculate combined vectors including intra-protein forces.
+        Returns: (inter_vectors, combined_vectors)
+        """
+        # Calculate inter-protein vectors (protein to ligand)
+        inter_vectors = ligand_coords - protein_coords
+        
+        # Get intra-protein vectors for the specified atoms
+        if self.intra_protein_vectors_gpu is not None:
+            intra_vectors = self.intra_protein_vectors_gpu[protein_indices]
+            # Calculate 합벡터 (combined vector)
+            combined_vectors = inter_vectors + intra_vectors
+        else:
+            # No intra-protein vectors available
+            combined_vectors = inter_vectors
+        
+        return inter_vectors, combined_vectors
+    
     def _calculate_energies_gpu(self,
                                distances: torch.Tensor,
-                               interaction_types: torch.Tensor) -> torch.Tensor:
-        """Calculate interaction energies entirely on GPU"""
+                               interaction_types: torch.Tensor,
+                               combined_vectors: torch.Tensor = None) -> torch.Tensor:
+        """Calculate interaction energies entirely on GPU with optional vector modulation"""
         # Energy parameters (in kcal/mol)
         energies = torch.zeros_like(distances)
+        
+        # If combined vectors provided, calculate vector magnitude modulation
+        vector_modulation = torch.ones_like(distances)
+        if combined_vectors is not None:
+            # Larger combined vector magnitude indicates stronger directional force
+            combined_magnitude = torch.norm(combined_vectors, dim=1)
+            # Normalize to [0.8, 1.2] range for modulation
+            vector_modulation = 0.8 + 0.4 * torch.tanh(combined_magnitude / 10.0)
         
         # Van der Waals (Lennard-Jones 6-12)
         vdw_mask = interaction_types == 0
@@ -1195,6 +1265,8 @@ class GPUAcceleratedInteractionCalculator:
             energies[vdw_mask] = 4 * epsilon * (sigma_over_r**12 - sigma_over_r**6)
             # Cap very high repulsive energies
             energies[vdw_mask] = torch.clamp(energies[vdw_mask], -10, 10)
+            # Apply vector modulation
+            energies[vdw_mask] *= vector_modulation[vdw_mask]
         
         # Hydrogen bonds - stronger energy
         hbond_mask = interaction_types == 1
@@ -1206,6 +1278,8 @@ class GPUAcceleratedInteractionCalculator:
             energies[hbond_mask] = -epsilon_hb * (5*(d0/r)**12 - 6*(d0/r)**10)
             # Cap to reasonable range
             energies[hbond_mask] = torch.clamp(energies[hbond_mask], -8.0, -0.5)
+            # Apply vector modulation - stronger effect on H-bonds
+            energies[hbond_mask] *= vector_modulation[hbond_mask] ** 1.5
         
         # Salt bridges
         salt_mask = interaction_types == 2
@@ -1216,18 +1290,24 @@ class GPUAcceleratedInteractionCalculator:
             energies[salt_mask] = -332.0 * q1q2 / (dielectric * distances[salt_mask])
             # Cap to reasonable range
             energies[salt_mask] = torch.clamp(energies[salt_mask], -10.0, -1.0)
+            # Apply vector modulation
+            energies[salt_mask] *= vector_modulation[salt_mask]
         
         # Pi-pi stacking (continuous energy from pre-calculated values)
         pi_pi_mask = interaction_types == 3
         if torch.any(pi_pi_mask) and hasattr(self, 'pi_stacking_energies'):
             # Use the pre-calculated continuous energies
             energies[pi_pi_mask] = self.pi_stacking_energies[pi_pi_mask]
+            # Apply vector modulation
+            energies[pi_pi_mask] *= vector_modulation[pi_pi_mask]
         
         # Pi-cation
         pi_cation_mask = interaction_types == 4
         if torch.any(pi_cation_mask):
             r = distances[pi_cation_mask]
             energies[pi_cation_mask] = -3.0 * torch.exp(-((r - 3.5) / 1.5)**2)
+            # Apply vector modulation
+            energies[pi_cation_mask] *= vector_modulation[pi_cation_mask]
         
         return energies
     

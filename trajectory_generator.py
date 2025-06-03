@@ -1,6 +1,7 @@
 """
 Protein-Ligand Trajectory Generator
 Advanced molecular dynamics simulation with GPU acceleration
+Now with integrated intra-protein force field calculations
 """
 
 # Set matplotlib backend before any other imports
@@ -19,6 +20,9 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import warnings
 warnings.filterwarnings('ignore')
+
+# Import intra-protein interaction calculator
+from intra_protein_interactions import IntraProteinInteractions
 
 
 class CollisionDetector:
@@ -114,7 +118,7 @@ class CollisionDetector:
 
 
 class ProteinLigandFluxAnalyzer:
-    """Main analyzer class for trajectory generation"""
+    """Main analyzer class for trajectory generation with integrated force fields"""
     
     def __init__(self):
         self.parser = PDBParser(QUIET=True)
@@ -122,6 +126,10 @@ class ProteinLigandFluxAnalyzer:
         
         # Residue properties for interaction detection
         self.init_residue_properties()
+        
+        # Intra-protein force field calculator
+        self.intra_protein_calc = None
+        self.intra_protein_vectors = None
         
     def init_residue_properties(self):
         """Initialize residue property definitions"""
@@ -586,7 +594,7 @@ class ProteinLigandFluxAnalyzer:
         }
     
     def calculate_interactions(self, protein_atoms, ligand_atoms, iteration_num):
-        """Calculate all non-covalent interactions including pi-stacking"""
+        """Calculate all non-covalent interactions including pi-stacking and intra-protein forces"""
         interactions = []
         
         # Extract coordinates
@@ -598,6 +606,9 @@ class ProteinLigandFluxAnalyzer:
         
         # Find close contacts
         close_contacts = np.where(dist_matrix < 5.0)
+        
+        # Track residue-level interactions for combined vector calculation
+        residue_interactions = {}
         
         # Process each close contact
         for p_idx, l_idx in zip(close_contacts[0], close_contacts[1]):
@@ -612,13 +623,36 @@ class ProteinLigandFluxAnalyzer:
             )
             
             if interaction_type:
-                # Calculate vector
-                vector = ligand_coords[l_idx] - protein_coords[p_idx]
+                # Calculate inter-protein (protein-ligand) vector
+                inter_vector = ligand_coords[l_idx] - protein_coords[p_idx]
+                
+                # Get residue ID
+                chain = p_atom['chain']
+                residue_num = p_atom['resSeq']
+                res_id = f"{chain}:{residue_num}"
+                
+                # Get intra-protein vector for this residue
+                intra_vector = np.zeros(3)
+                if self.intra_protein_vectors and res_id in self.intra_protein_vectors:
+                    intra_vector = self.intra_protein_vectors[res_id]
+                
+                # Calculate 합벡터 (combined vector)
+                combined_vector = inter_vector + intra_vector
+                
+                # Store residue-level vectors for aggregation
+                if res_id not in residue_interactions:
+                    residue_interactions[res_id] = {
+                        'inter_vectors': [],
+                        'intra_vector': intra_vector,
+                        'energies': []
+                    }
+                residue_interactions[res_id]['inter_vectors'].append(inter_vector)
+                residue_interactions[res_id]['energies'].append(energy)
                 
                 interaction = {
                     'frame': iteration_num,
-                    'protein_chain': p_atom['chain'],
-                    'protein_residue': p_atom['resSeq'],
+                    'protein_chain': chain,
+                    'protein_residue': residue_num,
                     'protein_resname': p_atom['resname'],
                     'protein_atom': p_atom['name'],
                     'protein_atom_id': p_atom['atom_id'],
@@ -626,14 +660,55 @@ class ProteinLigandFluxAnalyzer:
                     'distance': distance,
                     'bond_type': interaction_type,
                     'bond_energy': energy,
-                    'vector_x': vector[0],
-                    'vector_y': vector[1],
-                    'vector_z': vector[2]
+                    # Store both inter and combined vectors
+                    'inter_vector_x': inter_vector[0],
+                    'inter_vector_y': inter_vector[1],
+                    'inter_vector_z': inter_vector[2],
+                    'intra_vector_x': intra_vector[0],
+                    'intra_vector_y': intra_vector[1],
+                    'intra_vector_z': intra_vector[2],
+                    'vector_x': combined_vector[0],  # 합벡터
+                    'vector_y': combined_vector[1],
+                    'vector_z': combined_vector[2],
+                    'combined_magnitude': np.linalg.norm(combined_vector)
                 }
                 interactions.append(interaction)
         
         # Check for pi-stacking interactions
         pi_stacking_interactions = self.detect_pi_stacking(protein_atoms, ligand_atoms, iteration_num)
+        
+        # Add intra-protein vectors to pi-stacking interactions
+        for pi_interaction in pi_stacking_interactions:
+            chain = pi_interaction.get('protein_chain', 'A')
+            residue_num = pi_interaction.get('protein_residue', pi_interaction.get('protein_residue_id', 0))
+            res_id = f"{chain}:{residue_num}"
+            
+            # Get intra-protein vector
+            intra_vector = np.zeros(3)
+            if self.intra_protein_vectors and res_id in self.intra_protein_vectors:
+                intra_vector = self.intra_protein_vectors[res_id]
+            
+            # Update pi-stacking interaction with vectors
+            inter_vector = np.array([
+                pi_interaction.get('vector_x', 0),
+                pi_interaction.get('vector_y', 0),
+                pi_interaction.get('vector_z', 0)
+            ])
+            combined_vector = inter_vector + intra_vector
+            
+            pi_interaction.update({
+                'inter_vector_x': inter_vector[0],
+                'inter_vector_y': inter_vector[1],
+                'inter_vector_z': inter_vector[2],
+                'intra_vector_x': intra_vector[0],
+                'intra_vector_y': intra_vector[1],
+                'intra_vector_z': intra_vector[2],
+                'vector_x': combined_vector[0],  # 합벡터
+                'vector_y': combined_vector[1],
+                'vector_z': combined_vector[2],
+                'combined_magnitude': np.linalg.norm(combined_vector)
+            })
+        
         interactions.extend(pi_stacking_interactions)
         
         return pd.DataFrame(interactions)
@@ -943,6 +1018,14 @@ class ProteinLigandFluxAnalyzer:
         # Parse ligand (include heterogens) - use robust parser for ligands
         ligand_atoms = self.parse_structure_robust(ligand_file, parse_heterogens=True)
         
+        # Initialize intra-protein force field (only on first iteration)
+        if iteration_num == 1 and self.intra_protein_calc is None:
+            print("\n📊 Calculating intra-protein force field (one-time computation)...")
+            structure = self.parser.get_structure('protein', protein_file)
+            self.intra_protein_calc = IntraProteinInteractions(structure)
+            self.intra_protein_vectors = self.intra_protein_calc.calculate_all_interactions()
+            print(f"  ✓ Calculated static force field for {len(self.intra_protein_vectors)} residues")
+        
         # For ligands, filter to only HETATM records if mixed file
         if 'is_hetatm' in ligand_atoms.columns:
             hetatm_count = ligand_atoms['is_hetatm'].sum()
@@ -997,6 +1080,11 @@ class ProteinLigandFluxAnalyzer:
                 gpu_calc = GPUAcceleratedInteractionCalculator()
                 gpu_calc.precompute_protein_properties_gpu(protein_atoms)
                 gpu_calc.precompute_ligand_properties_gpu(ligand_atoms)
+                
+                # Pass intra-protein vectors to GPU if available
+                if self.intra_protein_vectors:
+                    gpu_calc.set_intra_protein_vectors(self.intra_protein_vectors)
+                
                 print("   ✓ GPU acceleration enabled!")
                 
                 # Process trajectory on GPU

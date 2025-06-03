@@ -187,10 +187,13 @@ class TrajectoryFluxAnalyzer:
         return df
     
     def process_iteration_files(self, directory, file_pattern, structure_file=None):
-        """Process all iteration files INCLUDING pi-stacking contributions"""
+        """Process all iteration files INCLUDING pi-stacking and intra-protein contributions"""
         residue_energy_tensors = {}
         pi_stacking_contributions = {}
         interaction_type_counts = {}
+        intra_protein_contributions = {}
+        inter_protein_contributions = {}
+        combined_vector_magnitudes = {}
         
         # Find all matching files
         files = sorted(glob.glob(os.path.join(directory, file_pattern)))
@@ -271,6 +274,24 @@ class TrajectoryFluxAnalyzer:
                         if residue_id not in residue_energy_tensors:
                             residue_energy_tensors[residue_id] = []
                         residue_energy_tensors[residue_id].append(energy_vector)
+                        
+                        # If we have separate inter/intra vectors, track them
+                        if 'inter_vector_x' in row and 'intra_vector_x' in row:
+                            inter_vec = np.array([row['inter_vector_x'], row['inter_vector_y'], row['inter_vector_z']])
+                            intra_vec = np.array([row['intra_vector_x'], row['intra_vector_y'], row['intra_vector_z']])
+                            
+                            if residue_id not in inter_protein_contributions:
+                                inter_protein_contributions[residue_id] = []
+                                intra_protein_contributions[residue_id] = []
+                            
+                            inter_protein_contributions[residue_id].append(inter_vec * energy)
+                            intra_protein_contributions[residue_id].append(intra_vec * energy)
+                        
+                        # Track combined vector magnitudes if available
+                        if 'combined_magnitude' in row:
+                            if residue_id not in combined_vector_magnitudes:
+                                combined_vector_magnitudes[residue_id] = []
+                            combined_vector_magnitudes[residue_id].append(row['combined_magnitude'])
                     
             except Exception as e:
                 print(f"   ⚠️  Error processing {file_path}: {e}")
@@ -314,7 +335,18 @@ class TrajectoryFluxAnalyzer:
             if len(tensor) >= 5:
                 filtered_tensors[res_id] = tensor
         
+        # Store inter/intra contributions for later analysis
+        self.inter_contributions = {}
+        self.intra_contributions = {}
+        
+        for res_id in inter_protein_contributions:
+            self.inter_contributions[res_id] = np.array(inter_protein_contributions[res_id])
+            self.intra_contributions[res_id] = np.array(intra_protein_contributions[res_id])
+        
         print(f"\n   Processed {len(filtered_tensors)} residues with sufficient data")
+        
+        if len(self.inter_contributions) > 0:
+            print(f"   ✓ Tracked inter/intra contributions for {len(self.inter_contributions)} residues")
         
         return filtered_tensors
     
@@ -917,6 +949,30 @@ class TrajectoryFluxAnalyzer:
                 'p_value': p_values,
                 'effect_size': effect_sizes,
                 'is_significant': is_significant
+            })
+        
+        # Add vector contribution analysis if available
+        if hasattr(self, 'inter_contributions') and hasattr(self, 'intra_contributions'):
+            inter_magnitudes = []
+            intra_magnitudes = []
+            combined_ratios = []
+            
+            for res_id in res_indices:
+                if res_id in self.inter_contributions:
+                    inter_mag = np.mean([np.linalg.norm(v) for v in self.inter_contributions[res_id]])
+                    intra_mag = np.mean([np.linalg.norm(v) for v in self.intra_contributions[res_id]])
+                    inter_magnitudes.append(inter_mag)
+                    intra_magnitudes.append(intra_mag)
+                    combined_ratios.append(inter_mag / (intra_mag + 1e-10))
+                else:
+                    inter_magnitudes.append(0.0)
+                    intra_magnitudes.append(0.0)
+                    combined_ratios.append(1.0)
+            
+            data.update({
+                'inter_protein_flux': inter_magnitudes,
+                'intra_protein_flux': intra_magnitudes,
+                'inter_intra_ratio': combined_ratios
             })
         
         # Save main data
