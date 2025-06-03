@@ -55,7 +55,7 @@ pip install networkx  # For aromatic ring detection
 
 ### Core Modules
 
-- **`fluxmd.py`** - Main entry point and workflow orchestrator
+- **`fluxmd.py`** - Main entry point and workflow (user interface)
   - Interactive command-line interface
   - File format conversions (CIF→PDB, SMILES→PDBQT)
   - Parameter configuration and validation

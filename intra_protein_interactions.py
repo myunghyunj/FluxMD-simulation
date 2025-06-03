@@ -129,6 +129,44 @@ class IntraProteinInteractions:
         coords1 = self.residue_coords[res1['id']]
         coords2 = self.residue_coords[res2['id']]
         
+        # OPTIMIZATION: Check CB-CB distance first (or CA for GLY)
+        cb1_coord = None
+        cb2_coord = None
+        
+        # Find CB (or CA for glycine) in residue 1
+        for atom in atoms1:
+            if atom.name == 'CB' or (res1['resname'] == 'GLY' and atom.name == 'CA'):
+                cb1_coord = atom.coord
+                break
+        
+        # Find CB (or CA for glycine) in residue 2
+        for atom in atoms2:
+            if atom.name == 'CB' or (res2['resname'] == 'GLY' and atom.name == 'CA'):
+                cb2_coord = atom.coord
+                break
+        
+        # If CB not found (unusual), fall back to CA
+        if cb1_coord is None:
+            for atom in atoms1:
+                if atom.name == 'CA':
+                    cb1_coord = atom.coord
+                    break
+        
+        if cb2_coord is None:
+            for atom in atoms2:
+                if atom.name == 'CA':
+                    cb2_coord = atom.coord
+                    break
+        
+        # Calculate CB-CB distance
+        if cb1_coord is not None and cb2_coord is not None:
+            cb_dist = np.linalg.norm(cb2_coord - cb1_coord)
+            
+            # Skip if CB atoms are too far apart
+            # 8.0 Å is a standard cutoff for CB-CB contacts in protein folding
+            if cb_dist > 12.0:  # Slightly relaxed for long-range interactions
+                return np.zeros(3)
+        
         # Calculate distance matrix between all atom pairs
         dist_matrix = cdist(coords1, coords2)
         
