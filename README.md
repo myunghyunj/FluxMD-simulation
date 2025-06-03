@@ -156,39 +156,70 @@ FluxMD provides two visualization approaches for PyMOL users:
 
 This method uses PyMOL's built-in rendering and grid system with the professional Berlin color palette (blue-white-red diverging colormap):
 
-#### Direct Loading Method (Simplest)
+#### Method A: Color Already Loaded Proteins (Recommended)
 
-Load and color proteins directly with their flux data:
+First load your proteins in PyMOL, then color them:
 
 ```python
-# In PyMOL console - use the simpler fload command
+# Step 1: Load your proteins in PyMOL (File > Open or use load command)
+load GPX4-wt.pdb
+load GPX4-single.pdb
+load GPX4-double.pdb
+
+# Step 2: Run the coloring script
+run pymol_colorflux.py
+
+# Step 3: Color all loaded proteins (will ask for CSV files)
+colorflux
+
+# Or color a specific protein
+colorflux GPX4-wt /path/to/wt_flux.csv
+```
+
+#### Method B: Load and Color in One Step
+
+If you prefer to load PDB and CSV together:
+
+```python
+# Use the simple fload command
 run pymol_fluxload.py
+fload /path/to/protein.pdb /path/to/flux.csv WT
 
-# Load single protein with flux coloring
-fload pdb_path csv_path [label]
-
-# Examples
-fload /Users/myunghyun/Desktop/proteins/GPX4.pdb /Users/myunghyun/Desktop/flux.csv WT
-fload protein.pdb processed_flux_data.csv
-
-# Or use the full multiflux script
+# Or use multiflux for multiple files
 run pymol_multiflux.py
 fluxload "pdb_file", "csv_file", "label"
 ```
 
+#### Multiple Protein Comparison (Grid View)
 
-**Option 1: Direct loading for multiple proteins**
+**Option 1: Color already loaded proteins (Easiest)**
 ```python
-# Load multiple proteins one by one (use commas!)
-fluxload wt.pdb, wt_flux.csv, WT
-fluxload single.pdb, single_flux.csv, Single
-fluxload double.pdb, double_flux.csv, Double
+# Load your proteins first
+load wt.pdb
+load single.pdb
+load double.pdb
+
+# Run coloring script
+run pymol_colorflux.py
+
+# Color all at once - will ask for CSV files
+colorflux
+# Grid view is automatically enabled for multiple proteins
+```
+
+**Option 2: Load and color multiple proteins**
+```python
+# Use fload for each protein
+run pymol_fluxload.py
+fload wt.pdb wt_flux.csv WT
+fload single.pdb single_flux.csv Single
+fload double.pdb double_flux.csv Double
 
 # Then enable grid view
 set grid_mode, 1
 ```
 
-**Option 2: Interactive mode for already loaded proteins**
+**Option 3: Interactive mode with multiflux**
 
 1. **Navigate to FluxMD directory in PyMOL:**
 ```python
@@ -231,10 +262,15 @@ multiflux GPX4-wt=/path/to/wt.csv,GPX4-single=/path/to/single.csv,GPX4-double=/p
 - ❌ `import pymol_multiflux` (wrong - use `run` instead)
 - ✅ `run pymol_multiflux.py` (correct!)
 
-**Available commands after running pymol_multiflux.py:**
-- `fluxload pdb, csv [, label]` - Direct loading with flux coloring (note the commas!)
-- `multiflux` - Interactive mode for already loaded proteins
-- `multiflux obj1=csv1,obj2=csv2` - Specify mappings directly
+**Available PyMOL flux visualization commands:**
+
+| Script | Command | Description |
+|--------|---------|-------------|
+| `pymol_colorflux.py` | `colorflux` | Color all loaded proteins (recommended) |
+| | `colorflux obj csv` | Color specific object |
+| `pymol_fluxload.py` | `fload pdb csv [label]` | Load PDB and color |
+| `pymol_multiflux.py` | `multiflux` | Interactive mode |
+| | `fluxload pdb, csv, label` | Load with commas |
 
 **Features of PyMOL native method:**
 - Uses PyMOL's cartoon representation
