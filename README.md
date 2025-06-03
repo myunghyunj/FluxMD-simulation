@@ -20,7 +20,7 @@ This approach reveals how proteins' internal stress fields guide ligand recognit
 ## Features
 
 - **Physics-based trajectories**: Brownian motion with molecular weight-dependent diffusion
-- **Complete interaction detection**: Hydrogen bonds, salt bridges, π-π stacking, van der Waals
+- **Complete interaction detection**: H-bonds (3.5 Å), salt bridges (4.0 Å), π-π stacking (4.5 Å), π-cation (6.0 Å), VDW (1-5 Å)
 - **Intra-protein force field**: Static internal protein forces combined with ligand interactions
 - **GPU acceleration**: 10-100x faster on Apple Silicon (NVIDIA CUDA implemented, untested)
 - **Statistical validation**: Bootstrap confidence intervals and p-values
@@ -169,11 +169,28 @@ load GPX4-double.pdb
 # Step 2: Run the coloring script
 run pymol_colorflux.py
 
-# Step 3: Color all loaded proteins (will ask for CSV files)
-colorflux
+# Step 3: Color proteins with flux data
 
-# Or color a specific protein
-colorflux GPX4-wt /path/to/wt_flux.csv
+# Option A: Manual specification (most reliable)
+colorflux GPX4-wt /full/path/to/wt_flux.csv
+colorflux GPX4-single /full/path/to/single_flux.csv
+colorflux GPX4-double /full/path/to/double_flux.csv
+
+# Option B: Batch mode for multiple proteins
+colorflux_batch GPX4-wt, /path/to/wt.csv, GPX4-single, /path/to/single.csv
+
+# Option C: Auto-detection (requires specific file placement)
+colorflux
+# This searches for CSV files in PyMOL's current directory:
+# - proteinname_flux_analysis/processed_flux_data.csv
+# - proteinname_processed_flux_data.csv  
+# - flux_analysis/processed_flux_data.csv
+```
+
+**Important**: The `colorflux` command without arguments only searches in PyMOL's current working directory. To change directory in PyMOL:
+```python
+cd /path/to/your/flux/results
+pwd  # Check current directory
 ```
 
 #### Method B: Load and Color in One Step
@@ -192,7 +209,7 @@ fluxload "pdb_file", "csv_file", "label"
 
 #### Multiple Protein Comparison (Grid View)
 
-**Option 1: Color already loaded proteins (Easiest)**
+**Option 1: Color already loaded proteins (Most Reliable)**
 ```python
 # Load your proteins first
 load wt.pdb
@@ -202,9 +219,16 @@ load double.pdb
 # Run coloring script
 run pymol_colorflux.py
 
-# Color all at once - will ask for CSV files
-colorflux
+# Manually specify CSV paths
+colorflux wt /path/to/wt_flux.csv
+colorflux single /path/to/single_flux.csv
+colorflux double /path/to/double_flux.csv
+
+# Or use batch mode
+colorflux_batch wt, /path/to/wt.csv, single, /path/to/single.csv, double, /path/to/double.csv
+
 # Grid view is automatically enabled for multiple proteins
+set grid_mode, 1
 ```
 
 **Option 2: Load and color multiple proteins**
@@ -248,7 +272,10 @@ multiflux
 
 **Alternative: Specify all CSV files at once:**
 ```python
-# Format: protein_name=csv_path,protein_name=csv_path,...
+# Format: Use quotes around the entire mapping string
+multiflux "GPX4-wt=/path/to/wt.csv,GPX4-single=/path/to/single.csv,GPX4-double=/path/to/double.csv"
+
+# Or without spaces after commas
 multiflux GPX4-wt=/path/to/wt.csv,GPX4-single=/path/to/single.csv,GPX4-double=/path/to/double.csv
 ```
 
@@ -266,10 +293,11 @@ multiflux GPX4-wt=/path/to/wt.csv,GPX4-single=/path/to/single.csv,GPX4-double=/p
 
 | Script | Command | Description |
 |--------|---------|-------------|
-| `pymol_colorflux.py` | `colorflux` | Color all loaded proteins (recommended) |
-| | `colorflux obj csv` | Color specific object |
+| `pymol_colorflux.py` | `colorflux` | Auto-detect CSV files via dialog/search |
+| | `colorflux obj csv` | Color specific object with CSV |
+| | `colorflux_batch obj1, csv1, obj2, csv2` | Batch coloring |
 | `pymol_fluxload.py` | `fload pdb csv [label]` | Load PDB and color |
-| `pymol_multiflux.py` | `multiflux` | Interactive mode |
+| `pymol_multiflux.py` | `multiflux` | Interactive mode (may have input issues) |
 | | `fluxload pdb, csv, label` | Load with commas |
 
 **Features of PyMOL native method:**
@@ -358,16 +386,23 @@ Both methods require:
 | **Best for** | Exploration & analysis | Publications & reports |
 | **Commands** | `fluxload`, `multiflux` | Command-line or interactive |
 
-### Important: Using fluxload with file paths
+### Important Notes for PyMOL Visualization
 
-PyMOL requires comma-separated arguments for custom commands. This is especially important for paths with spaces:
+1. **File paths**: Always use full absolute paths when specifying CSV files
+2. **Auto-detection**: The `colorflux` command only searches in PyMOL's current directory
+3. **Manual specification**: Most reliable method - directly specify CSV paths
+4. **Batch mode**: Use `colorflux_batch` for multiple proteins at once
 
+**Troubleshooting CSV file loading:**
 ```python
-# Correct usage - with commas:
-fluxload /path/to/protein.pdb, /path/to/flux.csv, MyLabel
+# Check PyMOL's current directory
+pwd
 
-# Will NOT work - without commas:
-fluxload /path/to/protein.pdb /path/to/flux.csv MyLabel  # ❌ ERROR
+# Change to where your CSV files are located
+cd /Users/myunghyun/Desktop/FluxMD_results
+
+# Or use full paths
+colorflux GPX4-wt /Users/myunghyun/Desktop/FluxMD_results/wt_flux.csv
 ```
 
 ## Performance
@@ -381,19 +416,67 @@ fluxload /path/to/protein.pdb /path/to/flux.csv MyLabel  # ❌ ERROR
 
 FluxMD calculates energy flux differential Φᵢ for each residue using combined force analysis:
 
-Φᵢ = ⟨|E̅ᵢ|⟩ · Cᵢ · (1 + τᵢ)
+**Φᵢ = ⟨|E̅ᵢ|⟩ · Cᵢ · (1 + τᵢ)**
 
 where:
-- E̅ᵢ = E_inter + E_intra (합벡터 - combined force vector)
-- ⟨|E̅ᵢ|⟩ = mean magnitude of combined energy vectors
-- Cᵢ = directional consistency (0-1)
-- τᵢ = temporal fluctuation rate
+- **E̅ᵢ = E_inter + E_intra** (합벡터 - combined force vector)
+- **⟨|E̅ᵢ|⟩** = mean magnitude of combined energy vectors
+- **Cᵢ** = directional consistency (0-1)
+- **τᵢ** = temporal fluctuation rate
 
 The method uniquely considers both:
 1. **Inter-protein forces** (E_inter): Dynamic protein-ligand interactions
 2. **Intra-protein forces** (E_intra): Static internal protein stress field
 
 High Φᵢ indicates energy convergence where internal protein forces align with ligand interactions, revealing true binding sites. This combined approach captures how proteins are "pre-stressed" to recognize specific ligands.
+
+### Non-Covalent Interaction Detection
+
+FluxMD detects and quantifies the following interactions with specific cutoffs and energy calculations:
+
+#### 1. Hydrogen Bonds
+- **Distance cutoff**: 3.5 Å (heavy atom to heavy atom)
+- **Angle cutoff**: >120° (D-H-A angle)
+- **Energy**: E = -2.0 · cos²(θ) · exp(-r/2.0) kcal/mol
+- **Criteria**: Donor must have H, acceptor must be N, O, or S
+
+#### 2. Salt Bridges (Ionic Interactions)
+- **Distance cutoff**: 4.0 Å (between charged groups)
+- **Energy**: E = 332.0 · q₁ · q₂ / (ε · r) kcal/mol
+- **Charged residues**: 
+  - Positive: ARG (NH1, NH2), LYS (NZ), HIS (ND1, NE2)
+  - Negative: ASP (OD1, OD2), GLU (OE1, OE2)
+
+#### 3. π-π Stacking
+- **Distance cutoff**: 4.5 Å (ring centroid to centroid)
+- **Angle ranges**:
+  - Parallel: 0-30° → E = -5.0 kcal/mol
+  - T-shaped: 60-120° → E = -4.0 kcal/mol
+  - Offset/Angled: 30-60° → E = -3.5 to -2.5 kcal/mol
+- **Aromatic residues**: PHE, TYR, TRP, HIS
+- **Energy**: Smooth interpolation based on geometry
+
+#### 4. π-Cation Interactions
+- **Distance cutoff**: 6.0 Å (cation to ring centroid)
+- **Energy**: E = -2.0 to -5.0 kcal/mol (distance-dependent)
+- **Cations**: ARG (guanidinium), LYS (NH3+), charged ligand atoms
+- **Aromatic systems**: PHE, TYR, TRP rings
+
+#### 5. Van der Waals Forces
+- **Distance range**: 1.0-5.0 Å
+- **Energy**: Lennard-Jones 6-12 potential
+  - E = 4ε[(σ/r)¹² - (σ/r)⁶]
+  - Attractive at optimal distance (σ)
+  - Repulsive at very short distances
+- **Parameters**: Atom-type specific ε and σ values
+
+### Force Field Implementation
+
+All interactions are computed using smooth, differentiable functions to ensure:
+- Continuous energy landscapes
+- Proper force vector calculations (F = -∇E)
+- Numerical stability in GPU implementations
+- Physical realism in trajectory simulations
 
 ## Citation
 

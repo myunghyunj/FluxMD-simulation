@@ -110,14 +110,45 @@ def colorflux(selection="all", csv_path=None):
         colored_count = 0
         
         for obj in objects:
-            # Ask for CSV file
-            try:
-                csv_file = cmd.get_raw_input(f"CSV file for {obj}: ")
-            except:
-                # Fallback to Python input if dialog fails
-                csv_file = input(f"CSV file for {obj}: ")
+            # Try different input methods
+            csv_file = None
             
-            csv_file = csv_file.strip()
+            # Method 1: Try PyMOL's file dialog
+            try:
+                import tkinter as tk
+                from tkinter import filedialog
+                root = tk.Tk()
+                root.withdraw()
+                csv_file = filedialog.askopenfilename(
+                    title=f"Select CSV file for {obj}",
+                    filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+                )
+                root.destroy()
+            except:
+                pass
+            
+            # Method 2: Look for common locations
+            if not csv_file:
+                common_paths = [
+                    f"{obj}_flux_analysis/processed_flux_data.csv",
+                    f"flux_analysis_{obj}/processed_flux_data.csv",
+                    f"{obj}/processed_flux_data.csv",
+                    f"{obj}_processed_flux_data.csv",
+                    "processed_flux_data.csv",
+                    f"flux_analysis/processed_flux_data.csv"
+                ]
+                
+                print(f"\n[colorflux] Looking for CSV file for {obj}...")
+                for path in common_paths:
+                    if os.path.exists(path):
+                        csv_file = path
+                        print(f"  Auto-found: {path}")
+                        break
+                
+                if not csv_file:
+                    print(f"  No CSV found for {obj} in common locations")
+                    print(f"  Skipping {obj} - use 'colorflux {obj} /path/to/csv' to color manually")
+                    continue
             
             if csv_file and os.path.exists(csv_file):
                 flux_data = _load_flux_data(csv_file)
@@ -138,11 +169,9 @@ def colorflux(selection="all", csv_path=None):
     else:
         # Color specific object
         if csv_path is None:
-            try:
-                csv_path = cmd.get_raw_input(f"CSV file for {selection}: ")
-            except:
-                csv_path = input(f"CSV file for {selection}: ")
-            csv_path = csv_path.strip()
+            print(f"[colorflux] Error: Please provide CSV path")
+            print(f"[colorflux] Usage: colorflux {selection} /path/to/csv")
+            return
         
         if not os.path.exists(csv_path):
             print(f"[colorflux] Error: CSV file not found: {csv_path}")
@@ -163,18 +192,56 @@ def cflux():
 
 cmd.extend("cflux", cflux)
 
+# Batch coloring function
+def colorflux_batch(*args):
+    """
+    Color multiple proteins in one command
+    Usage: colorflux_batch obj1, csv1, obj2, csv2, ...
+    """
+    if len(args) % 2 != 0:
+        print("[colorflux_batch] Error: Must provide pairs of object,csv")
+        return
+    
+    colors = _register_colors()
+    colored_count = 0
+    
+    for i in range(0, len(args), 2):
+        obj_name = args[i].strip()
+        csv_path = args[i+1].strip()
+        
+        if os.path.exists(csv_path):
+            flux_data = _load_flux_data(csv_path)
+            if flux_data and _color_by_flux(obj_name, flux_data, colors):
+                colored_count += 1
+        else:
+            print(f"[colorflux_batch] CSV not found: {csv_path}")
+    
+    if colored_count > 1:
+        cmd.set('grid_mode', 1)
+    
+    cmd.bg_color('white')
+    cmd.zoom('visible')
+
+cmd.extend("colorflux_batch", colorflux_batch)
+
 print("""
 PyMOL ColorFlux loaded! Works with already loaded proteins.
 
 Commands:
-  colorflux              # Color all loaded proteins (asks for CSV files)
-  colorflux object csv   # Color specific object with CSV
+  colorflux              # Auto-detect CSV files or use file dialog
+  colorflux object csv   # Color specific object with CSV  
+  colorflux_batch obj1, csv1, obj2, csv2  # Batch coloring
   cflux                  # Shortcut for colorflux
 
-Example workflow:
-  1. Load your proteins in PyMOL (File > Open or 'load' command)
-  2. Run: colorflux
-  3. Enter CSV file paths when prompted
-  
-The script will automatically set up grid view for multiple proteins.
+Example workflows:
+
+1. Auto-detection (tries file dialog, then common locations):
+   load *.pdb
+   colorflux
+
+2. Manual specification:
+   colorflux GPX4-wt /path/to/wt_flux.csv
+   
+3. Batch mode:
+   colorflux_batch GPX4-wt, wt.csv, GPX4-mut, mut.csv
 """)

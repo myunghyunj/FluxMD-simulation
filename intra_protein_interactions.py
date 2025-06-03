@@ -36,7 +36,7 @@ class IntraProteinInteractions:
         self.cutoffs = {
             'hbond': 3.5,
             'salt_bridge': 4.0,
-            'pi_pi': 7.0,
+            'pi_pi': 4.5,  # Proper pi-stacking cutoff (was 7.0)
             'pi_cation': 6.0,
             'vdw': 5.0
         }

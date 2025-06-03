@@ -244,7 +244,7 @@ class GPUAcceleratedInteractionCalculator:
         self.cutoffs = {
             'hbond': 3.5,      # H-bond distance cutoff (heavy atom to heavy atom)
             'salt_bridge': 5.0,
-            'pi_pi': 7.0,      # Increased for pi-stacking
+            'pi_pi': 4.5,  # Proper pi-stacking cutoff (was 7.0)
             'pi_cation': 6.0,
             'vdw': 5.0
         }

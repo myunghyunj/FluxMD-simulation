@@ -539,7 +539,7 @@ class ProteinLigandFluxAnalyzer:
         distance = np.linalg.norm(center2 - center1)
         
         # Check if within pi-stacking range (3.4-4.5 Å typically)
-        if distance > 7.0:
+        if distance > 4.5:  # Proper pi-stacking cutoff (was 7.0)
             return None
         
         # Calculate ring normals using SVD
