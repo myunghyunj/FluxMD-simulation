@@ -83,10 +83,11 @@ pip install networkx  # For aromatic ring detection
   - Tracks separate inter/intra-protein contributions
 
 - **`intra_protein_interactions.py`** - Static protein force field calculator
-  - Pre-computes internal protein interactions (one-time)
-  - Calculates H-bonds, salt bridges, π-π, π-cation, VDW forces
-  - Generates residue-level force vectors
-  - O(1) lookup during trajectory analysis
+  - Pre-computes complete n×n residue-residue interaction matrix
+  - Calculates all atom-atom forces between every residue pair
+  - Tests H-bonds, salt bridges, π-π, π-cation, VDW for each atom pair
+  - Generates comprehensive residue-level force vectors
+  - One-time O(n²) calculation, then O(1) lookup during trajectory
 
 ### Key Features by Module
 
@@ -96,7 +97,7 @@ pip install networkx  # For aromatic ring detection
 | trajectory_generator.py | Dynamics simulation | Brownian motion, collision detection, interaction mapping |
 | gpu_accelerated_flux.py | Performance optimization | 10-100x speedup, memory-efficient algorithms |
 | flux_analyzer.py | Results analysis | Statistical validation, visualization, reporting |
-| intra_protein_interactions.py | Internal forces | Static force field, 합벡터 (combined vector) analysis |
+| intra_protein_interactions.py | Internal forces | Complete n×n residue matrix, 합벡터 (combined vector) analysis |
 
 ## Usage
 

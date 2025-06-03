@@ -1,390 +1,383 @@
 """
-Intra-protein interaction calculator for FluxMD.
-Calculates static internal protein force vectors that remain constant during ligand approach.
-These pre-computed vectors represent the protein's internal stress field.
+Intra-protein interaction calculator for FluxMD
+Calculates complete n×n residue-residue interactions for internal protein force field
 """
 
 import numpy as np
 import pandas as pd
 from Bio.PDB import PDBParser
-from scipy.spatial import KDTree
+from scipy.spatial.distance import cdist
 from typing import Dict, List, Tuple, Optional
 import logging
+from itertools import combinations
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class IntraProteinInteractions:
-    """Calculate and store static intra-protein interaction vectors."""
+    """Calculate complete n×n residue-residue interaction matrix"""
     
-    def __init__(self, protein_structure):
+    def __init__(self, structure):
         """
         Initialize with a protein structure.
         
         Args:
-            protein_structure: BioPython Structure object
+            structure: BioPython Structure object
         """
-        self.structure = protein_structure
+        self.structure = structure
         self.residues = []
-        self.atoms = []
-        self.coords = []
-        self._extract_atoms_and_residues()
-        self.kdtree = KDTree(self.coords)
+        self.residue_atoms = {}  # residue_id -> list of atoms
+        self.residue_coords = {}  # residue_id -> array of coordinates
         
-        # Interaction parameters (matching legacy code)
+        self._extract_residues()
+        
+        # Interaction parameters
         self.cutoffs = {
             'hbond': 3.5,
             'salt_bridge': 4.0,
-            'pi_pi': 4.5,
+            'pi_pi': 7.0,
             'pi_cation': 6.0,
             'vdw': 5.0
         }
         
-        # Store pre-computed vectors for each residue
-        self.residue_vectors = {}
-        self.residue_energies = {}
+        # Atom type classifications
+        self.donor_atoms = {'N', 'O', 'S'}  # Potential H-bond donors
+        self.acceptor_atoms = {'O', 'N', 'S'}  # Potential H-bond acceptors
+        self.positive_atoms = {'N'}  # Potentially positive
+        self.negative_atoms = {'O'}  # Potentially negative
+        self.aromatic_residues = {'PHE', 'TYR', 'TRP', 'HIS'}
         
-    def _extract_atoms_and_residues(self):
-        """Extract atoms and residues from the protein structure."""
+    def _extract_residues(self):
+        """Extract all residues and their atoms"""
+        residue_count = 0
+        
         for model in self.structure:
             for chain in model:
                 for residue in chain:
-                    if residue.id[0] == ' ':  # Skip heteroatoms
-                        self.residues.append(residue)
+                    if residue.id[0] == ' ':  # Skip heterogens
+                        res_id = f"{chain.id}:{residue.id[1]}"
+                        self.residues.append({
+                            'id': res_id,
+                            'residue': residue,
+                            'resname': residue.resname,
+                            'chain': chain.id,
+                            'resnum': residue.id[1]
+                        })
+                        
+                        # Extract atoms and coordinates
+                        atoms = []
+                        coords = []
                         for atom in residue:
-                            self.atoms.append(atom)
-                            self.coords.append(atom.coord)
-        self.coords = np.array(self.coords)
-        logger.info(f"Extracted {len(self.atoms)} atoms from {len(self.residues)} residues")
+                            atoms.append(atom)
+                            coords.append(atom.coord)
+                        
+                        self.residue_atoms[res_id] = atoms
+                        self.residue_coords[res_id] = np.array(coords)
+                        residue_count += 1
         
+        logger.info(f"Extracted {residue_count} residues from protein")
+    
     def calculate_all_interactions(self) -> Dict[str, np.ndarray]:
         """
-        Calculate all intra-protein interactions and return residue-level force vectors.
-        This is the main entry point - calculates once and stores for reuse.
-        
-        Returns:
-            Dictionary mapping residue IDs to their total force vectors
+        Calculate complete n×n residue interaction matrix.
+        Returns residue-level force vectors.
         """
-        logger.info("Calculating static intra-protein interactions...")
+        n_residues = len(self.residues)
+        logger.info(f"Calculating {n_residues}×{n_residues} residue interaction matrix...")
         
-        # Initialize vectors for each residue
-        for residue in self.residues:
-            res_id = f"{residue.parent.id}:{residue.id[1]}"
-            self.residue_vectors[res_id] = np.zeros(3)
-            self.residue_energies[res_id] = 0.0
+        # Initialize result storage
+        residue_vectors = {}
+        for res in self.residues:
+            residue_vectors[res['id']] = np.zeros(3)
         
-        # Calculate each type of interaction
-        self._calculate_hydrogen_bonds()
-        self._calculate_salt_bridges()
-        self._calculate_pi_pi_stacking()
-        self._calculate_pi_cation_interactions()
-        self._calculate_van_der_waals()
-        
-        logger.info(f"Completed intra-protein calculations for {len(self.residue_vectors)} residues")
-        return self.residue_vectors
-    
-    def _calculate_hydrogen_bonds(self):
-        """Calculate hydrogen bond interactions within the protein."""
-        donors = []
-        acceptors = []
-        
-        for i, atom in enumerate(self.atoms):
-            atom_name = atom.name
-            residue = atom.parent
-            res_name = residue.resname
-            
-            # Identify donors
-            if atom_name in ['N', 'O'] or (atom_name.startswith('N') and res_name in ['ARG', 'LYS', 'HIS']):
-                donors.append((i, atom, residue))
-            
-            # Identify acceptors
-            if atom_name in ['O', 'N'] or (atom_name.startswith('O') and res_name in ['ASP', 'GLU']):
-                acceptors.append((i, atom, residue))
-        
-        # Calculate interactions
-        for donor_idx, donor_atom, donor_res in donors:
-            for acceptor_idx, acceptor_atom, acceptor_res in acceptors:
-                if donor_res == acceptor_res:
-                    continue
-                    
-                distance = np.linalg.norm(donor_atom.coord - acceptor_atom.coord)
-                if distance <= self.cutoffs['hbond']:
-                    # Calculate force vector and energy
-                    vector = acceptor_atom.coord - donor_atom.coord
-                    unit_vector = vector / distance
-                    energy = self._calculate_bond_energy('hbond', distance)
-                    force_vector = unit_vector * energy
-                    
-                    # Add to residue vectors
-                    donor_res_id = f"{donor_res.parent.id}:{donor_res.id[1]}"
-                    acceptor_res_id = f"{acceptor_res.parent.id}:{acceptor_res.id[1]}"
-                    
-                    self.residue_vectors[donor_res_id] += force_vector
-                    self.residue_vectors[acceptor_res_id] -= force_vector
-                    self.residue_energies[donor_res_id] += energy
-                    self.residue_energies[acceptor_res_id] += energy
-    
-    def _calculate_salt_bridges(self):
-        """Calculate salt bridge interactions."""
-        positive_residues = ['LYS', 'ARG', 'HIS']
-        negative_residues = ['ASP', 'GLU']
-        
-        pos_atoms = [(i, atom, atom.parent) for i, atom in enumerate(self.atoms) 
-                     if atom.parent.resname in positive_residues and atom.name in ['NZ', 'NH1', 'NH2', 'NE', 'ND1', 'NE2']]
-        neg_atoms = [(i, atom, atom.parent) for i, atom in enumerate(self.atoms)
-                     if atom.parent.resname in negative_residues and atom.name in ['OD1', 'OD2', 'OE1', 'OE2']]
-        
-        for pos_idx, pos_atom, pos_res in pos_atoms:
-            for neg_idx, neg_atom, neg_res in neg_atoms:
-                distance = np.linalg.norm(pos_atom.coord - neg_atom.coord)
-                if distance <= self.cutoffs['salt_bridge']:
-                    vector = neg_atom.coord - pos_atom.coord
-                    unit_vector = vector / distance
-                    energy = self._calculate_bond_energy('salt_bridge', distance)
-                    force_vector = unit_vector * energy
-                    
-                    pos_res_id = f"{pos_res.parent.id}:{pos_res.id[1]}"
-                    neg_res_id = f"{neg_res.parent.id}:{neg_res.id[1]}"
-                    
-                    self.residue_vectors[pos_res_id] += force_vector
-                    self.residue_vectors[neg_res_id] -= force_vector
-                    self.residue_energies[pos_res_id] += energy
-                    self.residue_energies[neg_res_id] += energy
-    
-    def _calculate_pi_pi_stacking(self):
-        """Calculate pi-pi stacking interactions between aromatic residues."""
-        aromatic_residues = ['PHE', 'TYR', 'TRP', 'HIS']
-        aromatic_atoms = {}
-        
-        # Collect aromatic residues and their ring centers
-        for residue in self.residues:
-            if residue.resname in aromatic_residues:
-                ring_atoms = []
-                if residue.resname == 'PHE':
-                    ring_atoms = ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ']
-                elif residue.resname == 'TYR':
-                    ring_atoms = ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ']
-                elif residue.resname == 'TRP':
-                    ring_atoms = ['CD2', 'CE2', 'CE3', 'CZ2', 'CZ3', 'CH2']
-                elif residue.resname == 'HIS':
-                    ring_atoms = ['CG', 'ND1', 'CD2', 'CE1', 'NE2']
-                
-                coords = []
-                for atom_name in ring_atoms:
-                    if atom_name in residue:
-                        coords.append(residue[atom_name].coord)
-                
-                if coords:
-                    center = np.mean(coords, axis=0)
-                    res_id = f"{residue.parent.id}:{residue.id[1]}"
-                    aromatic_atoms[res_id] = (center, residue)
-        
-        # Calculate interactions between aromatic rings
-        res_ids = list(aromatic_atoms.keys())
-        for i in range(len(res_ids)):
-            for j in range(i + 1, len(res_ids)):
-                center1, res1 = aromatic_atoms[res_ids[i]]
-                center2, res2 = aromatic_atoms[res_ids[j]]
-                
-                distance = np.linalg.norm(center2 - center1)
-                if distance <= self.cutoffs['pi_pi']:
-                    vector = center2 - center1
-                    unit_vector = vector / distance
-                    energy = self._calculate_bond_energy('pi_pi', distance)
-                    force_vector = unit_vector * energy
-                    
-                    self.residue_vectors[res_ids[i]] += force_vector
-                    self.residue_vectors[res_ids[j]] -= force_vector
-                    self.residue_energies[res_ids[i]] += energy
-                    self.residue_energies[res_ids[j]] += energy
-    
-    def _calculate_pi_cation_interactions(self):
-        """Calculate pi-cation interactions."""
-        aromatic_residues = ['PHE', 'TYR', 'TRP', 'HIS']
-        cation_residues = ['LYS', 'ARG', 'HIS']
-        
-        # Get aromatic centers (reuse logic from pi-pi)
-        aromatic_centers = {}
-        for residue in self.residues:
-            if residue.resname in aromatic_residues:
-                ring_atoms = []
-                if residue.resname == 'PHE':
-                    ring_atoms = ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ']
-                elif residue.resname == 'TYR':
-                    ring_atoms = ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ']
-                elif residue.resname == 'TRP':
-                    ring_atoms = ['CD2', 'CE2', 'CE3', 'CZ2', 'CZ3', 'CH2']
-                elif residue.resname == 'HIS':
-                    ring_atoms = ['CG', 'ND1', 'CD2', 'CE1', 'NE2']
-                
-                coords = []
-                for atom_name in ring_atoms:
-                    if atom_name in residue:
-                        coords.append(residue[atom_name].coord)
-                
-                if coords:
-                    center = np.mean(coords, axis=0)
-                    res_id = f"{residue.parent.id}:{residue.id[1]}"
-                    aromatic_centers[res_id] = (center, residue)
-        
-        # Get cation positions
-        cation_positions = {}
-        for residue in self.residues:
-            if residue.resname in cation_residues:
-                cation_atom = None
-                if residue.resname == 'LYS' and 'NZ' in residue:
-                    cation_atom = residue['NZ']
-                elif residue.resname == 'ARG' and 'CZ' in residue:
-                    cation_atom = residue['CZ']
-                elif residue.resname == 'HIS' and 'CE1' in residue:
-                    cation_atom = residue['CE1']
-                
-                if cation_atom is not None:
-                    res_id = f"{residue.parent.id}:{residue.id[1]}"
-                    cation_positions[res_id] = (cation_atom.coord, residue)
-        
-        # Calculate interactions
-        for aro_id, (aro_center, aro_res) in aromatic_centers.items():
-            for cat_id, (cat_pos, cat_res) in cation_positions.items():
-                if aro_res == cat_res:
-                    continue
-                    
-                distance = np.linalg.norm(cat_pos - aro_center)
-                if distance <= self.cutoffs['pi_cation']:
-                    vector = cat_pos - aro_center
-                    unit_vector = vector / distance
-                    energy = self._calculate_bond_energy('pi_cation', distance)
-                    force_vector = unit_vector * energy
-                    
-                    self.residue_vectors[aro_id] += force_vector
-                    self.residue_vectors[cat_id] -= force_vector
-                    self.residue_energies[aro_id] += energy
-                    self.residue_energies[cat_id] += energy
-    
-    def _calculate_van_der_waals(self):
-        """Calculate van der Waals interactions."""
-        # Use KDTree for efficient neighbor search
-        cutoff = self.cutoffs['vdw']
-        
-        for i, atom1 in enumerate(self.atoms):
-            # Find neighbors within cutoff
-            neighbors = self.kdtree.query_ball_point(atom1.coord, cutoff)
-            
-            for j in neighbors:
-                if i >= j:  # Avoid double counting and self-interaction
-                    continue
-                    
-                atom2 = self.atoms[j]
-                if atom1.parent == atom2.parent:  # Skip same residue
+        # Calculate all unique residue pairs
+        total_pairs = 0
+        for i, res1 in enumerate(self.residues):
+            for j, res2 in enumerate(self.residues):
+                if i >= j:  # Skip self and avoid double counting
                     continue
                 
-                distance = np.linalg.norm(atom2.coord - atom1.coord)
-                if distance > 0:
-                    vector = atom2.coord - atom1.coord
-                    unit_vector = vector / distance
-                    energy = self._calculate_bond_energy('vdw', distance)
-                    force_vector = unit_vector * energy
-                    
-                    res1_id = f"{atom1.parent.parent.id}:{atom1.parent.id[1]}"
-                    res2_id = f"{atom2.parent.parent.id}:{atom2.parent.id[1]}"
-                    
-                    self.residue_vectors[res1_id] += force_vector
-                    self.residue_vectors[res2_id] -= force_vector
-                    self.residue_energies[res1_id] += energy
-                    self.residue_energies[res2_id] += energy
+                # Calculate all interactions between these two residues
+                force_vector = self._calculate_residue_pair_interaction(res1, res2)
+                
+                # Add force to res1, subtract from res2 (Newton's third law)
+                residue_vectors[res1['id']] += force_vector
+                residue_vectors[res2['id']] -= force_vector
+                
+                total_pairs += 1
+        
+        logger.info(f"Calculated {total_pairs} unique residue pairs")
+        
+        # Calculate average force magnitudes for logging
+        magnitudes = [np.linalg.norm(v) for v in residue_vectors.values()]
+        logger.info(f"Average force magnitude: {np.mean(magnitudes):.3f}")
+        logger.info(f"Max force magnitude: {np.max(magnitudes):.3f}")
+        
+        return residue_vectors
     
-    def _calculate_bond_energy(self, bond_type: str, distance: float) -> float:
+    def _calculate_residue_pair_interaction(self, res1: dict, res2: dict) -> np.ndarray:
         """
-        Calculate bond energy based on type and distance.
-        Adapted from legacy code with updated constants.
+        Calculate total interaction force between two residues.
+        Considers all atom pairs and all interaction types.
         """
+        total_force = np.zeros(3)
+        
+        # Get atoms and coordinates
+        atoms1 = self.residue_atoms[res1['id']]
+        atoms2 = self.residue_atoms[res2['id']]
+        coords1 = self.residue_coords[res1['id']]
+        coords2 = self.residue_coords[res2['id']]
+        
+        # Calculate distance matrix between all atom pairs
+        dist_matrix = cdist(coords1, coords2)
+        
+        # Find all atom pairs within max cutoff
+        max_cutoff = max(self.cutoffs.values())
+        close_pairs = np.where(dist_matrix <= max_cutoff)
+        
+        # Process each close atom pair
+        for idx1, idx2 in zip(close_pairs[0], close_pairs[1]):
+            atom1 = atoms1[idx1]
+            atom2 = atoms2[idx2]
+            distance = dist_matrix[idx1, idx2]
+            
+            # Vector from atom1 to atom2
+            vector = coords2[idx2] - coords1[idx1]
+            if distance > 0:
+                unit_vector = vector / distance
+            else:
+                continue
+            
+            # Calculate all applicable interaction energies
+            energy = 0.0
+            
+            # 1. Van der Waals (always present)
+            if distance <= self.cutoffs['vdw']:
+                vdw_energy = self._calculate_vdw_energy(distance)
+                energy += vdw_energy
+            
+            # 2. Hydrogen bonds
+            if distance <= self.cutoffs['hbond']:
+                if self._can_form_hbond(atom1, atom2):
+                    hbond_energy = self._calculate_hbond_energy(distance)
+                    energy += hbond_energy
+            
+            # 3. Salt bridges
+            if distance <= self.cutoffs['salt_bridge']:
+                if self._can_form_salt_bridge(atom1, atom2, res1['resname'], res2['resname']):
+                    salt_energy = self._calculate_salt_bridge_energy(distance)
+                    energy += salt_energy
+            
+            # Add force contribution
+            force = unit_vector * energy
+            total_force += force
+        
+        # 4. Pi-pi stacking (residue level)
+        if res1['resname'] in self.aromatic_residues and res2['resname'] in self.aromatic_residues:
+            pi_force = self._calculate_pi_pi_force(res1, res2)
+            total_force += pi_force
+        
+        # 5. Pi-cation (residue level)
+        if self._can_form_pi_cation(res1['resname'], res2['resname']):
+            pi_cation_force = self._calculate_pi_cation_force(res1, res2)
+            total_force += pi_cation_force
+        
+        return total_force
+    
+    def _can_form_hbond(self, atom1, atom2) -> bool:
+        """Check if two atoms can form hydrogen bond"""
+        elem1 = atom1.element.upper() if atom1.element else atom1.name[0].upper()
+        elem2 = atom2.element.upper() if atom2.element else atom2.name[0].upper()
+        
+        # One must be donor-capable, other acceptor-capable
+        return ((elem1 in self.donor_atoms and elem2 in self.acceptor_atoms) or
+                (elem2 in self.donor_atoms and elem1 in self.acceptor_atoms))
+    
+    def _can_form_salt_bridge(self, atom1, atom2, resname1: str, resname2: str) -> bool:
+        """Check if atoms can form salt bridge"""
+        positive_residues = {'ARG', 'LYS', 'HIS'}
+        negative_residues = {'ASP', 'GLU'}
+        
+        return ((resname1 in positive_residues and resname2 in negative_residues) or
+                (resname2 in positive_residues and resname1 in negative_residues))
+    
+    def _can_form_pi_cation(self, resname1: str, resname2: str) -> bool:
+        """Check if residues can form pi-cation interaction"""
+        cation_residues = {'ARG', 'LYS', 'HIS'}
+        
+        return ((resname1 in self.aromatic_residues and resname2 in cation_residues) or
+                (resname2 in self.aromatic_residues and resname1 in cation_residues))
+    
+    def _calculate_vdw_energy(self, distance: float) -> float:
+        """Lennard-Jones potential"""
         if distance == 0:
             return 0
-        
-        # Energy constants (in kcal/mol units for consistency)
-        if bond_type in ['hbond', 'salt_bridge']:
-            # Electrostatic: E = k * q1 * q2 / r
-            k_electrostatic = 332.0  # kcal*Å/mol*e^2
-            charge = 1.0 if bond_type == 'salt_bridge' else 0.5
-            energy = k_electrostatic * charge * charge / distance
-        elif bond_type in ['pi_pi', 'pi_cation']:
-            # Pi interactions: E = A / r^2
-            A = 2.0 if bond_type == 'pi_pi' else 3.0  # kcal*Å^2/mol
-            energy = A / (distance ** 2)
-        else:  # vdw
-            # Lennard-Jones: E = 4ε[(σ/r)^12 - (σ/r)^6], simplified
-            epsilon = 0.1  # kcal/mol
-            sigma = 3.5    # Å
-            r6 = (sigma / distance) ** 6
-            energy = 4 * epsilon * (r6 * r6 - r6)
-        
-        return abs(energy)  # Return magnitude for force calculations
+        sigma = 3.5  # Å
+        epsilon = 0.1  # kcal/mol
+        r6 = (sigma / distance) ** 6
+        energy = 4 * epsilon * (r6 * r6 - r6)
+        return max(min(energy, 10.0), -10.0)  # Cap to reasonable range
     
-    def get_residue_vector(self, chain_id: str, residue_number: int) -> np.ndarray:
-        """
-        Get the pre-computed force vector for a specific residue.
+    def _calculate_hbond_energy(self, distance: float) -> float:
+        """Hydrogen bond energy"""
+        if distance == 0:
+            return 0
+        optimal = 2.8  # Å
+        strength = -5.0  # kcal/mol
+        return strength * np.exp(-((distance - optimal) / 0.5) ** 2)
+    
+    def _calculate_salt_bridge_energy(self, distance: float) -> float:
+        """Electrostatic energy for salt bridge"""
+        if distance == 0:
+            return 0
+        k_electrostatic = 332.0  # kcal*Å/mol*e^2
+        return -k_electrostatic / distance  # Attractive
+    
+    def _calculate_pi_pi_force(self, res1: dict, res2: dict) -> np.ndarray:
+        """Calculate pi-pi stacking force between aromatic residues"""
+        # Get aromatic ring centers
+        aromatic_atoms = {
+            'PHE': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],
+            'TYR': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],
+            'TRP': ['CD2', 'CE2', 'CE3', 'CZ2', 'CZ3', 'CH2'],
+            'HIS': ['CG', 'ND1', 'CD2', 'CE1', 'NE2']
+        }
         
-        Args:
-            chain_id: Chain identifier
-            residue_number: Residue number
+        # Get ring atoms for each residue
+        ring1_coords = []
+        ring2_coords = []
+        
+        for atom in self.residue_atoms[res1['id']]:
+            if atom.name in aromatic_atoms.get(res1['resname'], []):
+                ring1_coords.append(atom.coord)
+        
+        for atom in self.residue_atoms[res2['id']]:
+            if atom.name in aromatic_atoms.get(res2['resname'], []):
+                ring2_coords.append(atom.coord)
+        
+        if len(ring1_coords) < 3 or len(ring2_coords) < 3:
+            return np.zeros(3)
+        
+        # Calculate ring centers
+        center1 = np.mean(ring1_coords, axis=0)
+        center2 = np.mean(ring2_coords, axis=0)
+        
+        # Distance and vector
+        vector = center2 - center1
+        distance = np.linalg.norm(vector)
+        
+        if distance > self.cutoffs['pi_pi'] or distance == 0:
+            return np.zeros(3)
+        
+        unit_vector = vector / distance
+        
+        # Pi-pi energy (simplified)
+        optimal_distance = 3.8  # Å
+        strength = -4.0  # kcal/mol
+        energy = strength * np.exp(-((distance - optimal_distance) / 1.5) ** 2)
+        
+        return unit_vector * energy
+    
+    def _calculate_pi_cation_force(self, res1: dict, res2: dict) -> np.ndarray:
+        """Calculate pi-cation interaction force"""
+        # Determine which is aromatic and which is cationic
+        if res1['resname'] in self.aromatic_residues:
+            aro_res = res1
+            cat_res = res2
+        else:
+            aro_res = res2
+            cat_res = res1
+        
+        # Get aromatic center (same as pi-pi)
+        aromatic_atoms = {
+            'PHE': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],
+            'TYR': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],
+            'TRP': ['CD2', 'CE2', 'CE3', 'CZ2', 'CZ3', 'CH2'],
+            'HIS': ['CG', 'ND1', 'CD2', 'CE1', 'NE2']
+        }
+        
+        ring_coords = []
+        for atom in self.residue_atoms[aro_res['id']]:
+            if atom.name in aromatic_atoms.get(aro_res['resname'], []):
+                ring_coords.append(atom.coord)
+        
+        if len(ring_coords) < 3:
+            return np.zeros(3)
+        
+        aromatic_center = np.mean(ring_coords, axis=0)
+        
+        # Get cation position
+        cation_atoms = {
+            'ARG': 'CZ',
+            'LYS': 'NZ',
+            'HIS': 'CE1'
+        }
+        
+        cation_pos = None
+        for atom in self.residue_atoms[cat_res['id']]:
+            if atom.name == cation_atoms.get(cat_res['resname'], ''):
+                cation_pos = atom.coord
+                break
+        
+        if cation_pos is None:
+            return np.zeros(3)
+        
+        # Calculate force
+        vector = cation_pos - aromatic_center
+        distance = np.linalg.norm(vector)
+        
+        if distance > self.cutoffs['pi_cation'] or distance == 0:
+            return np.zeros(3)
+        
+        unit_vector = vector / distance
+        
+        # Pi-cation energy
+        optimal_distance = 3.5  # Å
+        strength = -3.0  # kcal/mol
+        energy = strength * np.exp(-((distance - optimal_distance) / 1.5) ** 2)
+        
+        # Return force on aromatic residue
+        if res1['resname'] in self.aromatic_residues:
+            return unit_vector * energy
+        else:
+            return -unit_vector * energy
+    
+    def save_to_file(self, filename: str, residue_vectors: Dict[str, np.ndarray] = None):
+        """Save pre-computed vectors to file for later use"""
+        if residue_vectors is None:
+            residue_vectors = getattr(self, 'residue_vectors', {})
             
-        Returns:
-            3D force vector for the residue
-        """
-        res_id = f"{chain_id}:{residue_number}"
-        return self.residue_vectors.get(res_id, np.zeros(3))
-    
-    def get_all_vectors(self) -> Dict[str, np.ndarray]:
-        """Return all pre-computed residue vectors."""
-        return self.residue_vectors.copy()
-    
-    def get_residue_energies(self) -> Dict[str, float]:
-        """Return total interaction energies for each residue."""
-        return self.residue_energies.copy()
-    
-    def save_to_file(self, filename: str):
-        """Save pre-computed vectors to file for later use."""
         data = []
-        for res_id, vector in self.residue_vectors.items():
+        for res in self.residues:
+            res_id = res['id']
+            vector = residue_vectors.get(res_id, np.zeros(3))
             chain, resnum = res_id.split(':')
+            
             data.append({
                 'chain': chain,
                 'residue': int(resnum),
+                'resname': res['resname'],
                 'vector_x': vector[0],
                 'vector_y': vector[1],
                 'vector_z': vector[2],
-                'total_energy': self.residue_energies.get(res_id, 0.0)
+                'magnitude': np.linalg.norm(vector)
             })
         
         df = pd.DataFrame(data)
+        df = df.sort_values(['chain', 'residue'])
         df.to_csv(filename, index=False)
         logger.info(f"Saved intra-protein vectors to {filename}")
-    
-    def load_from_file(self, filename: str):
-        """Load pre-computed vectors from file."""
-        df = pd.read_csv(filename)
-        self.residue_vectors = {}
-        self.residue_energies = {}
-        
-        for _, row in df.iterrows():
-            res_id = f"{row['chain']}:{int(row['residue'])}"
-            vector = np.array([row['vector_x'], row['vector_y'], row['vector_z']])
-            self.residue_vectors[res_id] = vector
-            self.residue_energies[res_id] = row['total_energy']
-        
-        logger.info(f"Loaded intra-protein vectors from {filename}")
 
 
 def parse_protein_robust(protein_file):
-    """Parse protein structure with fallback mechanisms."""
+    """Parse protein structure with fallback mechanisms"""
     parser = PDBParser(QUIET=True)
     structure = parser.get_structure('protein', protein_file)
     return structure
 
 
 if __name__ == "__main__":
-    # Example usage
     import sys
     
     if len(sys.argv) > 1:
@@ -395,13 +388,11 @@ if __name__ == "__main__":
         
         # Calculate intra-protein interactions
         intra_calc = IntraProteinInteractions(structure)
-        vectors = intra_calc.calculate_all_interactions()
+        residue_vectors = intra_calc.calculate_all_interactions()
         
         # Save results
         output_file = protein_file.replace('.pdb', '_intra_vectors.csv')
-        intra_calc.save_to_file(output_file)
+        intra_calc.save_to_file(output_file, residue_vectors)
         
-        print(f"Calculated intra-protein vectors for {len(vectors)} residues")
+        print(f"Calculated intra-protein vectors for {len(intra_calc.residues)} residues")
         print(f"Results saved to {output_file}")
-    else:
-        print("Usage: python intra_protein_interactions.py protein.pdb")
