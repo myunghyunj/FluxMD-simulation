@@ -23,6 +23,7 @@ warnings.filterwarnings('ignore')
 
 # Import intra-protein interaction calculator
 from intra_protein_interactions import IntraProteinInteractions
+from protonation_aware_interactions import calculate_interactions_with_protonation
 
 
 class CollisionDetector:
@@ -120,9 +121,10 @@ class CollisionDetector:
 class ProteinLigandFluxAnalyzer:
     """Main analyzer class for trajectory generation with integrated force fields"""
     
-    def __init__(self):
+    def __init__(self, physiological_pH=7.4):
         self.parser = PDBParser(QUIET=True)
         self.collision_detector = CollisionDetector()
+        self.physiological_pH = physiological_pH  # pH for protonation calculations
         
         # Residue properties for interaction detection
         self.init_residue_properties()
@@ -594,87 +596,52 @@ class ProteinLigandFluxAnalyzer:
         }
     
     def calculate_interactions(self, protein_atoms, ligand_atoms, iteration_num):
-        """Calculate all non-covalent interactions including pi-stacking and intra-protein forces"""
-        interactions = []
+        """Calculate all non-covalent interactions with protonation awareness"""
+        # Use protonation-aware interaction detection
+        interactions_df = calculate_interactions_with_protonation(
+            protein_atoms, ligand_atoms, 
+            pH=self.physiological_pH, 
+            iteration_num=iteration_num
+        )
         
-        # Extract coordinates
-        protein_coords = protein_atoms[['x', 'y', 'z']].values
-        ligand_coords = ligand_atoms[['x', 'y', 'z']].values
-        
-        # Calculate distance matrix
-        dist_matrix = cdist(protein_coords, ligand_coords)
-        
-        # Find close contacts
-        close_contacts = np.where(dist_matrix < 5.0)
-        
-        # Track residue-level interactions for combined vector calculation
-        residue_interactions = {}
-        
-        # Process each close contact
-        for p_idx, l_idx in zip(close_contacts[0], close_contacts[1]):
-            distance = dist_matrix[p_idx, l_idx]
+        # Add intra-protein vectors to interactions
+        if not interactions_df.empty and self.intra_protein_vectors:
+            # Create residue IDs
+            interactions_df['res_id'] = interactions_df['protein_chain'].astype(str) + ':' + interactions_df['protein_residue'].astype(str)
             
-            p_atom = protein_atoms.iloc[p_idx]
-            l_atom = ligand_atoms.iloc[l_idx]
+            # Initialize vector columns
+            interactions_df['intra_vector_x'] = 0.0
+            interactions_df['intra_vector_y'] = 0.0
+            interactions_df['intra_vector_z'] = 0.0
             
-            # Determine interaction type
-            interaction_type, energy = self.determine_interaction_type(
-                p_atom, l_atom, distance
+            # Add intra-protein vectors
+            for idx, row in interactions_df.iterrows():
+                res_id = row['res_id']
+                if res_id in self.intra_protein_vectors:
+                    intra_vector = self.intra_protein_vectors[res_id]
+                    interactions_df.at[idx, 'intra_vector_x'] = intra_vector[0]
+                    interactions_df.at[idx, 'intra_vector_y'] = intra_vector[1]
+                    interactions_df.at[idx, 'intra_vector_z'] = intra_vector[2]
+            
+            # Calculate inter-protein vectors (already in the df as vector_x/y/z)
+            interactions_df['inter_vector_x'] = interactions_df['vector_x']
+            interactions_df['inter_vector_y'] = interactions_df['vector_y']
+            interactions_df['inter_vector_z'] = interactions_df['vector_z']
+            
+            # Calculate combined vectors (합벡터)
+            interactions_df['vector_x'] = interactions_df['inter_vector_x'] + interactions_df['intra_vector_x']
+            interactions_df['vector_y'] = interactions_df['inter_vector_y'] + interactions_df['intra_vector_y']
+            interactions_df['vector_z'] = interactions_df['inter_vector_z'] + interactions_df['intra_vector_z']
+            interactions_df['combined_magnitude'] = np.sqrt(
+                interactions_df['vector_x']**2 + 
+                interactions_df['vector_y']**2 + 
+                interactions_df['vector_z']**2
             )
             
-            if interaction_type:
-                # Calculate inter-protein (protein-ligand) vector
-                inter_vector = ligand_coords[l_idx] - protein_coords[p_idx]
-                
-                # Get residue ID
-                chain = p_atom['chain']
-                residue_num = p_atom['resSeq']
-                res_id = f"{chain}:{residue_num}"
-                
-                # Get intra-protein vector for this residue
-                intra_vector = np.zeros(3)
-                if self.intra_protein_vectors and res_id in self.intra_protein_vectors:
-                    intra_vector = self.intra_protein_vectors[res_id]
-                
-                # Calculate 합벡터 (combined vector)
-                combined_vector = inter_vector + intra_vector
-                
-                # Store residue-level vectors for aggregation
-                if res_id not in residue_interactions:
-                    residue_interactions[res_id] = {
-                        'inter_vectors': [],
-                        'intra_vector': intra_vector,
-                        'energies': []
-                    }
-                residue_interactions[res_id]['inter_vectors'].append(inter_vector)
-                residue_interactions[res_id]['energies'].append(energy)
-                
-                interaction = {
-                    'frame': iteration_num,
-                    'protein_chain': chain,
-                    'protein_residue': residue_num,
-                    'protein_resname': p_atom['resname'],
-                    'protein_atom': p_atom['name'],
-                    'protein_atom_id': p_atom['atom_id'],
-                    'ligand_atom': l_atom['name'],
-                    'distance': distance,
-                    'bond_type': interaction_type,
-                    'bond_energy': energy,
-                    # Store both inter and combined vectors
-                    'inter_vector_x': inter_vector[0],
-                    'inter_vector_y': inter_vector[1],
-                    'inter_vector_z': inter_vector[2],
-                    'intra_vector_x': intra_vector[0],
-                    'intra_vector_y': intra_vector[1],
-                    'intra_vector_z': intra_vector[2],
-                    'vector_x': combined_vector[0],  # 합벡터
-                    'vector_y': combined_vector[1],
-                    'vector_z': combined_vector[2],
-                    'combined_magnitude': np.linalg.norm(combined_vector)
-                }
-                interactions.append(interaction)
+            # Drop temporary column
+            interactions_df = interactions_df.drop(columns=['res_id'])
         
-        # Check for pi-stacking interactions
+        # Check for pi-stacking interactions (these are not yet protonation-aware)
         pi_stacking_interactions = self.detect_pi_stacking(protein_atoms, ligand_atoms, iteration_num)
         
         # Add intra-protein vectors to pi-stacking interactions
@@ -706,12 +673,16 @@ class ProteinLigandFluxAnalyzer:
                 'vector_x': combined_vector[0],  # 합벡터
                 'vector_y': combined_vector[1],
                 'vector_z': combined_vector[2],
-                'combined_magnitude': np.linalg.norm(combined_vector)
+                'combined_magnitude': np.linalg.norm(combined_vector),
+                'pH': self.physiological_pH  # Add pH info
             })
         
-        interactions.extend(pi_stacking_interactions)
+        # Convert pi-stacking to dataframe and concatenate
+        if pi_stacking_interactions:
+            pi_df = pd.DataFrame(pi_stacking_interactions)
+            interactions_df = pd.concat([interactions_df, pi_df], ignore_index=True)
         
-        return pd.DataFrame(interactions)
+        return interactions_df
     
     def detect_pi_stacking(self, protein_atoms, ligand_atoms, iteration_num):
         """Detect pi-stacking interactions between aromatic systems"""
@@ -1022,7 +993,7 @@ class ProteinLigandFluxAnalyzer:
         if iteration_num == 1 and self.intra_protein_calc is None:
             print("\n📊 Calculating intra-protein force field (one-time computation)...")
             structure = self.parser.get_structure('protein', protein_file)
-            self.intra_protein_calc = IntraProteinInteractions(structure)
+            self.intra_protein_calc = IntraProteinInteractions(structure, physiological_pH=self.physiological_pH)
             self.intra_protein_vectors = self.intra_protein_calc.calculate_all_interactions()
             print(f"  ✓ Calculated static force field for {len(self.intra_protein_vectors)} residues")
         
@@ -1077,7 +1048,7 @@ class ProteinLigandFluxAnalyzer:
             try:
                 from gpu_accelerated_flux import GPUAcceleratedInteractionCalculator
                 
-                gpu_calc = GPUAcceleratedInteractionCalculator()
+                gpu_calc = GPUAcceleratedInteractionCalculator(physiological_pH=self.physiological_pH)
                 gpu_calc.precompute_protein_properties_gpu(protein_atoms)
                 gpu_calc.precompute_ligand_properties_gpu(ligand_atoms)
                 

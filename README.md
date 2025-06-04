@@ -20,6 +20,7 @@ This approach reveals how proteins' internal stress fields guide ligand recognit
 ## Features
 
 - **Physics-based trajectories**: Brownian motion with molecular weight-dependent diffusion
+- **Protonation-aware interactions**: pH-dependent H-bond donor/acceptor assignment and charge states
 - **Complete interaction detection**: H-bonds (3.5 Å), salt bridges (4.0 Å), π-π stacking (4.5 Å), π-cation (6.0 Å), VDW (1-5 Å)
 - **Intra-protein force field**: Static internal protein forces combined with ligand interactions
 - **GPU acceleration**: 10-100x faster on Apple Silicon (NVIDIA CUDA implemented, untested)
@@ -65,7 +66,7 @@ pip install networkx  # For aromatic ring detection
   - Brownian motion with molecular weight-dependent diffusion
   - Collision detection using VDW radii and KD-trees
   - Surface point generation for approach angles
-  - Interaction detection (H-bonds, salt bridges, π-π stacking, etc.)
+  - Protonation-aware interaction detection (pH-dependent)
   - Integrated intra-protein force field calculations
 
 - **`gpu_accelerated_flux.py`** - GPU acceleration module
@@ -85,19 +86,27 @@ pip install networkx  # For aromatic ring detection
 - **`intra_protein_interactions.py`** - Static protein force field calculator
   - Pre-computes complete n×n residue-residue interaction matrix
   - Calculates all atom-atom forces between every residue pair
+  - pH-dependent H-bond and salt bridge detection
   - Tests H-bonds, salt bridges, π-π, π-cation, VDW for each atom pair
   - Generates comprehensive residue-level force vectors
   - One-time O(n²) calculation, then O(1) lookup during trajectory
+
+- **`protonation_aware_interactions.py`** - pH-dependent interaction detection
+  - Henderson-Hasselbalch calculations for ionizable residues
+  - Dynamic donor/acceptor role assignment based on pH
+  - Handles ASP, GLU, HIS, LYS, ARG, CYS, TYR protonation states
+  - Critical for accurate H-bond and salt bridge detection
 
 ### Key Features by Module
 
 | Module | Primary Function | Key Features |
 |--------|-----------------|--------------|
-| fluxmd.py | Workflow control | File conversions, GPU detection, user interface |
-| trajectory_generator.py | Dynamics simulation | Brownian motion, collision detection, interaction mapping |
+| fluxmd.py | Workflow control | File conversions, GPU detection, pH input, user interface |
+| trajectory_generator.py | Dynamics simulation | Brownian motion, collision detection, pH-aware interactions |
 | gpu_accelerated_flux.py | Performance optimization | 10-100x speedup, memory-efficient algorithms |
-| flux_analyzer.py | Results analysis | Statistical validation, visualization, reporting |
-| intra_protein_interactions.py | Internal forces | Complete n×n residue matrix, 합벡터 (combined vector) analysis |
+| flux_analyzer.py | Results analysis | Statistical validation, visualization, pH tracking |
+| intra_protein_interactions.py | Internal forces | Complete n×n residue matrix, pH-aware interactions |
+| protonation_aware_interactions.py | pH-dependent states | Henderson-Hasselbalch, donor/acceptor assignment |
 
 ## Usage
 
@@ -119,7 +128,10 @@ Input files:
 - Protein: PDB, CIF, or mmCIF
 - Ligand: PDB, PDBQT, or SMILES
 
-The program guides you through parameter selection.
+The program guides you through parameter selection, including:
+- pH for protonation state calculations (default 7.4)
+- Number of iterations and approach angles
+- GPU acceleration options
 
 ## Output
 
@@ -145,6 +157,7 @@ flux_analysis/
 - `p_value`, `is_significant`: Statistical significance (p < 0.05)
 - `ci_lower_95`, `ci_upper_95`: Bootstrap confidence intervals
 - `is_aromatic`: Marks residues capable of π-π stacking
+- `analysis_pH`: pH used for protonation state calculations
 
 Red regions in visualizations indicate high-flux binding sites with statistical significance.
 
@@ -207,18 +220,26 @@ High Φᵢ indicates energy convergence where internal protein forces align with
 
 FluxMD detects and quantifies the following interactions with specific cutoffs and energy calculations:
 
-#### 1. Hydrogen Bonds
+#### 1. Hydrogen Bonds (pH-Dependent)
 - **Distance cutoff**: 3.5 Å (heavy atom to heavy atom)
 - **Angle cutoff**: >120° (D-H-A angle)
 - **Energy**: E = -2.0 · cos²(θ) · exp(-r/2.0) kcal/mol
-- **Criteria**: Donor must have H, acceptor must be N, O, or S
+- **pH-aware criteria**: 
+  - Donor/acceptor roles determined by protonation state
+  - HIS, ASP, GLU can be donors when protonated
+  - LYS, ARG can be acceptors when deprotonated
+  - Bidirectional checking for all potential H-bonds
 
-#### 2. Salt Bridges (Ionic Interactions)
+#### 2. Salt Bridges (pH-Dependent Ionic Interactions)
 - **Distance cutoff**: 4.0 Å (between charged groups)
 - **Energy**: E = 332.0 · q₁ · q₂ / (ε · r) kcal/mol
-- **Charged residues**: 
-  - Positive: ARG (NH1, NH2), LYS (NZ), HIS (ND1, NE2)
-  - Negative: ASP (OD1, OD2), GLU (OE1, OE2)
+- **pH-dependent charges**: 
+  - ASP (pKa 3.9): Negative at pH > 4.9
+  - GLU (pKa 4.2): Negative at pH > 5.2
+  - HIS (pKa 6.0): Positive at pH < 5.0, neutral/positive near pH 7.4
+  - LYS (pKa 10.5): Positive at pH < 11.5
+  - ARG (pKa 12.5): Always positive at physiological pH
+  - CYS (pKa 8.3): Can be negative at pH > 9.3
 
 #### 3. π-π Stacking
 - **Distance cutoff**: 4.5 Å (ring centroid to centroid)
@@ -250,6 +271,15 @@ All interactions are computed using smooth, differentiable functions to ensure:
 - Proper force vector calculations (F = -∇E)
 - Numerical stability in GPU implementations
 - Physical realism in trajectory simulations
+- pH-dependent protonation states via Henderson-Hasselbalch equation
+
+### Protonation State Calculations
+
+FluxMD uses the Henderson-Hasselbalch equation to determine protonation states:
+- For acids: fraction_protonated = 1 / (1 + 10^(pH - pKa))
+- For bases: fraction_protonated = 1 / (1 + 10^(pKa - pH))
+- Atoms with >50% protonation probability are assigned their protonated state
+- This affects H-bond donor/acceptor roles and formal charges
 
 ## Citation
 

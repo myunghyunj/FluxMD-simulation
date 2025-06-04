@@ -211,6 +211,11 @@ def run_complete_workflow():
     n_approaches = int(input("Number of approaches (default 5): ") or "5")
     approach_distance = float(input("Approach distance in Å (default 2.5): ") or "2.5")
     starting_distance = float(input("Starting distance in Å (default 15): ") or "15")
+    
+    # Add pH parameter
+    physiological_pH = float(input("pH for protonation state calculation (default 7.4): ") or "7.4")
+    print(f"  Using pH {physiological_pH} for H-bond donor/acceptor assignment")
+    
     output_dir = input("Output directory (default 'flux_analysis'): ").strip() or "flux_analysis"
     
     # Check for GPU
@@ -238,6 +243,7 @@ def run_complete_workflow():
     print(f"  Total steps: {n_steps * n_approaches} per iteration")
     print(f"  Starting: {starting_distance} Å from surface")
     print(f"  Final: ~{starting_distance - (n_approaches-1)*approach_distance:.1f} Å")
+    print(f"  pH: {physiological_pH} (affects H-bond donors/acceptors)")
     print(f"  GPU: {'ENABLED' if use_gpu else 'DISABLED'}")
     print(f"  Parallel: {'ENABLED' if n_jobs != 1 else 'DISABLED'}")
     
@@ -249,7 +255,7 @@ def run_complete_workflow():
     # Step 3: Run trajectory analysis
     print_banner("STEP 3: TRAJECTORY GENERATION")
     
-    trajectory_analyzer = ProteinLigandFluxAnalyzer()
+    trajectory_analyzer = ProteinLigandFluxAnalyzer(physiological_pH=physiological_pH)
     
     start_time = datetime.now()
     
@@ -286,6 +292,7 @@ def run_complete_workflow():
     print_banner("STEP 4: FLUX DIFFERENTIAL ANALYSIS")
     
     flux_analyzer = TrajectoryFluxAnalyzer()
+    flux_analyzer.physiological_pH = physiological_pH  # Pass pH information
     
     try:
         # Process flux differentials

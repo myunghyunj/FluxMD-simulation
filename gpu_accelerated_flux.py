@@ -14,6 +14,7 @@ import warnings
 import time
 from dataclasses import dataclass
 from scipy.spatial import cKDTree
+from protonation_aware_interactions import ProtonationAwareInteractionDetector
 
 # Check for Apple Silicon and available backends
 def get_device():
@@ -237,8 +238,10 @@ class GPUAcceleratedInteractionCalculator:
     Validated with ML162 and other drug-like molecules
     """
     
-    def __init__(self, device=None):
+    def __init__(self, device=None, physiological_pH=7.4):
         self.device = device or get_device()
+        self.physiological_pH = physiological_pH  # pH for protonation calculations
+        self.protonation_detector = ProtonationAwareInteractionDetector(pH=self.physiological_pH)
         
         # Interaction cutoffs in Angstroms
         self.cutoffs = {
@@ -349,10 +352,11 @@ class GPUAcceleratedInteractionCalculator:
             print(f"   ✓ Loaded intra-protein vectors for {len(intra_vectors_dict)} residues onto GPU")
     
     def precompute_protein_properties_gpu(self, protein_atoms: pd.DataFrame) -> Dict[str, torch.Tensor]:
-        """Pre-compute all protein properties as GPU tensors with proper H-bond detection"""
+        """Pre-compute all protein properties as GPU tensors with protonation awareness"""
         n_atoms = len(protein_atoms)
         
         print(f"   Pre-computing properties for {n_atoms} protein atoms on {self.device}...")
+        print(f"   Using pH {self.physiological_pH} for protonation state calculations")
         
         # Initialize property tensors on GPU
         properties = {
@@ -411,30 +415,37 @@ class GPUAcceleratedInteractionCalculator:
             if element == 'H':
                 properties['is_hydrogen'][i] = True
             
-            # Properties for heavy atoms
-            # Donors - specific atoms that have H attached
-            if res_name in self.DONORS and atom_name in self.DONORS[res_name]:
+            # Use protonation-aware detection for donor/acceptor assignment
+            atom_dict = {
+                'resname': res_name,
+                'name': atom_name,
+                'element': element,
+                'x': atom['x'],
+                'y': atom['y'],
+                'z': atom['z'],
+                'chain': atom.get('chain', 'A'),
+                'resSeq': res_id,
+                'atom_id': i
+            }
+            
+            # Get protonation-aware properties
+            pa_atom = self.protonation_detector.determine_atom_protonation(atom_dict)
+            
+            # Set donor/acceptor based on protonation state
+            if pa_atom.can_donate_hbond:
                 properties['is_donor'][i] = True
-            
-            # Backbone N can be donor if it has H
-            if atom_name == 'N' and element == 'N':
-                # Will check for H later
-                properties['heavy_atom_bonds'][i] = {'element': 'N', 'has_H': False}
-            
-            # Acceptors
-            if res_name in self.ACCEPTORS and atom_name in self.ACCEPTORS[res_name]:
+            if pa_atom.can_accept_hbond:
                 properties['is_acceptor'][i] = True
             
-            # Backbone O is always acceptor
-            if atom_name == 'O' and element == 'O':
-                properties['is_acceptor'][i] = True
-            
-            # Charged groups
-            if res_name in self.CHARGED_POS and atom_name in self.CHARGED_POS[res_name]:
+            # Set charges based on protonation state
+            if pa_atom.formal_charge > 0:
                 properties['is_charged_pos'][i] = True
-            
-            if res_name in self.CHARGED_NEG and atom_name in self.CHARGED_NEG[res_name]:
+            elif pa_atom.formal_charge < 0:
                 properties['is_charged_neg'][i] = True
+            
+            # Backbone N can be donor if it has H (will check later)
+            if atom_name == 'N' and element == 'N':
+                properties['heavy_atom_bonds'][i] = {'element': 'N', 'has_H': False}
             
             # Track aromatic atoms for ring calculation
             if res_name in self.AROMATIC and atom_name in self.AROMATIC[res_name]:
@@ -568,10 +579,11 @@ class GPUAcceleratedInteractionCalculator:
         return properties
     
     def precompute_ligand_properties_gpu(self, ligand_atoms: pd.DataFrame) -> Dict[str, torch.Tensor]:
-        """Pre-compute ligand properties on GPU with proper H-bond detection"""
+        """Pre-compute ligand properties on GPU with protonation awareness"""
         n_atoms = len(ligand_atoms)
         
         print(f"   Pre-computing properties for {n_atoms} ligand atoms on {self.device}...")
+        print(f"   Using pH {self.physiological_pH} for ligand protonation states")
         
         # Initialize property tensors
         properties = {
@@ -627,16 +639,29 @@ class GPUAcceleratedInteractionCalculator:
             if element == 'H':
                 properties['is_hydrogen'][i] = True
             
-            # H-bond acceptors: electronegative atoms with lone pairs
-            if element in ['O', 'N', 'S', 'F']:
+            # Use protonation-aware detection for ligand atoms
+            atom_dict = {
+                'name': atom_name,
+                'element': element,
+                'x': atom['x'],
+                'y': atom['y'],
+                'z': atom['z'],
+                'atom_id': i
+            }
+            
+            # Get protonation-aware properties
+            pa_atom = self.protonation_detector.process_ligand_atom(atom_dict)
+            
+            # Set donor/acceptor based on protonation state
+            if pa_atom.can_donate_hbond:
+                properties['has_donor'][i] = True
+            if pa_atom.can_accept_hbond:
                 properties['has_acceptor'][i] = True
             
-            # Charged detection
-            if element == 'N':
-                # Check if it's likely quaternary (4 bonds) or protonated
+            # Set charges based on protonation state
+            if pa_atom.formal_charge > 0:
                 properties['likely_pos'][i] = True
-            elif element == 'O':
-                # Could be negative if deprotonated (carboxylate, phenolate)
+            elif pa_atom.formal_charge < 0:
                 properties['likely_neg'][i] = True
             
             # Aromatic detection - include O and S for heteroaromatic systems

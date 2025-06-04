@@ -10,6 +10,7 @@ from scipy.spatial.distance import cdist
 from typing import Dict, List, Tuple, Optional
 import logging
 from itertools import combinations
+from protonation_aware_interactions import ProtonationAwareInteractionDetector
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,14 +19,17 @@ logger = logging.getLogger(__name__)
 class IntraProteinInteractions:
     """Calculate complete n×n residue-residue interaction matrix"""
     
-    def __init__(self, structure):
+    def __init__(self, structure, physiological_pH=7.4):
         """
         Initialize with a protein structure.
         
         Args:
             structure: BioPython Structure object
+            physiological_pH: pH for protonation state calculations (default 7.4)
         """
         self.structure = structure
+        self.physiological_pH = physiological_pH
+        self.protonation_detector = ProtonationAwareInteractionDetector(pH=self.physiological_pH)
         self.residues = []
         self.residue_atoms = {}  # residue_id -> list of atoms
         self.residue_coords = {}  # residue_id -> array of coordinates
@@ -224,21 +228,69 @@ class IntraProteinInteractions:
         return total_force
     
     def _can_form_hbond(self, atom1, atom2) -> bool:
-        """Check if two atoms can form hydrogen bond"""
-        elem1 = atom1.element.upper() if atom1.element else atom1.name[0].upper()
-        elem2 = atom2.element.upper() if atom2.element else atom2.name[0].upper()
+        """Check if two atoms can form hydrogen bond using protonation awareness"""
+        # Create atom dictionaries for protonation detector
+        atom1_dict = {
+            'resname': atom1.get_parent().get_resname(),
+            'name': atom1.name,
+            'element': atom1.element.upper() if atom1.element else atom1.name[0].upper(),
+            'x': atom1.coord[0],
+            'y': atom1.coord[1],
+            'z': atom1.coord[2],
+            'chain': atom1.get_parent().get_parent().get_id(),
+            'resSeq': atom1.get_parent().get_id()[1]
+        }
         
-        # One must be donor-capable, other acceptor-capable
-        return ((elem1 in self.donor_atoms and elem2 in self.acceptor_atoms) or
-                (elem2 in self.donor_atoms and elem1 in self.acceptor_atoms))
+        atom2_dict = {
+            'resname': atom2.get_parent().get_resname(),
+            'name': atom2.name,
+            'element': atom2.element.upper() if atom2.element else atom2.name[0].upper(),
+            'x': atom2.coord[0],
+            'y': atom2.coord[1],
+            'z': atom2.coord[2],
+            'chain': atom2.get_parent().get_parent().get_id(),
+            'resSeq': atom2.get_parent().get_id()[1]
+        }
+        
+        # Get protonation-aware properties
+        pa_atom1 = self.protonation_detector.determine_atom_protonation(atom1_dict)
+        pa_atom2 = self.protonation_detector.determine_atom_protonation(atom2_dict)
+        
+        # Check both directions for H-bond capability
+        return ((pa_atom1.can_donate_hbond and pa_atom2.can_accept_hbond) or
+                (pa_atom2.can_donate_hbond and pa_atom1.can_accept_hbond))
     
     def _can_form_salt_bridge(self, atom1, atom2, resname1: str, resname2: str) -> bool:
-        """Check if atoms can form salt bridge"""
-        positive_residues = {'ARG', 'LYS', 'HIS'}
-        negative_residues = {'ASP', 'GLU'}
+        """Check if atoms can form salt bridge using protonation-aware charge states"""
+        # Create atom dictionaries for protonation detector
+        atom1_dict = {
+            'resname': resname1,
+            'name': atom1.name,
+            'element': atom1.element.upper() if atom1.element else atom1.name[0].upper(),
+            'x': atom1.coord[0],
+            'y': atom1.coord[1],
+            'z': atom1.coord[2],
+            'chain': atom1.get_parent().get_parent().get_id(),
+            'resSeq': atom1.get_parent().get_id()[1]
+        }
         
-        return ((resname1 in positive_residues and resname2 in negative_residues) or
-                (resname2 in positive_residues and resname1 in negative_residues))
+        atom2_dict = {
+            'resname': resname2,
+            'name': atom2.name,
+            'element': atom2.element.upper() if atom2.element else atom2.name[0].upper(),
+            'x': atom2.coord[0],
+            'y': atom2.coord[1],
+            'z': atom2.coord[2],
+            'chain': atom2.get_parent().get_parent().get_id(),
+            'resSeq': atom2.get_parent().get_id()[1]
+        }
+        
+        # Get protonation-aware properties
+        pa_atom1 = self.protonation_detector.determine_atom_protonation(atom1_dict)
+        pa_atom2 = self.protonation_detector.determine_atom_protonation(atom2_dict)
+        
+        # Check for opposite charges
+        return pa_atom1.formal_charge * pa_atom2.formal_charge < 0
     
     def _can_form_pi_cation(self, resname1: str, resname2: str) -> bool:
         """Check if residues can form pi-cation interaction"""

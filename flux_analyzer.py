@@ -808,6 +808,8 @@ class TrajectoryFluxAnalyzer:
             f.write("="*80 + "\n")
             f.write(f"TRAJECTORY FLUX ANALYSIS REPORT\n")
             f.write(f"Protein: {protein_name}\n")
+            if hasattr(self, 'physiological_pH'):
+                f.write(f"Analysis pH: {self.physiological_pH}\n")
             f.write("="*80 + "\n\n")
             
             # Overall statistics
@@ -919,6 +921,10 @@ class TrajectoryFluxAnalyzer:
             'average_derivative': flux_data['avg_derivatives'],
             'is_aromatic': is_aromatic
         }
+        
+        # Add pH information if available
+        if hasattr(self, 'physiological_pH'):
+            data['analysis_pH'] = [self.physiological_pH] * len(res_indices)
         
         # Add bootstrap statistics if available
         if 'bootstrap_stats' in flux_data:
