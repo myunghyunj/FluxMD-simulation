@@ -2,8 +2,8 @@
 """
 visualize_multiflux.py - Create multi-panel flux visualization using matplotlib
 
-This creates a grid visualization of multiple proteins colored by flux values,
-useful when PyMOL is not available or for publication figures.
+This creates a grid visualization of multiple proteins colored by flux values
+for publication-quality figures.
 
 Usage:
     # Interactive mode (recommended)
@@ -16,7 +16,6 @@ Usage:
         --labels "WT" "Mutant-1" "Mutant-2" \\
         --output comparison.png
 
-Note: Can be run from PyMOL's Python interpreter if matplotlib is available.
 """
 
 import os
@@ -186,7 +185,7 @@ def plot_ribbon_protein(ax, pdb_file, flux_df, title):
             
             # Create ribbon segments with width
             segments.append([ribbon_path[i], ribbon_path[i+1]])
-            # Use Berlin colormap for consistency with PyMOL version
+            # Use Berlin colormap for professional visualization
             colors.append(berlin_cmap(flux_interp[i]))
         
         # Plot ribbon as line collection
@@ -401,16 +400,7 @@ def main():
 
 
 if __name__ == "__main__":
-    # Check if running from PyMOL
     import sys
-    try:
-        import pymol
-        in_pymol = True
-        print("\n🔔 Running from PyMOL console!")
-        print("Note: This will create a separate matplotlib window.")
-        print("For native PyMOL visualization, use 'run pymol_multiflux.py' instead.\n")
-    except ImportError:
-        in_pymol = False
     
     # Check if called with arguments or interactively
     if len(sys.argv) == 1:

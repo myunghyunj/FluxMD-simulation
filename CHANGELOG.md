@@ -16,7 +16,4 @@
 - Recommend implementing proper graph-based ring detection in future versions
 
 ### Visualization Updates
-- Added `pymol_colorflux.py` for coloring already loaded proteins
-- Added `pymol_fluxload.py` for simple PDB + CSV loading
-- Updated `pymol_multiflux.py` with Berlin color palette
-- Added `visualize_multiflux.py` with Berlin colormap for consistency
+- Added `visualize_multiflux.py` with Berlin colormap for publication-quality figures
