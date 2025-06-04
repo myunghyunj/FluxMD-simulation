@@ -205,7 +205,7 @@ def run_complete_workflow():
     # Step 2: Set parameters
     print("\nSTEP 2: PARAMETERS")
     print("-" * 40)
-    print("\nPRESS ENTERS FOR REPRODUCIBLE RESULTS")
+    print("\nPress Enter for reproducible results")
     n_steps = int(input("Steps per approach (default 1000): ") or "100")
     n_iterations = int(input("Number of iterations (default 50): ") or "100")
     n_approaches = int(input("Number of approaches (default 5): ") or "5")
