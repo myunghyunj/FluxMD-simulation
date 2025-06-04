@@ -52,7 +52,7 @@ class CollisionDetector:
             self.protein_radii.append(radius)
         
         self.protein_radii = np.array(self.protein_radii)
-        
+
     def check_collision(self, ligand_coords, ligand_atoms):
         """Check if ligand configuration has collision with protein"""
         for i, (coord, atom) in enumerate(zip(ligand_coords, ligand_atoms.itertuples())):
@@ -76,6 +76,18 @@ class CollisionDetector:
                     return True  # Collision detected
         
         return False  # No collision
+
+    def nearest_surface_distance(self, point):
+        """Return distance from point to closest protein atom surface and index."""
+        dist, idx = self.protein_tree.query(point)
+        return dist - self.protein_radii[idx], idx
+
+    def surface_normal(self, point):
+        """Approximate outward normal from nearest protein atom."""
+        dist, idx = self.protein_tree.query(point)
+        if dist == 0:
+            return np.array([1.0, 0.0, 0.0])
+        return (point - self.protein_tree.data[idx]) / dist
     
     def find_collision_free_path(self, start_pos, end_pos, ligand_coords, ligand_atoms,
                                 n_steps=10, max_attempts=5):
@@ -310,39 +322,23 @@ class ProteinLigandFluxAnalyzer:
         trajectory = [start_pos]
         times = [0]
         current_pos = start_pos.copy()
-        
-        # Calculate target distance (distance from start to protein center)
-        # Note: protein center should be passed as parameter, using origin as approximation
-        protein_center = np.array([0.0, 0.0, 0.0])  # Protein is centered at origin
-        target_distance = np.linalg.norm(start_pos - protein_center)
-        
-        # Gradually decrease target distance toward end position
-        end_distance = np.linalg.norm(end_pos - protein_center)
-        
+
+        start_surface, _ = self.collision_detector.nearest_surface_distance(start_pos)
+        end_surface, _ = self.collision_detector.nearest_surface_distance(end_pos)
+
         for i in range(1, n_steps):
             # Generate random displacement (true Brownian motion)
             displacement = np.random.randn(3) * step_size
-            
+
             # Propose new position
             proposed_pos = current_pos + displacement
-            
-            # Calculate target distance for this step (linear interpolation)
+
             t = i / n_steps
-            current_target_distance = (1 - t) * target_distance + t * end_distance
-            
-            # Adjust position to maintain approximate target distance
-            direction_to_proposed = proposed_pos - protein_center
-            distance_to_proposed = np.linalg.norm(direction_to_proposed)
-            
-            if distance_to_proposed > 0:
-                # Blend physics-based position with distance constraint
-                direction_unit = direction_to_proposed / distance_to_proposed
-                distance_constrained_pos = protein_center + direction_unit * current_target_distance
-                
-                # Weighted combination (favor physics, but respect constraints)
-                final_pos = 0.7 * proposed_pos + 0.3 * distance_constrained_pos
-            else:
-                final_pos = proposed_pos
+            current_target_distance = (1 - t) * start_surface + t * end_surface
+
+            current_d, _ = self.collision_detector.nearest_surface_distance(proposed_pos)
+            normal = self.collision_detector.surface_normal(proposed_pos)
+            final_pos = proposed_pos - normal * (current_d - current_target_distance)
             
             # Check collision
             test_coords = ligand_coords + (final_pos - ligand_coords.mean(axis=0))
@@ -365,7 +361,70 @@ class ProteinLigandFluxAnalyzer:
             times.append(i * dt)
         
         return np.array(trajectory)
-    
+
+    def generate_brownian_trajectory_with_drift(self, start_pos, end_pos, n_steps,
+                                                ligand_coords, ligand_atoms,
+                                                molecular_weight=300.0, dt=40,
+                                                drift_strength=1.0):
+        """Generate Brownian trajectory with a weak drift toward the target.
+
+        This variant adds a simple positional drift that nudges the ligand
+        toward ``end_pos`` while still respecting random Brownian motion and
+        collision checks.  It provides more realistic diffusion by modelling a
+        soft pulling force rather than strictly enforcing a fixed radial
+        distance.
+
+        Args:
+            start_pos: Starting position
+            end_pos: Target end position
+            n_steps: Number of trajectory steps
+            ligand_coords: Ligand atom coordinates
+            ligand_atoms: Ligand atom data
+            molecular_weight: Molecular weight for diffusion calculation
+            dt: Time step (fs)
+            drift_strength: Scale factor for the positional drift
+        """
+        D = self.calculate_diffusion_coefficient(molecular_weight)
+        step_size = np.sqrt(2 * D * dt)
+
+        trajectory = [start_pos]
+        current_pos = start_pos.copy()
+
+        start_surface, _ = self.collision_detector.nearest_surface_distance(start_pos)
+        end_surface, _ = self.collision_detector.nearest_surface_distance(end_pos)
+
+        for i in range(1, n_steps):
+            displacement = np.random.randn(3) * step_size
+
+            # Linear drift toward the end position
+            drift = (end_pos - current_pos) / max(n_steps - i + 1, 1)
+            proposed_pos = current_pos + displacement + drift * drift_strength
+            t = i / n_steps
+            current_target_distance = (1 - t) * start_surface + t * end_surface
+
+            current_d, _ = self.collision_detector.nearest_surface_distance(proposed_pos)
+            normal = self.collision_detector.surface_normal(proposed_pos)
+            final_pos = proposed_pos - normal * (current_d - current_target_distance)
+
+            test_coords = ligand_coords + (final_pos - ligand_coords.mean(axis=0))
+
+            if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                current_pos = final_pos
+            else:
+                for scale in [0.5, 0.25, 0.1]:
+                    smaller_pos = current_pos + displacement * scale + drift * drift_strength
+                    smaller_d, _ = self.collision_detector.nearest_surface_distance(smaller_pos)
+                    normal = self.collision_detector.surface_normal(smaller_pos)
+                    adjusted_pos = smaller_pos - normal * (smaller_d - current_target_distance)
+                    test_coords = ligand_coords + (adjusted_pos - ligand_coords.mean(axis=0))
+                    if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                        current_pos = adjusted_pos
+                        break
+
+            trajectory.append(current_pos.copy())
+
+        return np.array(trajectory)
+
     def parse_structure(self, pdb_file, parse_heterogens=True):
         """Parse PDB structure and extract atom information
         
@@ -976,7 +1035,8 @@ class ProteinLigandFluxAnalyzer:
     
     def run_single_iteration(self, protein_file, ligand_file, output_dir,
                            n_steps, n_approaches, approach_distance,
-                           starting_distance, iteration_num, use_gpu=False):
+                           starting_distance, iteration_num,
+                           use_gpu=False, use_drift=False):
         """Run a single iteration of the flux analysis"""
         print(f"\n{'='*60}")
         print(f"Iteration {iteration_num}")
@@ -1035,6 +1095,16 @@ class ProteinLigandFluxAnalyzer:
             n_points=n_approaches * 10,  # Generate extra points
             buffer_distance=starting_distance
         )
+
+        # Refine points so actual distance matches user input
+        refined_points = []
+        for p in surface_points:
+            dist, idx = self.collision_detector.protein_tree.query(p)
+            normal = (p - self.collision_detector.protein_tree.data[idx]) / (dist + 1e-8)
+            current_d = dist - self.collision_detector.protein_radii[idx]
+            delta = current_d - starting_distance
+            refined_points.append(p - normal * delta)
+        surface_points = np.array(refined_points)
         
         # Create iteration directory
         iter_dir = os.path.join(output_dir, f'iteration_{iteration_num}')
@@ -1073,10 +1143,17 @@ class ProteinLigandFluxAnalyzer:
                     
                     # Generate sub-trajectory with molecular weight
                     ligand_mw = self.calculate_molecular_weight(ligand_atoms)
-                    sub_trajectory = self.generate_brownian_trajectory_collision_free(
-                        start_point, end_point, n_steps // n_approaches,
-                        ligand_coords, ligand_atoms, molecular_weight=ligand_mw
-                    )
+                    if use_drift:
+                        sub_trajectory = self.generate_brownian_trajectory_with_drift(
+                            start_point, end_point, n_steps // n_approaches,
+                            ligand_coords, ligand_atoms,
+                            molecular_weight=ligand_mw)
+                    else:
+                        sub_trajectory = self.generate_brownian_trajectory_collision_free(
+                            start_point, end_point, n_steps // n_approaches,
+                            ligand_coords, ligand_atoms,
+                            molecular_weight=ligand_mw
+                        )
                     trajectory.extend(sub_trajectory)
                 
                 trajectory = np.array(trajectory)
@@ -1179,10 +1256,18 @@ class ProteinLigandFluxAnalyzer:
                 
                 # Generate collision-free Brownian trajectory with molecular weight
                 ligand_mw = self.calculate_molecular_weight(ligand_atoms)
-                trajectory = self.generate_brownian_trajectory_collision_free(
-                    start_point, end_point, n_steps, ligand_coords, ligand_atoms,
-                    molecular_weight=ligand_mw
-                )
+                if use_drift:
+                    trajectory = self.generate_brownian_trajectory_with_drift(
+                        start_point, end_point, n_steps,
+                        ligand_coords, ligand_atoms,
+                        molecular_weight=ligand_mw
+                    )
+                else:
+                    trajectory = self.generate_brownian_trajectory_collision_free(
+                        start_point, end_point, n_steps,
+                        ligand_coords, ligand_atoms,
+                        molecular_weight=ligand_mw
+                    )
                 
                 all_trajectories.append(trajectory)
                 
@@ -1347,7 +1432,7 @@ class ProteinLigandFluxAnalyzer:
     def run_complete_analysis(self, protein_file, ligand_file, output_dir,
                             n_steps=100, n_iterations=3, n_approaches=5,
                             approach_distance=2.5, starting_distance=35,
-                            n_jobs=-1, use_gpu=False):
+                            n_jobs=-1, use_gpu=False, use_drift=False):
         """Run complete flux analysis with multiple iterations"""
         print("\n" + "="*80)
         print("PROTEIN-LIGAND FLUX ANALYSIS")
@@ -1360,6 +1445,7 @@ class ProteinLigandFluxAnalyzer:
         print(f"Number of approaches: {n_approaches}")
         print(f"Starting distance: {starting_distance} Å")
         print(f"GPU acceleration: {'ENABLED' if use_gpu else 'DISABLED'}")
+        print(f"Drift toward target: {'ON' if use_drift else 'OFF'}")
         print("="*80)
         
         # Create output directory
@@ -1384,7 +1470,8 @@ class ProteinLigandFluxAnalyzer:
             interactions = self.run_single_iteration(
                 protein_file, ligand_file, output_dir,
                 n_steps, n_approaches, approach_distance,
-                starting_distance, iteration + 1, use_gpu
+                starting_distance, iteration + 1,
+                use_gpu=use_gpu, use_drift=use_drift
             )
             
             iteration_time = time.time() - iteration_start

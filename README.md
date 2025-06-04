@@ -20,6 +20,7 @@ This approach reveals how proteins' internal stress fields guide ligand recognit
 ## Features
 
 - **Physics-based trajectories**: Brownian motion with molecular weight-dependent diffusion (40 fs time step)
+- **Optional drift**: weak force pulling the ligand toward the target site for more realistic motion
 - **Protonation-aware interactions**: pH-dependent H-bond donor/acceptor assignment and charge states
 - **Complete interaction detection**: H-bonds (3.5 Å), salt bridges (4.0 Å), π-π stacking (4.5 Å), π-cation (6.0 Å), VDW (1-5 Å)
 - **Intra-protein force field**: Static internal protein forces combined with ligand interactions
