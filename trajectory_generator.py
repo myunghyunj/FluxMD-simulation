@@ -280,10 +280,10 @@ class ProteinLigandFluxAnalyzer:
         # Diffusion coefficient (m²/s)
         D = (k_B * temp_kelvin) / (6 * np.pi * viscosity * radius_meter)
         
-        # Convert to Å²/ps
-        D_angstrom_ps = D * 1e20 / 1e12
+        # Convert to Å²/fs (femtoseconds)
+        D_angstrom_fs = D * 1e20 / 1e15  # 1e20 for m² to Å², 1e15 for s to fs
         
-        return D_angstrom_ps
+        return D_angstrom_fs
     
     def generate_brownian_trajectory_collision_free(self, start_pos, end_pos, n_steps,
                                                   ligand_coords, ligand_atoms,
@@ -298,7 +298,7 @@ class ProteinLigandFluxAnalyzer:
             ligand_coords: Ligand atom coordinates
             ligand_atoms: Ligand atom data
             molecular_weight: Molecular weight for diffusion calculation
-            dt: Time step (ps)
+            dt: Time step (fs)
         """
         # Calculate diffusion coefficient
         D = self.calculate_diffusion_coefficient(molecular_weight)
