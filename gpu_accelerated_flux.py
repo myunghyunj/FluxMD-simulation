@@ -165,7 +165,7 @@ class HierarchicalDistanceFilter:
             (3.5, ['hbond']),           # Stage 1: Very close
             (5.0, ['vdw', 'salt']),     # Stage 2: Medium
             (6.0, ['pi_cation']),       # Stage 3: Extended
-            (7.0, ['pi_stacking'])      # Stage 4: Long range
+            (4.5, ['pi_stacking'])      # Stage 4: Long range
         ]
     
     def filter_pairs_hierarchical(self, coords1, coords2, interaction_detector):
