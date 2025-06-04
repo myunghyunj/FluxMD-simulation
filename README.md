@@ -121,6 +121,10 @@ Input files:
 
 The program guides you through parameter selection.
 
+Press Enter at each prompt to accept the defaults (1000 steps per approach,
+50 iterations, 5 approaches, 2.5 Å approach distance, and a 15 Å starting
+distance).
+
 ## Output
 
 ```
