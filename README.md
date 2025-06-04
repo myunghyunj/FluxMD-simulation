@@ -22,7 +22,8 @@ This approach reveals how proteins' internal stress fields guide ligand recognit
 - **Physics-based trajectories**: Brownian motion with molecular weight-dependent diffusion
 - **Complete interaction detection**: H-bonds (3.5 Å), salt bridges (4.0 Å), π-π stacking (4.5 Å), π-cation (6.0 Å), VDW (1-5 Å)
 - **Intra-protein force field**: Static internal protein forces combined with ligand interactions
-- **GPU acceleration**: 10-100x faster on Apple Silicon (NVIDIA CUDA implemented, untested)
+- **GPU acceleration**: estimated 10-100x faster on Apple Silicon; actual speedups may vary (CUDA support implemented but untested)
+> **Note:** CUDA acceleration has not been validated and performance results are hypothetical.
 - **Statistical validation**: Bootstrap confidence intervals and p-values
 
 ## Installation
