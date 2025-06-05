@@ -1367,8 +1367,25 @@ class GPUAcceleratedInteractionCalculator:
         results = []
         
         print(f"\n   Processing {len(trajectory)} frames with {n_rotations} rotations each...")
+        total_operations = len(trajectory) * n_rotations
+        print(f"   Total operations: {total_operations:,}")
+        
+        import time
+        start_time = time.time()
         
         for frame_idx, position in enumerate(trajectory_gpu):
+            # Progress reporting with ETA
+            if frame_idx % 10 == 0 and frame_idx > 0:
+                elapsed = time.time() - start_time
+                frames_per_sec = frame_idx / elapsed
+                remaining_frames = len(trajectory) - frame_idx
+                eta_seconds = remaining_frames / frames_per_sec if frames_per_sec > 0 else 0
+                
+                print(f"   Frame {frame_idx}/{len(trajectory)} "
+                      f"({frame_idx/len(trajectory)*100:.1f}%) "
+                      f"Speed: {frames_per_sec:.1f} fps, "
+                      f"ETA: {eta_seconds/60:.1f} min")
+            
             frame_results = {
                 'frame': frame_idx,
                 'position': position.cpu().numpy(),
@@ -1425,12 +1442,16 @@ class GPUAcceleratedInteractionCalculator:
                     frame_results['best_interactions'] = interactions
             
             results.append(frame_results)
-            
-            # Progress update
-            if (frame_idx + 1) % 10 == 0:
-                print(f"\r   Processed {frame_idx + 1}/{len(trajectory)} frames...", end="")
+        
+        # Final timing report
+        total_time = time.time() - start_time
+        avg_time_per_frame = total_time / len(trajectory)
+        avg_time_per_operation = total_time / total_operations
         
         print(f"\n   ✓ GPU processing complete!")
+        print(f"   Total time: {total_time:.1f} seconds")
+        print(f"   Average: {avg_time_per_frame:.3f} sec/frame, {avg_time_per_operation:.3f} sec/operation")
+        print(f"   Speed: {len(trajectory)/total_time:.1f} frames/sec")
         
         return results
     

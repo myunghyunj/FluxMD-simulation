@@ -1251,37 +1251,59 @@ class ProteinLigandFluxAnalyzer:
                 
                 print("   ✓ GPU acceleration enabled!")
                 
-                # Process trajectory on GPU
-                # Select random surface points for approaches
-                approach_indices = np.random.choice(len(surface_points), n_approaches, replace=False)
-                selected_points = surface_points[approach_indices]
+                # Generate cocoon trajectories for GPU processing
+                print("\n🌀 Generating cocoon trajectories for GPU...")
+                all_gpu_trajectories = []
                 
-                # Generate full trajectory
-                trajectory = []
-                for i, start_point in enumerate(selected_points):
-                    # End point closer to protein
-                    direction = protein_coords.mean(axis=0) - start_point
-                    direction = direction / np.linalg.norm(direction)
-                    end_point = start_point + direction * (starting_distance - approach_distance * (n_approaches - 1))
+                for approach_idx in range(n_approaches):
+                    # Calculate target distance for this approach
+                    current_distance = starting_distance - approach_idx * approach_distance
+                    print(f"   Approach {approach_idx + 1}/{n_approaches}: {current_distance:.1f} Å")
                     
-                    # Generate sub-trajectory with molecular weight
-                    ligand_mw = self.calculate_molecular_weight(ligand_atoms)
-                    sub_trajectory = self.generate_brownian_trajectory_collision_free(
-                        start_point, end_point, n_steps // n_approaches,
-                        ligand_coords, ligand_atoms, molecular_weight=ligand_mw
+                    # Generate cocoon trajectory
+                    trajectory, times = self.generate_cocoon_trajectory(
+                        ca_coords, ligand_coords, ligand_atoms,
+                        ligand_mw, n_steps=n_steps, dt=40,
+                        target_distance=current_distance
                     )
-                    trajectory.extend(sub_trajectory)
+                    all_gpu_trajectories.append(trajectory)
+                    
+                    # Save trajectory data
+                    traj_df = pd.DataFrame({
+                        'step': range(len(trajectory)),
+                        'time_ps': times / 1000,
+                        'x': trajectory[:, 0],
+                        'y': trajectory[:, 1], 
+                        'z': trajectory[:, 2],
+                        'approach': approach_idx,
+                        'distance': current_distance
+                    })
+                    traj_path = os.path.join(iter_dir, f'trajectory_iteration_{iteration_num}_approach_{approach_idx}.csv')
+                    traj_df.to_csv(traj_path, index=False)
                 
-                trajectory = np.array(trajectory)
+                # Combine all trajectories for GPU processing
+                full_trajectory = np.vstack(all_gpu_trajectories)
                 
-                # Process on GPU
+                # Process on GPU with rotations
+                print(f"\n   Starting GPU processing of {len(full_trajectory)} frames...")
+                print(f"   This may take a few minutes for large systems...")
+                
                 gpu_results = gpu_calc.process_trajectory_batch_gpu(
-                    trajectory, ligand_coords, n_rotations=36
+                    full_trajectory, ligand_coords, n_rotations=n_rotations
                 )
                 
                 # Convert GPU results to interaction dataframe
+                # Group results by approach
+                frames_per_approach = n_steps
+                approach_interactions_gpu = [[] for _ in range(n_approaches)]
+                
                 for frame_idx, frame_result in enumerate(gpu_results):
                     if 'best_interactions' in frame_result and frame_result['best_interactions'] is not None:
+                        # Determine which approach this frame belongs to
+                        approach_idx = frame_idx // frames_per_approach
+                        if approach_idx >= n_approaches:
+                            approach_idx = n_approaches - 1
+                        
                         # Extract InteractionResult from GPU
                         gpu_interaction = frame_result['best_interactions']
                         
@@ -1329,17 +1351,28 @@ class ProteinLigandFluxAnalyzer:
                                 'vector_x': vector[0],
                                 'vector_y': vector[1],
                                 'vector_z': vector[2],
-                                'protein_residue_id': gpu_interaction.residue_ids[i].item()
+                                'protein_residue_id': gpu_interaction.residue_ids[i].item(),
+                                'rotation': frame_idx % n_rotations,  # Add rotation info
+                                'rotation_angle': (frame_idx % n_rotations) * (360 / n_rotations)
                             }
                             interaction_data.append(interaction_dict)
                         
                         if interaction_data:
-                            interactions_df = pd.DataFrame(interaction_data)
-                            all_interactions.append(interactions_df)
+                            approach_interactions_gpu[approach_idx].extend(interaction_data)
+                
+                # Save interactions for each approach
+                for approach_idx, approach_data in enumerate(approach_interactions_gpu):
+                    if approach_data:
+                        interactions_df = pd.DataFrame(approach_data)
+                        all_interactions.append(interactions_df)
+                        
+                        # Save detailed interaction data
+                        interaction_file = os.path.join(iter_dir, f'interactions_approach_{approach_idx}.csv')
+                        interactions_df.to_csv(interaction_file, index=False)
+                        print(f"   Saved {len(interactions_df)} interactions for approach {approach_idx + 1}")
                 
                 # Store trajectories for visualization
-                all_trajectories = [trajectory[i:i+n_steps//n_approaches]
-                                  for i in range(0, len(trajectory), n_steps//n_approaches)]
+                all_trajectories = all_gpu_trajectories
                 
                 # Visualize trajectories for each approach
                 for approach_idx, approach_trajectory in enumerate(all_trajectories):
@@ -1462,6 +1495,8 @@ class ProteinLigandFluxAnalyzer:
                     print(f"  Saved {len(combined_interactions)} interactions to {interaction_file}")
         
         # Combine all interactions
+        final_interactions = pd.DataFrame()  # Initialize to empty DataFrame
+        
         if all_interactions:
             final_interactions = pd.concat(all_interactions, ignore_index=True)
             
@@ -1492,7 +1527,7 @@ class ProteinLigandFluxAnalyzer:
                 os.path.join(iter_dir, f'trajectory_iteration_{iteration_num}.png')
             )
         
-        return final_interactions if all_interactions else pd.DataFrame()
+        return final_interactions
     
     def visualize_trajectory(self, protein_atoms, trajectories, ligand_coords, output_file):
         """Visualize the combined Brownian trajectories with professional backbone"""

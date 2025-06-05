@@ -10,19 +10,24 @@ FluxMD identifies protein-ligand binding sites through energy flux differential 
 FluxMD combines static intra-protein force fields with dynamic protein-ligand interactions to identify binding sites. The method:
 
 1. Pre-calculates internal protein forces (one-time computation)
-2. Simulates ligand approach trajectories using Brownian motion
-3. Calculates combined force vectors (합벡터) at each residue
-4. Identifies binding sites where forces converge
-5. Validates results using bootstrap statistical analysis
+2. Generates **cocoon trajectories** that maintain constant distance from the protein surface
+3. Samples multiple ligand orientations (36 rotations) at each trajectory position
+4. Calculates combined force vectors (합벡터) at each residue
+5. Identifies binding sites where forces converge
+6. Validates results using bootstrap statistical analysis
 
 This approach reveals how proteins' internal stress fields guide ligand recognition.
 
 ## Features
 
-- **Physics-based trajectories**: Brownian motion with molecular weight-dependent diffusion (40 fs time step)
+- **Cocoon trajectories**: Ligand maintains constant distance from protein surface while exploring via Brownian motion
+  - Distance-constrained hovering around protein
+  - Multiple approach distances (e.g., 15Å → 5Å in steps)
+  - Samples 36 rotations at each trajectory position
+  - Ensures comprehensive surface exploration
+- **Physics-based motion**: Molecular weight-dependent diffusion (40 fs time step)
   - Corrected molecular radius calculation: r ≈ 0.66 × MW^(1/3) Å
-  - Biased trajectories: Approach protein surface (default)
-  - Unbiased random walks: True Brownian motion available on request
+  - True Brownian dynamics with distance constraints
 - **Protonation-aware interactions**: pH-dependent H-bond donor/acceptor assignment and charge states
 - **Complete interaction detection**: H-bonds (3.5 Å), salt bridges (4.0 Å), π-π stacking (4.5 Å), π-cation (6.0 Å), VDW (1-5 Å)
 - **Intra-protein force field**: Static internal protein forces combined with ligand interactions
@@ -66,12 +71,13 @@ pip install networkx  # For aromatic ring detection
   - Parameter configuration and validation
   - Coordinates the complete analysis pipeline
 
-- **`trajectory_generator.py`** - Ligand trajectory simulation engine
+- **`trajectory_generator.py`** - Cocoon trajectory simulation engine
+  - **Cocoon mode**: Maintains constant distance from protein surface
+  - Multiple approach distances with gradual approach (e.g., 15→5 Å)
+  - Samples 36 rotations per trajectory position
   - Brownian motion with molecular weight-dependent diffusion (40 fs time step)
-  - Corrected molecular radius: r ≈ 0.66 × MW^(1/3) Å (realistic for small molecules)
-  - Biased trajectories (default) or true random walks
+  - Corrected molecular radius: r ≈ 0.66 × MW^(1/3) Å
   - Collision detection using VDW radii and KD-trees
-  - Surface point generation for approach angles
   - Protonation-aware interaction detection (pH-dependent)
   - Integrated intra-protein force field calculations
 
@@ -136,20 +142,25 @@ Input files:
 
 The program guides you through parameter selection, including:
 - pH for protonation state calculations (default 7.4)
-- Number of iterations and approach angles
+- Number of iterations and approach distances
+- Rotations per position (default 36)
 - GPU acceleration options
+- All parameters are saved to `simulation_parameters.txt`
 
 ## Output
 
 ```
 flux_analysis/
+├── simulation_parameters.txt              # Complete record of simulation settings
 ├── processed_flux_data.csv               # Binding site rankings with statistics
 ├── {protein}_flux_report.txt             # Detailed statistical analysis
 ├── {protein}_trajectory_flux_analysis.png # Flux heatmap visualization
 ├── all_iterations_flux.csv               # Raw flux data from all iterations
 └── iteration_*/                          # Per-iteration trajectory data
-    ├── trajectory_data_*.csv             # Ligand positions per frame
-    └── flux_iteration_*_output_vectors.csv # Interaction vectors
+    ├── trajectory_iteration_*_approach_*.png # Cocoon trajectory visualizations
+    ├── trajectory_iteration_*_approach_*.csv # Trajectory coordinates
+    ├── interactions_approach_*.csv        # Detailed interactions with rotations
+    └── flux_iteration_*_output_vectors.csv # Combined interaction vectors
 ```
 
 ### Output Data Columns
@@ -287,35 +298,35 @@ FluxMD uses the Henderson-Hasselbalch equation to determine protonation states:
 - Atoms with >50% protonation probability are assigned their protonated state
 - This affects H-bond donor/acceptor roles and formal charges
 
-### Brownian Dynamics Implementation
+### Cocoon Trajectory Implementation
 
-FluxMD implements physically accurate Brownian motion for ligand trajectories:
+FluxMD uses cocoon trajectories that maintain constant distance from the protein surface:
 
-#### Diffusion Coefficient Calculation
+#### Cocoon Mode Features
+- **Distance maintenance**: Ligand hovers at fixed distance from closest protein atom
+- **Multiple approaches**: Gradually decreases distance (e.g., 15→10→5 Å)
+- **Rotation sampling**: 36 orientations tested at each position
+- **Surface exploration**: Brownian motion constrained to spherical shell
+
+#### Physics Implementation
 - **Stokes-Einstein equation**: D = k_B × T / (6π × η × r)
 - **Molecular radius**: r ≈ 0.66 × MW^(1/3) Å
   - Gives ~4.4 Å for MW=300 Da (realistic for drug-like molecules)
-  - Previous error (0.066) underestimated radius by 10×
 - **Diffusion coefficient**: ~7.4×10^-5 Å²/fs for 300 Da molecule at 36.5°C
-- **RMS displacement**: 
-  - After 1 ps: ~0.67 Å
-  - After 1 ns: ~21 Å
+- **Step size**: Δx = √(2D × Δt) with distance constraint applied
 
-#### Trajectory Generation Modes
-1. **Biased trajectories** (default): 
-   - Ligand approaches protein surface 
-   - Maintains decreasing distance constraint
-   - Efficient for binding site exploration
-   
-2. **Unbiased random walks** (`generate_random_walk_trajectory`):
-   - True Brownian motion with no directional bias
-   - Follows Einstein's relation: ⟨r²⟩ = 6Dt
-   - Available for studying diffusion dynamics
+#### Trajectory Algorithm
+1. Generate Brownian displacement
+2. Apply displacement to current position
+3. Find closest protein atom
+4. Adjust position to maintain target distance
+5. Check collision and accept/reject move
+6. Sample multiple rotations at accepted position
 
 #### Time Step Considerations
 - **40 fs time step**: Appropriate for Brownian dynamics
-- **Step size**: Δx = √(2D × Δt)
-- **Collision detection**: Ensures physically valid trajectories
+- **Collision detection**: VDW-based using KD-trees
+- **Rotation axis**: Determined by closest Cα atom direction
 
 ## Citation
 

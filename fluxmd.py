@@ -160,15 +160,16 @@ def validate_results(output_dir, protein_name):
 
 def run_complete_workflow():
     """Run the complete analysis workflow"""
-    print_banner("FLUXMD - PROTEIN-LIGAND FLUX ANALYSIS")
+    print_banner("FLUXMD - COCOON TRAJECTORY ANALYSIS")
     
     print("This workflow will:")
     print("1. Calculate static intra-protein force field (one-time)")
-    print("2. Generate ligand trajectories around protein surface")
-    print("3. Calculate non-covalent interactions with combined forces")
-    print("4. Compute energy flux differentials (합벡터 analysis)")
-    print("5. Identify binding sites with statistical validation")
-    print("6. Create visualizations and reports\n")
+    print("2. Generate COCOON trajectories (constant distance hovering)")
+    print("3. Sample multiple ligand orientations at each position")
+    print("4. Calculate non-covalent interactions with combined forces")
+    print("5. Compute energy flux differentials (합벡터 analysis)")
+    print("6. Identify binding sites with statistical validation")
+    print("7. Create visualizations and reports\n")
     
     # Step 1: Get input files
     print("STEP 1: INPUT FILES")
@@ -216,59 +217,167 @@ def run_complete_workflow():
     physiological_pH = float(input("pH for protonation state calculation (default 7.4): ") or "7.4")
     print(f"  Using pH {physiological_pH} for H-bond donor/acceptor assignment")
 
-    drift_choice = input("Enable drift toward target? (Y/n): ").strip().lower()
-    use_drift = drift_choice != 'n'
+    # Cocoon trajectory parameters
+    n_rotations = int(input("Rotations per position (default 36): ") or "36")
     
     output_dir = input("Output directory (default 'flux_analysis'): ").strip() or "flux_analysis"
     
-    # Check for GPU
+    # Automatic GPU/CPU selection based on system size
     use_gpu = False
+    gpu_available = False
+    
     try:
         device = get_device()
         if 'mps' in str(device) or 'cuda' in str(device):
-            print(f"\n🚀 GPU detected: {device}")
-            gpu_choice = input("Use GPU acceleration? (Y/n): ").strip().lower()
-            use_gpu = gpu_choice != 'n'
+            gpu_available = True
     except:
-        print("\n💻 No GPU detected, using CPU")
-        use_gpu = False
+        gpu_available = False
     
-    # Check for parallel processing
-    n_jobs = -1
-    if not use_gpu and platform.system() == 'Darwin':
-        print(f"\nDetected macOS with {mp.cpu_count()} cores")
-        use_parallel = input("Use parallel processing? (Y/n): ").strip().lower()
-        if use_parallel == 'n':
-            n_jobs = 1
+    # Calculate system complexity
+    # Parse structures temporarily to get atom counts
+    from trajectory_generator import ProteinLigandFluxAnalyzer
+    temp_analyzer = ProteinLigandFluxAnalyzer()
+    try:
+        protein_atoms = temp_analyzer.parse_structure(protein_file, parse_heterogens=False)
+        ligand_atoms = temp_analyzer.parse_structure_robust(ligand_file, parse_heterogens=True)
+        n_protein_atoms = len(protein_atoms)
+        n_ligand_atoms = len(ligand_atoms)
+    except:
+        n_protein_atoms = 5000  # Default estimates
+        n_ligand_atoms = 50
+    
+    # Calculate total operations
+    total_operations = n_steps * n_approaches * n_rotations
+    total_interactions = n_protein_atoms * n_ligand_atoms * total_operations
+    
+    # Decision logic
+    if gpu_available:
+        # GPU is good for very large proteins but bad for many rotations with current implementation
+        if n_protein_atoms > 10000 and n_rotations <= 12:
+            use_gpu = True
+            decision_reason = "large protein with few rotations"
+        elif total_interactions < 1e9:  # Less than 1 billion calculations
+            use_gpu = False
+            decision_reason = "moderate system size - CPU parallelization more efficient"
+        else:
+            use_gpu = False
+            decision_reason = "too many rotations - current GPU implementation is sequential"
+    else:
+        use_gpu = False
+        decision_reason = "no GPU detected"
+    
+    # Report decision
+    print(f"\n🔍 System Analysis:")
+    print(f"  Protein atoms: {n_protein_atoms:,}")
+    print(f"  Ligand atoms: {n_ligand_atoms:,}")
+    print(f"  Total frames: {n_steps * n_approaches:,}")
+    print(f"  Rotations per frame: {n_rotations}")
+    print(f"  Total calculations: {total_interactions/1e6:.1f} million")
+    
+    if gpu_available:
+        print(f"\n🚀 GPU detected: {device}")
+    
+    if use_gpu:
+        print(f"✓ Using GPU acceleration ({decision_reason})")
+    else:
+        print(f"💻 Using CPU parallel processing ({decision_reason})")
+        if gpu_available and total_interactions > 1e8:
+            print("  Note: GPU available but CPU chosen for better performance with current parameters")
+    
+    # Set parallel processing for CPU
+    n_jobs = -1 if not use_gpu else 1  # Use all cores for CPU, single thread for GPU
     
     # Show configuration
     print(f"\nConfiguration:")
+    print(f"  Mode: COCOON TRAJECTORY (constant distance hovering)")
     print(f"  Total steps: {n_steps * n_approaches} per iteration")
     print(f"  Starting: {starting_distance} Å from surface")
     print(f"  Final: ~{starting_distance - (n_approaches-1)*approach_distance:.1f} Å")
+    print(f"  Rotations: {n_rotations} per position")
     print(f"  pH: {physiological_pH} (affects H-bond donors/acceptors)")
-    print(f"  GPU: {'ENABLED' if use_gpu else 'DISABLED'}")
-    print(f"  Drift: {'ON' if use_drift else 'OFF'}")
-    print(f"  Parallel: {'ENABLED' if n_jobs != 1 else 'DISABLED'}")
+    print(f"  Processing: {'GPU' if use_gpu else 'CPU'} {'(parallel)' if n_jobs != 1 else ''}")
+    
+    # Performance estimate
+    if use_gpu:
+        estimated_time = (total_interactions / 1e6) * 0.1  # Rough estimate: 0.1 sec per million on GPU
+    else:
+        cores = mp.cpu_count() if n_jobs == -1 else n_jobs
+        estimated_time = (total_interactions / 1e6) * 0.5 / cores  # 0.5 sec per million per core
+    
+    print(f"\n⏱️  Estimated processing time: {estimated_time:.0f} seconds ({estimated_time/60:.1f} minutes)")
+    
+    # Provide optimization suggestions if slow
+    if estimated_time > 300:  # More than 5 minutes
+        print("\n⚠️  Long processing time expected. Consider:")
+        if n_rotations > 24:
+            print(f"  • Reduce rotations to 12-24 (currently {n_rotations})")
+        if n_steps > 50:
+            print(f"  • Reduce steps to 50 (currently {n_steps})")
+        if n_approaches > 3:
+            print(f"  • Reduce approaches to 3 (currently {n_approaches})")
     
     confirm = input("\nProceed with analysis? (y/n): ").strip().lower()
     if confirm != 'y':
         print("Analysis cancelled.")
         return
     
+    # Save parameters to file
+    os.makedirs(output_dir, exist_ok=True)
+    params_file = os.path.join(output_dir, "simulation_parameters.txt")
+    
+    with open(params_file, 'w') as f:
+        f.write("FLUXMD SIMULATION PARAMETERS\n")
+        f.write("=" * 60 + "\n")
+        f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write("\n")
+        f.write("INPUT FILES\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"Protein: {protein_file}\n")
+        f.write(f"Ligand: {ligand_file}\n")
+        f.write(f"Protein name: {protein_name}\n")
+        f.write("\n")
+        f.write("TRAJECTORY PARAMETERS\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"Mode: COCOON TRAJECTORY (constant distance hovering)\n")
+        f.write(f"Steps per approach: {n_steps}\n")
+        f.write(f"Number of iterations: {n_iterations}\n")
+        f.write(f"Number of approaches: {n_approaches}\n")
+        f.write(f"Approach distance: {approach_distance} Å\n")
+        f.write(f"Starting distance: {starting_distance} Å\n")
+        f.write(f"Final distance: ~{starting_distance - (n_approaches-1)*approach_distance:.1f} Å\n")
+        f.write(f"Rotations per position: {n_rotations}\n")
+        f.write(f"Total steps per iteration: {n_steps * n_approaches}\n")
+        f.write(f"Total rotations sampled: {n_steps * n_approaches * n_rotations}\n")
+        f.write("\n")
+        f.write("CALCULATION PARAMETERS\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"pH: {physiological_pH}\n")
+        f.write(f"GPU acceleration: {'ENABLED' if use_gpu else 'DISABLED'}\n")
+        if use_gpu:
+            f.write(f"GPU device: {device}\n")
+        f.write(f"Parallel processing: {'ENABLED' if n_jobs != 1 else 'DISABLED'}\n")
+        if n_jobs != 1:
+            f.write(f"CPU cores: {mp.cpu_count()}\n")
+        f.write("\n")
+        f.write("OUTPUT DIRECTORY\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"{os.path.abspath(output_dir)}\n")
+    
+    print(f"\n✓ Parameters saved to: {params_file}")
+    
     # Step 3: Run trajectory analysis
-    print_banner("STEP 3: TRAJECTORY GENERATION")
+    print_banner("STEP 3: COCOON TRAJECTORY GENERATION")
     
     trajectory_analyzer = ProteinLigandFluxAnalyzer(physiological_pH=physiological_pH)
     
     start_time = datetime.now()
     
     try:
-        # Run trajectory analysis
+        # Run trajectory analysis with cocoon mode
         iteration_data = trajectory_analyzer.run_complete_analysis(
             protein_file, ligand_file, output_dir, n_steps, n_iterations,
             n_approaches, approach_distance, starting_distance,
-            n_jobs=n_jobs, use_gpu=use_gpu, use_drift=use_drift
+            n_jobs=n_jobs, use_gpu=use_gpu, n_rotations=n_rotations
         )
         
         if iteration_data is None:
@@ -331,8 +440,11 @@ def run_complete_workflow():
     print(f"Total analysis time: {total_time:.1f} seconds")
     print(f"\nAll results saved to: {output_dir}/")
     print("\nKey outputs:")
-    print("├── trajectory_visualization_*.png - Brownian trajectories")
-    print("├── iteration_*/ - Interaction data with pi-stacking")
+    print("├── simulation_parameters.txt - All simulation parameters")
+    print("├── trajectory_iteration_*_approach_*.png - Cocoon trajectories")
+    print("├── trajectory_iteration_*_approach_*.csv - Trajectory coordinates")
+    print("├── iteration_*/ - Interaction data with rotations")
+    print("├── interactions_approach_*.csv - Detailed interactions")
     print("├── *_trajectory_flux_analysis.png - Flux visualization")
     print("├── *_flux_report.txt - Statistical analysis")
     print("├── processed_flux_data.csv - Flux with p-values")
