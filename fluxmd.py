@@ -296,11 +296,11 @@ def validate_results(output_dir, protein_name):
 
 def run_complete_workflow():
     """Run the complete analysis workflow"""
-    print_banner("FLUXMD - COCOON TRAJECTORY ANALYSIS")
+    print_banner("FLUXMD - WINDING TRAJECTORY ANALYSIS")
     
     print("This workflow will:")
     print("1. Calculate static intra-protein force field (one-time)")
-    print("2. Generate COCOON trajectories (constant distance hovering)")
+    print("2. Generate WINDING trajectories (thread-like motion around protein)")
     print("3. Sample multiple ligand orientations at each position")
     print("4. Calculate non-covalent interactions with combined forces")
     print("5. Compute energy flux differentials (합벡터 analysis)")
@@ -506,10 +506,10 @@ def run_complete_workflow():
     
     # Show configuration
     print(f"\nConfiguration:")
-    print(f"  Mode: COCOON TRAJECTORY (constant distance hovering)")
+    print(f"  Mode: WINDING TRAJECTORY (thread-like motion around protein)")
     print(f"  Total steps: {n_steps * n_approaches} per iteration")
-    print(f"  Starting: {starting_distance} Å from surface")
-    print(f"  Final: ~{starting_distance - (n_approaches-1)*approach_distance:.1f} Å")
+    print(f"  Starting distance: {starting_distance} Å from surface")
+    print(f"  Distance range: ~5-{starting_distance * 2.5:.0f} Å (free variation)")
     print(f"  Rotations: {n_rotations} per position")
     print(f"  pH: {physiological_pH} (affects H-bond donors/acceptors)")
     print(f"  Processing: {'GPU' if use_gpu else 'CPU'} {'(parallel)' if n_jobs != 1 else ''}")
@@ -555,13 +555,13 @@ def run_complete_workflow():
         f.write("\n")
         f.write("TRAJECTORY PARAMETERS\n")
         f.write("-" * 40 + "\n")
-        f.write(f"Mode: COCOON TRAJECTORY (constant distance hovering)\n")
+        f.write(f"Mode: WINDING TRAJECTORY (thread-like motion around protein)\n")
         f.write(f"Steps per approach: {n_steps}\n")
         f.write(f"Number of iterations: {n_iterations}\n")
         f.write(f"Number of approaches: {n_approaches}\n")
-        f.write(f"Approach distance: {approach_distance} Å\n")
+        f.write(f"Initial approach distance: {approach_distance} Å\n")
         f.write(f"Starting distance: {starting_distance} Å\n")
-        f.write(f"Final distance: ~{starting_distance - (n_approaches-1)*approach_distance:.1f} Å\n")
+        f.write(f"Distance range: ~5-{starting_distance * 2.5:.0f} Å (free variation)\n")
         f.write(f"Rotations per position: {n_rotations}\n")
         f.write(f"Total steps per iteration: {n_steps * n_approaches}\n")
         f.write(f"Total rotations sampled: {n_steps * n_approaches * n_rotations}\n")
@@ -583,7 +583,7 @@ def run_complete_workflow():
     print(f"\n✓ Parameters saved to: {params_file}")
     
     # Step 3: Run trajectory analysis
-    print_banner("STEP 3: COCOON TRAJECTORY GENERATION")
+    print_banner("STEP 3: WINDING TRAJECTORY GENERATION")
     
     trajectory_analyzer = ProteinLigandFluxAnalyzer(physiological_pH=physiological_pH)
     

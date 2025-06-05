@@ -298,7 +298,7 @@ class ProteinLigandFluxAnalyzer:
                                   molecular_weight, n_steps=100, dt=40, 
                                   target_distance=35.0):
         """
-        Generate cocoon-style Brownian trajectory maintaining target distance from protein
+        Generate cocoon-style trajectory that winds around protein like thread
         
         Args:
             protein_coords: Array of protein atom coordinates (or CA coords)
@@ -307,7 +307,7 @@ class ProteinLigandFluxAnalyzer:
             molecular_weight: Molecular weight of ligand
             n_steps: Number of trajectory steps
             dt: Time step (fs)
-            target_distance: Target distance from closest protein atom (Å)
+            target_distance: Initial/average distance from protein (Å)
         
         Returns:
             trajectory: Array of positions shape (n_steps, 3)
@@ -318,177 +318,183 @@ class ProteinLigandFluxAnalyzer:
         step_size = np.sqrt(2 * D * dt)
         
         # Increase step size for more visible motion
-        step_size *= 3.0  # Amplify Brownian motion for more stochastic behavior
+        step_size *= 5.0  # Even more amplification for free motion
         
-        # Find center of protein
+        # Find center and principal axes of protein
         protein_center = np.mean(protein_coords, axis=0)
         
-        # Create random starting positions around protein at target distance
-        # This prevents getting stuck in local minima
-        n_start_attempts = 10
-        initial_pos = None
+        # Calculate protein's principal axes using PCA
+        centered_coords = protein_coords - protein_center
+        cov_matrix = np.cov(centered_coords.T)
+        eigenvalues, eigenvectors = np.linalg.eig(cov_matrix)
         
-        for attempt in range(n_start_attempts):
+        # Sort by eigenvalue to get principal axes
+        idx = eigenvalues.argsort()[::-1]
+        principal_axes = eigenvectors[:, idx]
+        
+        # Initialize spherical coordinates for winding motion
+        # Start at a random position
+        theta = np.random.uniform(0, 2 * np.pi)  # Azimuthal angle
+        phi = np.random.uniform(np.pi/4, 3*np.pi/4)  # Polar angle (avoid poles)
+        
+        # Initial distance with more variation allowed
+        current_radius = target_distance + np.max(cdist([protein_center], protein_coords)[0])
+        
+        # Angular velocities for winding motion
+        theta_velocity = 2 * np.pi / (n_steps / 4)  # Complete ~4 winds
+        phi_velocity = 0.0  # Will add random perturbations
+        
+        # Distance variation parameters
+        min_distance = 5.0  # Can come very close
+        max_distance = target_distance * 2.5  # Can go quite far
+        
+        trajectory = []
+        times = []
+        
+        # Momentum terms for smoother motion
+        distance_momentum = 0.0
+        theta_momentum = 0.0
+        phi_momentum = 0.0
+        
+        for i in range(n_steps):
+            # Update angular position with momentum (winding motion)
+            theta_momentum += np.random.randn() * 0.1  # Random angular acceleration
+            phi_momentum += np.random.randn() * 0.05
+            
+            # Apply damping to momentum
+            theta_momentum *= 0.95
+            phi_momentum *= 0.95
+            
+            # Update angles
+            theta += theta_velocity + theta_momentum
+            phi += phi_velocity + phi_momentum
+            
+            # Keep phi in valid range
+            phi = np.clip(phi, 0.1, np.pi - 0.1)
+            
+            # Distance variation with momentum
+            # Add random force that can push in/out
+            distance_force = np.random.randn() * 2.0
+            
+            # Add oscillatory component for natural in/out motion
+            oscillation = 5.0 * np.sin(2 * np.pi * i / (n_steps / 6))
+            
+            # Update distance momentum
+            distance_momentum += distance_force + oscillation * 0.1
+            distance_momentum *= 0.9  # Damping
+            
+            # Update radius with large freedom
+            current_radius += distance_momentum
+            
+            # Soft boundaries - allow going close or far but with gentle resistance
+            if current_radius < min_distance:
+                distance_momentum += (min_distance - current_radius) * 0.2
+            elif current_radius > max_distance:
+                distance_momentum -= (current_radius - max_distance) * 0.1
+            
+            # Convert spherical to Cartesian in protein's frame
+            x = current_radius * np.sin(phi) * np.cos(theta)
+            y = current_radius * np.sin(phi) * np.sin(theta)
+            z = current_radius * np.cos(phi)
+            
+            # Transform to world coordinates using principal axes
+            pos_local = np.array([x, y, z])
+            pos_world = protein_center + principal_axes @ pos_local
+            
+            # Add Brownian displacement for additional randomness
+            brownian = np.random.randn(3) * step_size * 0.5
+            pos_world += brownian
+            
+            # Check collision
+            test_coords = ligand_coords + (pos_world - ligand_coords.mean(axis=0))
+            
+            if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                # No collision - accept position
+                trajectory.append(pos_world.copy())
+                times.append(i * dt)
+            else:
+                # Collision detected - try adjusting radius
+                # Back off by increasing radius
+                for radius_adjust in [1.5, 3.0, 5.0]:
+                    test_radius = current_radius + radius_adjust
+                    
+                    # Recalculate position with adjusted radius
+                    x_adj = test_radius * np.sin(phi) * np.cos(theta)
+                    y_adj = test_radius * np.sin(phi) * np.sin(theta)
+                    z_adj = test_radius * np.cos(phi)
+                    
+                    pos_local_adj = np.array([x_adj, y_adj, z_adj])
+                    pos_world_adj = protein_center + principal_axes @ pos_local_adj
+                    
+                    test_coords = ligand_coords + (pos_world_adj - ligand_coords.mean(axis=0))
+                    
+                    if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                        # Found collision-free position
+                        trajectory.append(pos_world_adj.copy())
+                        times.append(i * dt)
+                        # Update radius for next step
+                        current_radius = test_radius
+                        break
+                else:
+                    # If all attempts fail, skip this position
+                    # Continue winding but don't add to trajectory
+                    pass
+        
+        # Convert to numpy arrays
+        trajectory = np.array(trajectory)
+        times = np.array(times[:len(trajectory)])
+        
+        # Ensure we have enough points
+        if len(trajectory) < n_steps // 2:
+            print(f"Warning: Only {len(trajectory)} collision-free positions found")
+            # Fall back to simpler method if needed
+            return self.generate_simple_cocoon_trajectory(
+                protein_coords, ligand_coords, ligand_atoms,
+                molecular_weight, n_steps, dt, target_distance
+            )
+        
+        return trajectory, times
+    
+    def generate_simple_cocoon_trajectory(self, protein_coords, ligand_coords, ligand_atoms,
+                                        molecular_weight, n_steps=100, dt=40, 
+                                        target_distance=35.0):
+        """Fallback simple cocoon trajectory for when winding fails"""
+        # Calculate diffusion coefficient
+        D = self.calculate_diffusion_coefficient(molecular_weight)
+        step_size = np.sqrt(2 * D * dt) * 5.0
+        
+        protein_center = np.mean(protein_coords, axis=0)
+        max_protein_radius = np.max(cdist([protein_center], protein_coords)[0])
+        
+        trajectory = []
+        times = []
+        
+        # Generate random points on expanding/contracting sphere
+        for i in range(n_steps):
             # Random spherical coordinates
             theta = np.random.uniform(0, 2 * np.pi)
             phi = np.random.uniform(0, np.pi)
             
+            # Varying radius
+            radius_variation = 20.0 * np.sin(2 * np.pi * i / n_steps)
+            radius = max_protein_radius + target_distance + radius_variation
+            
             # Convert to Cartesian
-            x = np.sin(phi) * np.cos(theta)
-            y = np.sin(phi) * np.sin(theta)
-            z = np.cos(phi)
+            x = radius * np.sin(phi) * np.cos(theta)
+            y = radius * np.sin(phi) * np.sin(theta)
+            z = radius * np.cos(phi)
             
-            # Place at target distance from protein center
-            test_pos = protein_center + np.array([x, y, z]) * (np.max(cdist([protein_center], protein_coords)[0]) + target_distance)
+            pos = protein_center + np.array([x, y, z])
             
-            # Check if valid
-            test_coords = ligand_coords + (test_pos - ligand_coords.mean(axis=0))
-            if not self.collision_detector.check_collision(test_coords, ligand_atoms):
-                initial_pos = test_pos
-                break
-        
-        if initial_pos is None:
-            # Fallback to simpler method
-            random_direction = np.random.randn(3)
-            random_direction /= np.linalg.norm(random_direction)
-            initial_pos = protein_center + random_direction * (np.max(cdist([protein_center], protein_coords)[0]) + target_distance)
-        
-        trajectory = [initial_pos.copy()]
-        times = [0]
-        current_pos = initial_pos.copy()
-        
-        # Track if we're stuck
-        stuck_counter = 0
-        last_pos = current_pos.copy()
-        
-        # Allow distance fluctuations for more natural motion
-        distance_flexibility = 0.25  # Allow ±25% variation in distance
-        
-        for i in range(1, n_steps):
-            # Generate TRUE random displacement (full Brownian motion)
-            displacement = np.random.randn(3) * step_size
-            
-            # Add attraction toward protein (bias toward binding)
-            # Find closest protein atoms (multiple, not just one)
-            distances = cdist([current_pos], protein_coords)[0]
-            closest_indices = np.argsort(distances)[:10]  # Consider 10 closest atoms
-            
-            # Calculate weighted attraction
-            attraction_vector = np.zeros(3)
-            for idx in closest_indices:
-                atom_pos = protein_coords[idx]
-                to_atom = atom_pos - current_pos
-                distance = np.linalg.norm(to_atom)
-                if distance > 0:
-                    # Inverse distance weighting for attraction
-                    weight = 1.0 / (distance ** 2)
-                    attraction_vector += weight * to_atom / distance
-            
-            # Normalize and scale attraction
-            if np.linalg.norm(attraction_vector) > 0:
-                attraction_vector /= np.linalg.norm(attraction_vector)
-                # Add 20% attraction bias
-                displacement += 0.2 * step_size * attraction_vector
-            
-            # Propose new position with full stochastic motion
-            new_pos = current_pos + displacement
-            
-            # Soft distance constraint with flexibility
-            distances = cdist([new_pos], protein_coords)[0]
-            closest_idx = np.argmin(distances)
-            closest_atom = protein_coords[closest_idx]
-            current_distance = distances[closest_idx]
-            
-            # Allow natural fluctuations around target distance
-            min_allowed = target_distance * (1 - distance_flexibility)
-            max_allowed = target_distance * (1 + distance_flexibility)
-            
-            # Only adjust if outside flexible bounds
-            if current_distance < min_allowed or current_distance > max_allowed:
-                direction = new_pos - closest_atom
-                direction_norm = np.linalg.norm(direction)
-                
-                if direction_norm > 0:
-                    direction_unit = direction / direction_norm
-                    
-                    # Soft adjustment - blend between proposed and target
-                    if current_distance < min_allowed:
-                        adjusted_distance = min_allowed
-                    else:
-                        adjusted_distance = max_allowed
-                    
-                    adjusted_pos = closest_atom + direction_unit * adjusted_distance
-                    # Blend 70% proposed position, 30% adjusted (keeps more stochasticity)
-                    new_pos = 0.7 * new_pos + 0.3 * adjusted_pos
+            # Add Brownian noise
+            pos += np.random.randn(3) * step_size
             
             # Check collision
-            test_coords = ligand_coords + (new_pos - ligand_coords.mean(axis=0))
+            test_coords = ligand_coords + (pos - ligand_coords.mean(axis=0))
             
-            position_accepted = False
             if not self.collision_detector.check_collision(test_coords, ligand_atoms):
-                current_pos = new_pos
-                position_accepted = True
-            else:
-                # Collision detected - try smaller step but keep stochasticity
-                for scale in [0.7, 0.5, 0.3]:
-                    scaled_displacement = displacement * scale
-                    test_pos = current_pos + scaled_displacement
-                    
-                    # Apply same soft distance constraint
-                    distances = cdist([test_pos], protein_coords)[0]
-                    closest_idx = np.argmin(distances)
-                    closest_atom = protein_coords[closest_idx]
-                    current_distance = distances[closest_idx]
-                    
-                    if current_distance < min_allowed or current_distance > max_allowed:
-                        direction = test_pos - closest_atom
-                        if np.linalg.norm(direction) > 0:
-                            direction_unit = direction / np.linalg.norm(direction)
-                            if current_distance < min_allowed:
-                                adjusted_distance = min_allowed
-                            else:
-                                adjusted_distance = max_allowed
-                            adjusted_pos = closest_atom + direction_unit * adjusted_distance
-                            test_pos = 0.7 * test_pos + 0.3 * adjusted_pos
-                    
-                    test_coords = ligand_coords + (test_pos - ligand_coords.mean(axis=0))
-                    
-                    if not self.collision_detector.check_collision(test_coords, ligand_atoms):
-                        current_pos = test_pos
-                        position_accepted = True
-                        break
-                
-                # If still colliding, stay at current position but add small random perturbation
-                if not position_accepted:
-                    # Add small random jitter to avoid getting stuck
-                    jitter = np.random.randn(3) * 0.1
-                    current_pos = current_pos + jitter
-            
-            # Check if stuck (with larger threshold due to increased motion)
-            if np.linalg.norm(current_pos - last_pos) < 0.5:
-                stuck_counter += 1
-                if stuck_counter > 20:  # More tolerance before jumping
-                    # Jump to a new random position with some attraction bias
-                    theta = np.random.uniform(0, 2 * np.pi)
-                    phi = np.random.uniform(0, np.pi)
-                    jump_direction = np.array([np.sin(phi) * np.cos(theta),
-                                             np.sin(phi) * np.sin(theta),
-                                             np.cos(phi)])
-                    
-                    # Bias jump toward protein
-                    jump_direction = 0.7 * jump_direction + 0.3 * (-protein_center / np.linalg.norm(protein_center))
-                    jump_direction /= np.linalg.norm(jump_direction)
-                    
-                    # Random distance within allowed range
-                    jump_distance = np.random.uniform(min_allowed, max_allowed)
-                    current_pos = protein_center + jump_direction * (np.max(cdist([protein_center], protein_coords)[0]) + jump_distance)
-                    stuck_counter = 0
-            else:
-                stuck_counter = 0
-            
-            last_pos = current_pos.copy()
-            trajectory.append(current_pos.copy())
-            times.append(i * dt)
+                trajectory.append(pos)
+                times.append(i * dt)
         
         return np.array(trajectory), np.array(times)
 
@@ -1222,7 +1228,7 @@ class ProteinLigandFluxAnalyzer:
         return smooth_coords
 
     def visualize_trajectory_cocoon(self, protein_atoms, trajectory, iteration_num, approach_idx, output_dir):
-        """Visualize the cocoon-style Brownian trajectory around protein"""
+        """Visualize the thread-like winding trajectory around protein"""
         fig = plt.figure(figsize=(15, 12))
         
         # Extract CA backbone
@@ -1256,7 +1262,7 @@ class ProteinLigandFluxAnalyzer:
         ax1.set_xlabel('X (Å)', fontsize=12, fontweight='bold')
         ax1.set_ylabel('Y (Å)', fontsize=12, fontweight='bold')
         ax1.set_zlabel('Z (Å)', fontsize=12, fontweight='bold')
-        ax1.set_title(f'Cocoon Trajectory - Iteration {iteration_num}, Approach {approach_idx + 1}',
+        ax1.set_title(f'Winding Trajectory - Iteration {iteration_num}, Approach {approach_idx + 1}',
                      fontsize=14, fontweight='bold')
         ax1.legend(fontsize=11)
         ax1.view_init(elev=20, azim=45)
@@ -1278,12 +1284,12 @@ class ProteinLigandFluxAnalyzer:
         target_distance = np.mean(min_distances)
         
         ax2.plot(range(len(trajectory)), min_distances, 'b-', linewidth=2, label='Actual distance')
-        ax2.axhline(y=target_distance, color='r', linestyle='--', linewidth=2, 
-                   label=f'Target: {target_distance:.1f} Å')
+        ax2.axhline(y=np.mean(min_distances), color='g', linestyle='--', linewidth=2, 
+                   label=f'Mean: {np.mean(min_distances):.1f} Å')
         ax2.fill_between(range(len(trajectory)), min_distances, alpha=0.3, color='lightblue')
         ax2.set_xlabel('Trajectory Step', fontsize=12, fontweight='bold')
         ax2.set_ylabel('Distance to Backbone (Å)', fontsize=12, fontweight='bold')
-        ax2.set_title('Cocoon Distance Maintenance', fontsize=14, fontweight='bold')
+        ax2.set_title('Winding Distance Variation', fontsize=14, fontweight='bold')
         ax2.legend(fontsize=11)
         ax2.grid(True, alpha=0.2, color='gray', linewidth=0.5)
         ax2.spines['top'].set_visible(False)
@@ -1438,20 +1444,20 @@ class ProteinLigandFluxAnalyzer:
                 
                 print("   ✓ GPU acceleration enabled!")
                 
-                # Generate cocoon trajectories for GPU processing
-                print("\n🌀 Generating cocoon trajectories for GPU...")
+                # Generate winding trajectories for GPU processing
+                print("\n🌀 Generating winding trajectories for GPU...")
                 all_gpu_trajectories = []
                 
                 for approach_idx in range(n_approaches):
-                    # Calculate target distance for this approach
-                    current_distance = starting_distance - approach_idx * approach_distance
-                    print(f"   Approach {approach_idx + 1}/{n_approaches}: {current_distance:.1f} Å")
+                    # Calculate initial distance for this approach (will vary during trajectory)
+                    initial_distance = starting_distance - approach_idx * approach_distance
+                    print(f"   Approach {approach_idx + 1}/{n_approaches}: Initial {initial_distance:.1f} Å")
                     
-                    # Generate cocoon trajectory
+                    # Generate winding trajectory
                     trajectory, times = self.generate_cocoon_trajectory(
                         ca_coords, ligand_coords, ligand_atoms,
                         ligand_mw, n_steps=n_steps, dt=40,
-                        target_distance=current_distance
+                        target_distance=initial_distance
                     )
                     all_gpu_trajectories.append(trajectory)
                     
@@ -1573,21 +1579,21 @@ class ProteinLigandFluxAnalyzer:
                 use_gpu = False
         
         if not use_gpu:
-            # CPU processing with cocoon trajectories
-            print("\n🌀 Generating cocoon trajectories...")
+            # CPU processing with winding trajectories
+            print("\n🌀 Generating winding trajectories...")
             
             for approach_idx in range(n_approaches):
                 print(f"\nApproach {approach_idx + 1}/{n_approaches}")
                 
-                # Calculate target distance for this approach
-                current_distance = starting_distance - approach_idx * approach_distance
-                print(f"  Target distance: {current_distance:.1f} Å")
+                # Calculate initial distance for this approach (will vary during trajectory)
+                initial_distance = starting_distance - approach_idx * approach_distance
+                print(f"  Initial distance: {initial_distance:.1f} Å (will vary 5-{initial_distance * 2.5:.0f} Å)")
                 
-                # Generate cocoon trajectory maintaining target distance
+                # Generate winding trajectory with free distance variation
                 trajectory, times = self.generate_cocoon_trajectory(
                     ca_coords, ligand_coords, ligand_atoms,
                     ligand_mw, n_steps=n_steps, dt=40,
-                    target_distance=current_distance
+                    target_distance=initial_distance
                 )
                 
                 all_trajectories.append(trajectory)
