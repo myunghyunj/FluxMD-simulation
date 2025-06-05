@@ -52,8 +52,21 @@ conda create -n fluxmd python=3.8
 conda activate fluxmd
 pip install -r requirements.txt
 conda install -c conda-forge openbabel
-pip install torch  # For GPU support
+pip install torch>=2.0  # For GPU support (Apple Silicon MPS or NVIDIA CUDA)
 pip install networkx  # For aromatic ring detection
+```
+
+### Test Installation
+```bash
+# Test Apple Silicon GPU detection
+python -c "import torch; print(f'MPS available: {torch.backends.mps.is_available()}')"
+
+# Test CACTUS service
+python test_cactus_benzene.py
+
+# Full system check
+python fluxmd.py
+# The startup will show GPU detection status
 ```
 
 ### Requirements
@@ -80,13 +93,16 @@ pip install networkx  # For aromatic ring detection
 - **Soft boundaries**: Gentle forces instead of hard constraints
 
 ### Improved Aromatic Detection (v2.1)
-- **Fixed SMILES conversion**: Properly handles aromatic rings (benzene, pyridine, etc.)
+- **SMILES conversion via NCI CACTUS**: Preserves aromatic bonds and generates proper 3D structures
+  - Creates SDF files with explicit aromatic bond information (bond type 4)
+  - Ensures planar geometry for aromatic rings
+  - Generates all atoms including hydrogens (e.g., C6H6 for benzene)
 - **NetworkX integration**: Graph-based aromatic ring detection for accurate π-π stacking
-- **Multiple output formats**: Creates both PDB and PDBQT files for aromatic validation
-- **Planarity checking**: Uses SVD to verify aromatic ring geometry
-- **Fallback heuristics**: Connected cluster detection when NetworkX unavailable
+- **PDBQT parser fix**: Recognizes 'A' element as aromatic carbon
+- **Simplified OpenBabel**: Removed complex workarounds, now just a basic fallback
 
-### Fixed GPU/CPU Performance (v2.0)
+### Fixed GPU/CPU Performance (v2.1)
+- **Apple Silicon GPU detection fixed**: Now properly detects MPS on all macOS versions
 - **GPU now truly parallel**: Processes rotations in batches instead of sequentially
 - **CPU parallelization**: Uses all cores with joblib for rotation sampling
 - **Smart selection**: Benchmarks actual performance instead of arbitrary rules
@@ -153,12 +169,23 @@ pip install networkx  # For aromatic ring detection
 
 ## Usage
 
-Run the complete workflow:
+### Quick Start - Test with Benzene
 ```bash
+# Test CACTUS service with benzene
+python test_cactus_benzene.py
+
+# Or use the main program
 python fluxmd.py
+# Choose option 2, enter "c1ccccc1" for benzene
 ```
 
-Or run individual components:
+### Run Complete Workflow
+```bash
+python fluxmd.py
+# Choose option 1 for full analysis
+```
+
+### Run Individual Components
 ```bash
 # Generate trajectories only
 python trajectory_generator.py
@@ -171,11 +198,18 @@ Input files:
 - Protein: PDB, CIF, or mmCIF
 - Ligand: PDB, PDBQT, or SMILES
 
+SMILES conversion:
+- Primary: NCI CACTUS web service (preserves aromaticity, generates proper 3D coordinates)
+  - Creates both PDB and SDF files (SDF contains aromatic bond information)
+  - Correctly handles aromatic systems with planar geometry
+  - For benzene: generates all 12 atoms (6C + 6H) in hexagonal arrangement
+- Fallback: OpenBabel (simplified local method, may have aromatic issues)
+
 The program guides you through parameter selection, including:
 - pH for protonation state calculations (default 7.4)
 - Number of iterations and approach distances
 - Rotations per position (default 36)
-- GPU acceleration options
+- GPU acceleration options (auto-detects Apple Silicon MPS or NVIDIA CUDA)
 - All parameters are saved to `simulation_parameters.txt`
 
 ### Reusing Parameters for Comparisons
@@ -375,12 +409,13 @@ FluxMD uses winding trajectories that spiral around the protein like thread:
 - **Step size**: Δx = √(2D × Δt) with distance constraint applied
 
 #### Trajectory Algorithm
-1. Generate Brownian displacement
-2. Apply displacement to current position
-3. Find closest protein atom
-4. Adjust position to maintain target distance
-5. Check collision and accept/reject move
-6. Sample multiple rotations at accepted position
+1. Update angular position with momentum (theta, phi)
+2. Update radial distance with oscillation and momentum
+3. Convert spherical to Cartesian coordinates
+4. Transform using protein's principal axes
+5. Add Brownian noise for additional randomness
+6. Check collision and adjust if needed
+7. Sample multiple rotations at accepted positions
 
 #### Time Step Considerations
 - **40 fs time step**: Appropriate for Brownian dynamics
@@ -412,7 +447,15 @@ MIT License. See LICENSE file.
 
 1. **GPU not detected on Apple Silicon**
    ```bash
-   pip install --upgrade torch torchvision torchaudio
+   # Ensure PyTorch 2.0+ with MPS support
+   pip install --upgrade torch>=2.0
+   
+   # Test MPS availability
+   python -c "import torch; print(f'MPS available: {torch.backends.mps.is_available()}')"
+   
+   # If MPS still not available, try:
+   pip uninstall torch
+   pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cpu
    ```
 
 2. **OpenBabel installation fails**

@@ -787,6 +787,16 @@ class ProteinLigandFluxAnalyzer:
                     if len(line) >= 78:
                         element = line[76:78].strip()
                     
+                    # Check if element is PDBQT aromatic type
+                    if element == 'A':
+                        element = 'C'  # PDBQT aromatic carbon
+                    elif element == 'NA':
+                        element = 'N'  # PDBQT aromatic nitrogen
+                    elif element == 'OA':
+                        element = 'O'  # PDBQT aromatic oxygen
+                    elif element == 'SA':
+                        element = 'S'  # PDBQT aromatic sulfur
+                    
                     if not element:
                         # Guess from atom name
                         if atom_name.startswith('CL'):
@@ -1469,7 +1479,7 @@ class ProteinLigandFluxAnalyzer:
                         'y': trajectory[:, 1], 
                         'z': trajectory[:, 2],
                         'approach': approach_idx,
-                        'distance': current_distance
+                        'initial_distance': initial_distance
                     })
                     traj_path = os.path.join(iter_dir, f'trajectory_iteration_{iteration_num}_approach_{approach_idx}.csv')
                     traj_df.to_csv(traj_path, index=False)
@@ -1606,7 +1616,7 @@ class ProteinLigandFluxAnalyzer:
                     'y': trajectory[:, 1], 
                     'z': trajectory[:, 2],
                     'approach': approach_idx,
-                    'distance': current_distance
+                    'initial_distance': initial_distance
                 })
                 traj_path = os.path.join(iter_dir, f'trajectory_iteration_{iteration_num}_approach_{approach_idx}.csv')
                 traj_df.to_csv(traj_path, index=False)

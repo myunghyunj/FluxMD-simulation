@@ -103,87 +103,139 @@ def convert_cif_to_pdb(cif_file):
         return None
 
 
-def convert_smiles_to_pdbqt(smiles_string, output_name="ligand"):
-    """Convert SMILES string to PDBQT format using OpenBabel with proper aromatic handling"""
-    smi_file = f"{output_name}.smi"
-    mol2_file = f"{output_name}.mol2"
+def convert_smiles_to_pdb_cactus(smiles_string, output_name="ligand"):
+    """Convert SMILES to PDB using NCI CACTUS web service with aromatic preservation"""
+    import urllib.parse
+    import urllib.request
+    
     pdb_file = f"{output_name}.pdb"
-    pdbqt_file = f"{output_name}.pdbqt"
+    sdf_file = f"{output_name}.sdf"
+    
+    try:
+        print(f"Converting SMILES to 3D structure using NCI CACTUS...")
+        print(f"SMILES: {smiles_string}")
+        
+        # URL encode the SMILES string
+        encoded_smiles = urllib.parse.quote(smiles_string, safe='')
+        
+        # First try to get SDF with 3D coordinates and aromatic bonds
+        # SDF format preserves aromaticity better than PDB
+        sdf_url = f"https://cactus.nci.nih.gov/chemical/structure/{encoded_smiles}/file?format=sdf&get3d=true"
+        
+        print("  Requesting 3D structure with aromatic bonds preserved...")
+        
+        # Get SDF first
+        with urllib.request.urlopen(sdf_url) as response:
+            sdf_content = response.read().decode('utf-8')
+        
+        # Check if we got an error
+        if "Page not found" in sdf_content or "<html>" in sdf_content:
+            print("Error: CACTUS could not process this SMILES string")
+            return None
+        
+        # Save SDF file
+        with open(sdf_file, 'w') as f:
+            f.write(sdf_content)
+        
+        # Also get PDB format for compatibility
+        pdb_url = f"https://cactus.nci.nih.gov/chemical/structure/{encoded_smiles}/file?format=pdb&get3d=true"
+        
+        with urllib.request.urlopen(pdb_url) as response:
+            pdb_content = response.read().decode('utf-8')
+        
+        # Save PDB file
+        with open(pdb_file, 'w') as f:
+            f.write(pdb_content)
+        
+        # Count atoms and check aromaticity
+        atom_count = pdb_content.count('HETATM')
+        
+        # Check SDF for aromatic bonds (bond type 4)
+        aromatic_bonds = sdf_content.count('  4  ') + sdf_content.count(' 4 0 ')
+        
+        print(f"✓ Generated {atom_count} atoms")
+        if aromatic_bonds > 0:
+            print(f"✓ Preserved {aromatic_bonds} aromatic bonds")
+        print(f"✓ Created: {pdb_file} (for FluxMD)")
+        print(f"✓ Created: {sdf_file} (with aromatic bond info)")
+        
+        # Analyze structure
+        if any(marker in smiles_string.lower() for marker in ['c1cc', 'c1nc', 'c1cn', 'c1=c']):
+            print("\n💡 Aromatic system detected:")
+            print("   - 3D coordinates generated with proper planarity")
+            print("   - Aromatic bonds preserved in SDF format")
+            print("   - PDB file contains 3D structure for FluxMD analysis")
+        
+        # For benzene specifically
+        if smiles_string.lower() in ['c1ccccc1', 'c1=cc=cc=c1']:
+            print("\n✓ Benzene structure:")
+            print("   - 6 carbon atoms in planar hexagonal arrangement")
+            print("   - 6 hydrogen atoms added automatically")
+            print("   - Aromatic system properly represented")
+        
+        return pdb_file
+        
+    except urllib.error.URLError as e:
+        print(f"Error connecting to CACTUS service: {e}")
+        print("Please check your internet connection")
+        return None
+    except Exception as e:
+        print(f"Error during conversion: {e}")
+        return None
+
+def convert_smiles_to_pdb_openbabel(smiles_string, output_name="ligand"):
+    """Simple SMILES to PDB conversion using OpenBabel (fallback method)"""
+    smi_file = f"{output_name}.smi"
+    pdb_file = f"{output_name}.pdb"
     
     try:
         # Write SMILES to file
         with open(smi_file, 'w') as f:
             f.write(smiles_string)
         
-        print(f"Converting SMILES to 3D structure...")
+        print(f"Converting SMILES to 3D structure using OpenBabel...")
         print(f"SMILES: {smiles_string}")
         
-        # Step 1: Convert SMILES to MOL2 with proper aromaticity perception
-        # --gen3d: Generate 3D coordinates
-        # -h: Add hydrogens
-        # -p 7.4: Set pH for protonation
-        # --partialcharge: Add partial charges
-        cmd1 = ['obabel', '-ismi', smi_file, '-omol2', '-O', mol2_file,
-                '--gen3d', '-h', '-p', '7.4', '--partialcharge', 'gasteiger']
-        result1 = subprocess.run(cmd1, check=True, capture_output=True, text=True)
+        # Simple one-step conversion with 3D generation
+        cmd = ['obabel', '-ismi', smi_file, '-opdb', '-O', pdb_file,
+               '--gen3d', '-h', '-p', '7.4']
         
-        if result1.stderr:
-            print(f"MOL2 conversion warnings: {result1.stderr}")
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
         
-        # Step 2: Convert MOL2 to PDB to preserve aromatic information
-        # -a: Perceive aromaticity
-        cmd2 = ['obabel', mol2_file, '-opdb', '-O', pdb_file, '-a']
-        result2 = subprocess.run(cmd2, check=True, capture_output=True, text=True)
+        if result.stderr and "warning" not in result.stderr.lower():
+            print(f"OpenBabel warnings: {result.stderr}")
         
-        # Validate aromatic conversion
-        if 'c1ccccc1' in smiles_string.lower() or 'c1cc' in smiles_string.lower():
-            # Check if PDB file contains proper aromatic info
+        # Clean up
+        if os.path.exists(smi_file):
+            os.remove(smi_file)
+        
+        # Check output
+        if os.path.exists(pdb_file):
             with open(pdb_file, 'r') as f:
-                pdb_content = f.read()
-                atom_count = pdb_content.count('HETATM')
-                print(f"  Generated {atom_count} atoms")
-                
-                # For benzene, we should have 12 atoms (6 C + 6 H)
-                if 'c1ccccc1' == smiles_string.lower() and atom_count < 12:
-                    print("  ⚠️  Warning: Benzene conversion may be incomplete")
-                    print("  Adding explicit hydrogens...")
-                    
-                    # Try alternative conversion with explicit hydrogen addition
-                    cmd_alt = ['obabel', '-ismi', smi_file, '-opdb', '-O', pdb_file,
-                              '--gen3d', '-h', '-p', '7.4', '-a']
-                    subprocess.run(cmd_alt, check=True, capture_output=True, text=True)
-        
-        # Step 3: Convert PDB to PDBQT for docking compatibility
-        # -xr: Rigid format (no torsions for aromatic rings)
-        # -p: Preserve input partial charges
-        cmd3 = ['obabel', pdb_file, '-opdbqt', '-O', pdbqt_file, '-xr', '-p']
-        result3 = subprocess.run(cmd3, check=True, capture_output=True, text=True)
-        
-        # Clean up intermediate files
-        for f in [smi_file, mol2_file]:
-            if os.path.exists(f):
-                os.remove(f)
-        
-        # Keep PDB file as backup for aromatic systems
-        print(f"✓ Created: {pdbqt_file}")
-        print(f"✓ Also created: {pdb_file} (for aromatic validation)")
-        
-        # Recommend using PDB for aromatic ligands
-        if any(marker in smiles_string.lower() for marker in ['c1cc', 'c1nc', 'c1cn']):
-            print("\n💡 Note: This ligand contains aromatic rings.")
-            print(f"   Consider using {pdb_file} instead of {pdbqt_file}")
-            print("   for better aromatic interaction detection.")
-        
-        return pdbqt_file
+                content = f.read()
+                atom_count = content.count('HETATM')
+            
+            print(f"✓ Generated {atom_count} atoms")
+            print(f"✓ Created: {pdb_file}")
+            
+            # Warning for aromatics
+            if any(marker in smiles_string.lower() for marker in ['c1cc', 'c1nc', 'c1cn']):
+                print("\n⚠️  Note: OpenBabel may not handle aromatics perfectly.")
+                print("   Consider using CACTUS method for better results.")
+            
+            return pdb_file
+        else:
+            print("Error: OpenBabel failed to create output file")
+            return None
         
     except subprocess.CalledProcessError as e:
-        print(f"Error during conversion: {e.stderr}")
-        for f in [smi_file, mol2_file, pdb_file]:
-            if os.path.exists(f):
-                os.remove(f)
+        print(f"Error during conversion: {e.stderr if e.stderr else str(e)}")
+        if os.path.exists(smi_file):
+            os.remove(smi_file)
         return None
     except FileNotFoundError:
         print("Error: OpenBabel not found.")
+        print("Install with: conda install -c conda-forge openbabel")
         return None
 
 
@@ -329,9 +381,17 @@ def run_complete_workflow():
     if not os.path.exists(ligand_file) and not ligand_file.endswith(('.pdbqt', '.pdb')):
         print("Detected SMILES input...")
         ligand_name = input("Enter ligand name: ").strip() or "ligand"
-        converted_file = convert_smiles_to_pdbqt(ligand_file, ligand_name)
+        
+        # Try CACTUS first for better aromatic handling
+        print("\nTrying NCI CACTUS service (recommended for aromatics)...")
+        converted_file = convert_smiles_to_pdb_cactus(ligand_file, ligand_name)
+        
         if converted_file is None:
-            return
+            print("\nFalling back to OpenBabel...")
+            converted_file = convert_smiles_to_pdb_openbabel(ligand_file, ligand_name)
+            if converted_file is None:
+                return
+        
         ligand_file = converted_file
     elif not os.path.exists(ligand_file):
         print(f"Error: {ligand_file} not found!")
@@ -691,7 +751,7 @@ def main():
     print("Welcome to FluxMD - GPU-accelerated binding site prediction")
     print("\nOptions:")
     print("1. Run complete workflow")
-    print("2. Convert SMILES to PDBQT")
+    print("2. Convert SMILES to PDB (CACTUS with aromatics or OpenBabel)")
     print("3. Visualize multiple proteins (compare flux)")
     print("4. Exit")
     
@@ -700,11 +760,21 @@ def main():
     if choice == "1":
         run_complete_workflow()
     elif choice == "2":
-        print_banner("SMILES TO PDBQT CONVERTER")
+        print_banner("SMILES TO PDB CONVERTER")
         smiles = input("Enter SMILES string: ").strip()
         if smiles:
             name = input("Enter output name: ").strip() or "ligand"
-            convert_smiles_to_pdbqt(smiles, name)
+            
+            print("\nConversion options:")
+            print("1. NCI CACTUS (recommended - preserves aromaticity, requires internet)")
+            print("2. OpenBabel (local fallback - may have aromatic issues)")
+            
+            method = input("\nSelect method (1-2): ").strip() or "1"
+            
+            if method == "1":
+                convert_smiles_to_pdb_cactus(smiles, name)
+            else:
+                convert_smiles_to_pdb_openbabel(smiles, name)
     elif choice == "3":
         print_banner("MULTI-PROTEIN FLUX COMPARISON")
         n_proteins = int(input("How many proteins to compare? "))

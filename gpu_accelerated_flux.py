@@ -19,17 +19,27 @@ from protonation_aware_interactions import ProtonationAwareInteractionDetector
 # Check for Apple Silicon and available backends
 def get_device():
     """Detect and return the best available device (MPS, CUDA, or CPU)"""
-    if platform.system() == 'Darwin' and platform.processor() == 'arm':
-        # Apple Silicon detected
-        if torch.backends.mps.is_available():
+    # First check for Apple Silicon MPS
+    if platform.system() == 'Darwin':
+        # Check if MPS is available (more reliable than processor check)
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             device = torch.device("mps")
             print("🚀 Apple Silicon GPU (Metal Performance Shaders) detected!")
             print("   Unified memory architecture - optimal for large proteins")
+            # Additional info
+            try:
+                print(f"   Platform: {platform.platform()}")
+                print(f"   PyTorch version: {torch.__version__}")
+            except:
+                pass
             return device
         else:
-            print("⚠️  Apple Silicon detected but MPS not available.")
-            print("   Update PyTorch: pip install torch>=2.0")
-    elif torch.cuda.is_available():
+            print("⚠️  macOS detected but MPS not available.")
+            print("   Ensure PyTorch 2.0+ is installed: pip install torch>=2.0")
+            print(f"   Current PyTorch version: {torch.__version__}")
+    
+    # Check for NVIDIA CUDA
+    if torch.cuda.is_available():
         device = torch.device("cuda")
         print("🚀 NVIDIA GPU detected!")
         print(f"   GPU: {torch.cuda.get_device_name()}")
