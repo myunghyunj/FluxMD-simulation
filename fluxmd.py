@@ -104,9 +104,10 @@ def convert_cif_to_pdb(cif_file):
 
 
 def convert_smiles_to_pdbqt(smiles_string, output_name="ligand"):
-    """Convert SMILES string to PDBQT format using OpenBabel"""
+    """Convert SMILES string to PDBQT format using OpenBabel with proper aromatic handling"""
     smi_file = f"{output_name}.smi"
     mol2_file = f"{output_name}.mol2"
+    pdb_file = f"{output_name}.pdb"
     pdbqt_file = f"{output_name}.pdbqt"
     
     try:
@@ -115,26 +116,69 @@ def convert_smiles_to_pdbqt(smiles_string, output_name="ligand"):
             f.write(smiles_string)
         
         print(f"Converting SMILES to 3D structure...")
+        print(f"SMILES: {smiles_string}")
         
-        # Convert SMILES to MOL2 with 3D coordinates
+        # Step 1: Convert SMILES to MOL2 with proper aromaticity perception
+        # --gen3d: Generate 3D coordinates
+        # -h: Add hydrogens
+        # -p 7.4: Set pH for protonation
+        # --partialcharge: Add partial charges
         cmd1 = ['obabel', '-ismi', smi_file, '-omol2', '-O', mol2_file,
-                '--gen3d', '-p', '7.4', '-h']
-        subprocess.run(cmd1, check=True, capture_output=True, text=True)
+                '--gen3d', '-h', '-p', '7.4', '--partialcharge', 'gasteiger']
+        result1 = subprocess.run(cmd1, check=True, capture_output=True, text=True)
         
-        # Convert MOL2 to PDBQT
-        cmd2 = ['obabel', mol2_file, '-O', pdbqt_file]
-        subprocess.run(cmd2, check=True, capture_output=True, text=True)
+        if result1.stderr:
+            print(f"MOL2 conversion warnings: {result1.stderr}")
+        
+        # Step 2: Convert MOL2 to PDB to preserve aromatic information
+        # -a: Perceive aromaticity
+        cmd2 = ['obabel', mol2_file, '-opdb', '-O', pdb_file, '-a']
+        result2 = subprocess.run(cmd2, check=True, capture_output=True, text=True)
+        
+        # Validate aromatic conversion
+        if 'c1ccccc1' in smiles_string.lower() or 'c1cc' in smiles_string.lower():
+            # Check if PDB file contains proper aromatic info
+            with open(pdb_file, 'r') as f:
+                pdb_content = f.read()
+                atom_count = pdb_content.count('HETATM')
+                print(f"  Generated {atom_count} atoms")
+                
+                # For benzene, we should have 12 atoms (6 C + 6 H)
+                if 'c1ccccc1' == smiles_string.lower() and atom_count < 12:
+                    print("  ⚠️  Warning: Benzene conversion may be incomplete")
+                    print("  Adding explicit hydrogens...")
+                    
+                    # Try alternative conversion with explicit hydrogen addition
+                    cmd_alt = ['obabel', '-ismi', smi_file, '-opdb', '-O', pdb_file,
+                              '--gen3d', '-h', '-p', '7.4', '-a']
+                    subprocess.run(cmd_alt, check=True, capture_output=True, text=True)
+        
+        # Step 3: Convert PDB to PDBQT for docking compatibility
+        # -xr: Rigid format (no torsions for aromatic rings)
+        # -p: Preserve input partial charges
+        cmd3 = ['obabel', pdb_file, '-opdbqt', '-O', pdbqt_file, '-xr', '-p']
+        result3 = subprocess.run(cmd3, check=True, capture_output=True, text=True)
         
         # Clean up intermediate files
-        os.remove(smi_file)
-        os.remove(mol2_file)
+        for f in [smi_file, mol2_file]:
+            if os.path.exists(f):
+                os.remove(f)
         
+        # Keep PDB file as backup for aromatic systems
         print(f"✓ Created: {pdbqt_file}")
+        print(f"✓ Also created: {pdb_file} (for aromatic validation)")
+        
+        # Recommend using PDB for aromatic ligands
+        if any(marker in smiles_string.lower() for marker in ['c1cc', 'c1nc', 'c1cn']):
+            print("\n💡 Note: This ligand contains aromatic rings.")
+            print(f"   Consider using {pdb_file} instead of {pdbqt_file}")
+            print("   for better aromatic interaction detection.")
+        
         return pdbqt_file
         
     except subprocess.CalledProcessError as e:
         print(f"Error during conversion: {e.stderr}")
-        for f in [smi_file, mol2_file]:
+        for f in [smi_file, mol2_file, pdb_file]:
             if os.path.exists(f):
                 os.remove(f)
         return None

@@ -43,7 +43,7 @@ class CollisionDetector:
         self.vdw_radii = {
             'H': 1.20, 'C': 1.70, 'N': 1.55, 'O': 1.52,
             'F': 1.47, 'P': 1.80, 'S': 1.80, 'CL': 1.75,
-            'BR': 1.85, 'I': 1.98
+            'BR': 1.85, 'I': 1.98, 'A': 1.70  # PDBQT aromatic carbon
         }
         self.default_radius = 1.70
         
@@ -259,7 +259,8 @@ class ProteinLigandFluxAnalyzer:
         # Simple atomic mass table
         masses = {'H': 1.008, 'C': 12.011, 'N': 14.007, 'O': 15.999,
                  'S': 32.065, 'P': 30.974, 'F': 18.998, 'CL': 35.453,
-                 'BR': 79.904, 'I': 126.904, 'FE': 55.845, 'ZN': 65.38}
+                 'BR': 79.904, 'I': 126.904, 'FE': 55.845, 'ZN': 65.38,
+                 'A': 12.011}  # PDBQT aromatic carbon if not caught by parser
         
         total_mass = 0
         for _, atom in ligand_atoms.iterrows():
@@ -316,6 +317,9 @@ class ProteinLigandFluxAnalyzer:
         D = self.calculate_diffusion_coefficient(molecular_weight)
         step_size = np.sqrt(2 * D * dt)
         
+        # Increase step size for more visible motion
+        step_size *= 3.0  # Amplify Brownian motion for more stochastic behavior
+        
         # Find center of protein
         protein_center = np.mean(protein_coords, axis=0)
         
@@ -357,49 +361,65 @@ class ProteinLigandFluxAnalyzer:
         stuck_counter = 0
         last_pos = current_pos.copy()
         
+        # Allow distance fluctuations for more natural motion
+        distance_flexibility = 0.25  # Allow ±25% variation in distance
+        
         for i in range(1, n_steps):
-            # Generate random displacement with enhanced exploration
+            # Generate TRUE random displacement (full Brownian motion)
             displacement = np.random.randn(3) * step_size
             
-            # Add tangential component to encourage surface exploration
-            # Find closest protein atom
+            # Add attraction toward protein (bias toward binding)
+            # Find closest protein atoms (multiple, not just one)
             distances = cdist([current_pos], protein_coords)[0]
-            closest_idx = np.argmin(distances)
-            closest_atom = protein_coords[closest_idx]
+            closest_indices = np.argsort(distances)[:10]  # Consider 10 closest atoms
             
-            # Radial direction
-            radial = current_pos - closest_atom
-            radial_norm = np.linalg.norm(radial)
-            if radial_norm > 0:
-                radial_unit = radial / radial_norm
-                
-                # Add tangential movement (perpendicular to radial)
-                tangent1 = np.cross(radial_unit, [1, 0, 0])
-                if np.linalg.norm(tangent1) < 0.1:
-                    tangent1 = np.cross(radial_unit, [0, 1, 0])
-                tangent1 /= np.linalg.norm(tangent1)
-                
-                tangent2 = np.cross(radial_unit, tangent1)
-                
-                # Mix radial and tangential movements (favor tangential for exploration)
-                displacement = (0.3 * np.dot(displacement, radial_unit) * radial_unit +
-                              0.7 * (np.dot(displacement, tangent1) * tangent1 +
-                                     np.dot(displacement, tangent2) * tangent2))
+            # Calculate weighted attraction
+            attraction_vector = np.zeros(3)
+            for idx in closest_indices:
+                atom_pos = protein_coords[idx]
+                to_atom = atom_pos - current_pos
+                distance = np.linalg.norm(to_atom)
+                if distance > 0:
+                    # Inverse distance weighting for attraction
+                    weight = 1.0 / (distance ** 2)
+                    attraction_vector += weight * to_atom / distance
             
-            # Propose new position
+            # Normalize and scale attraction
+            if np.linalg.norm(attraction_vector) > 0:
+                attraction_vector /= np.linalg.norm(attraction_vector)
+                # Add 20% attraction bias
+                displacement += 0.2 * step_size * attraction_vector
+            
+            # Propose new position with full stochastic motion
             new_pos = current_pos + displacement
             
-            # Adjust to maintain target distance
+            # Soft distance constraint with flexibility
             distances = cdist([new_pos], protein_coords)[0]
             closest_idx = np.argmin(distances)
             closest_atom = protein_coords[closest_idx]
+            current_distance = distances[closest_idx]
             
-            direction = new_pos - closest_atom
-            direction_norm = np.linalg.norm(direction)
+            # Allow natural fluctuations around target distance
+            min_allowed = target_distance * (1 - distance_flexibility)
+            max_allowed = target_distance * (1 + distance_flexibility)
             
-            if direction_norm > 0:
-                direction_unit = direction / direction_norm
-                new_pos = closest_atom + direction_unit * target_distance
+            # Only adjust if outside flexible bounds
+            if current_distance < min_allowed or current_distance > max_allowed:
+                direction = new_pos - closest_atom
+                direction_norm = np.linalg.norm(direction)
+                
+                if direction_norm > 0:
+                    direction_unit = direction / direction_norm
+                    
+                    # Soft adjustment - blend between proposed and target
+                    if current_distance < min_allowed:
+                        adjusted_distance = min_allowed
+                    else:
+                        adjusted_distance = max_allowed
+                    
+                    adjusted_pos = closest_atom + direction_unit * adjusted_distance
+                    # Blend 70% proposed position, 30% adjusted (keeps more stochasticity)
+                    new_pos = 0.7 * new_pos + 0.3 * adjusted_pos
             
             # Check collision
             test_coords = ligand_coords + (new_pos - ligand_coords.mean(axis=0))
@@ -409,28 +429,27 @@ class ProteinLigandFluxAnalyzer:
                 current_pos = new_pos
                 position_accepted = True
             else:
-                # Try different angles if direct path blocked
-                for angle in [90, -90, 45, -45, 135, -135]:
-                    # Rotate displacement around radial axis
-                    angle_rad = np.radians(angle)
-                    rotation_axis = radial_unit if radial_norm > 0 else np.array([0, 0, 1])
+                # Collision detected - try smaller step but keep stochasticity
+                for scale in [0.7, 0.5, 0.3]:
+                    scaled_displacement = displacement * scale
+                    test_pos = current_pos + scaled_displacement
                     
-                    # Rodrigues rotation formula
-                    cos_a = np.cos(angle_rad)
-                    sin_a = np.sin(angle_rad)
-                    rotated_disp = (displacement * cos_a +
-                                   np.cross(rotation_axis, displacement) * sin_a +
-                                   rotation_axis * np.dot(rotation_axis, displacement) * (1 - cos_a))
-                    
-                    test_pos = current_pos + rotated_disp
-                    
-                    # Adjust to target distance
+                    # Apply same soft distance constraint
                     distances = cdist([test_pos], protein_coords)[0]
                     closest_idx = np.argmin(distances)
                     closest_atom = protein_coords[closest_idx]
-                    direction = test_pos - closest_atom
-                    if np.linalg.norm(direction) > 0:
-                        test_pos = closest_atom + (direction / np.linalg.norm(direction)) * target_distance
+                    current_distance = distances[closest_idx]
+                    
+                    if current_distance < min_allowed or current_distance > max_allowed:
+                        direction = test_pos - closest_atom
+                        if np.linalg.norm(direction) > 0:
+                            direction_unit = direction / np.linalg.norm(direction)
+                            if current_distance < min_allowed:
+                                adjusted_distance = min_allowed
+                            else:
+                                adjusted_distance = max_allowed
+                            adjusted_pos = closest_atom + direction_unit * adjusted_distance
+                            test_pos = 0.7 * test_pos + 0.3 * adjusted_pos
                     
                     test_coords = ligand_coords + (test_pos - ligand_coords.mean(axis=0))
                     
@@ -438,18 +457,31 @@ class ProteinLigandFluxAnalyzer:
                         current_pos = test_pos
                         position_accepted = True
                         break
+                
+                # If still colliding, stay at current position but add small random perturbation
+                if not position_accepted:
+                    # Add small random jitter to avoid getting stuck
+                    jitter = np.random.randn(3) * 0.1
+                    current_pos = current_pos + jitter
             
-            # Check if stuck
-            if np.linalg.norm(current_pos - last_pos) < 0.1:
+            # Check if stuck (with larger threshold due to increased motion)
+            if np.linalg.norm(current_pos - last_pos) < 0.5:
                 stuck_counter += 1
-                if stuck_counter > 10:
-                    # Jump to a new random position
+                if stuck_counter > 20:  # More tolerance before jumping
+                    # Jump to a new random position with some attraction bias
                     theta = np.random.uniform(0, 2 * np.pi)
                     phi = np.random.uniform(0, np.pi)
                     jump_direction = np.array([np.sin(phi) * np.cos(theta),
                                              np.sin(phi) * np.sin(theta),
                                              np.cos(phi)])
-                    current_pos = protein_center + jump_direction * (np.max(cdist([protein_center], protein_coords)[0]) + target_distance)
+                    
+                    # Bias jump toward protein
+                    jump_direction = 0.7 * jump_direction + 0.3 * (-protein_center / np.linalg.norm(protein_center))
+                    jump_direction /= np.linalg.norm(jump_direction)
+                    
+                    # Random distance within allowed range
+                    jump_distance = np.random.uniform(min_allowed, max_allowed)
+                    current_pos = protein_center + jump_direction * (np.max(cdist([protein_center], protein_coords)[0]) + jump_distance)
                     stuck_counter = 0
             else:
                 stuck_counter = 0
@@ -653,8 +685,17 @@ class ProteinLigandFluxAnalyzer:
                         # Fallback element detection
                         if not element or element.strip() == '':
                             atom_name = atom.get_name().strip()
+                            # PDBQT atom type patterns
+                            if atom_name.startswith('AC') or atom_name.startswith('A'):
+                                element = 'C'  # Aromatic carbon
+                            elif atom_name.startswith('NA'):
+                                element = 'N'  # Aromatic nitrogen
+                            elif atom_name.startswith('OA'):
+                                element = 'O'  # Aromatic oxygen
+                            elif atom_name.startswith('SA'):
+                                element = 'S'  # Aromatic sulfur
                             # Common patterns
-                            if atom_name[:2] in ['CL', 'BR']:
+                            elif atom_name[:2] in ['CL', 'BR']:
                                 element = atom_name[:2]
                             elif atom_name and atom_name[0] in ['C', 'N', 'O', 'S', 'P', 'H', 'F']:
                                 element = atom_name[0]
@@ -746,6 +787,18 @@ class ProteinLigandFluxAnalyzer:
                             element = 'Cl'
                         elif atom_name.startswith('BR'):
                             element = 'Br'
+                        elif atom_name.startswith('AC') or atom_name.startswith('A'):
+                            # PDBQT aromatic carbon
+                            element = 'C'
+                        elif atom_name.startswith('NA'):
+                            # PDBQT aromatic nitrogen
+                            element = 'N'
+                        elif atom_name.startswith('OA'):
+                            # PDBQT aromatic oxygen
+                            element = 'O'
+                        elif atom_name.startswith('SA'):
+                            # PDBQT aromatic sulfur
+                            element = 'S'
                         elif atom_name and atom_name[0] in ['C', 'N', 'O', 'S', 'P', 'H', 'F']:
                             element = atom_name[0].upper()
                         else:
@@ -938,6 +991,49 @@ class ProteinLigandFluxAnalyzer:
         
         return interactions_df
     
+    def detect_aromatic_rings_networkx(self, atoms_df):
+        """Detect aromatic rings using networkx graph analysis"""
+        try:
+            import networkx as nx
+        except ImportError:
+            print("Warning: networkx not installed. Using simple aromatic detection.")
+            return []
+        
+        # Build molecular graph
+        G = nx.Graph()
+        
+        # Add nodes (atoms)
+        for idx, atom in atoms_df.iterrows():
+            G.add_node(idx, element=atom['element'], coords=[atom['x'], atom['y'], atom['z']])
+        
+        # Add edges (bonds) based on distance
+        coords = atoms_df[['x', 'y', 'z']].values
+        for i in range(len(atoms_df)):
+            for j in range(i+1, len(atoms_df)):
+                dist = np.linalg.norm(coords[i] - coords[j])
+                # Typical C-C bond: 1.4-1.5 Å for aromatic, up to 1.6 Å for single
+                if dist < 1.7:
+                    G.add_edge(i, j)
+        
+        # Find cycles (rings)
+        aromatic_rings = []
+        cycles = nx.cycle_basis(G)
+        
+        for cycle in cycles:
+            if 5 <= len(cycle) <= 6:  # 5 or 6-membered rings
+                ring_atoms = atoms_df.iloc[cycle]
+                # Check if ring is planar (aromatic)
+                if len(ring_atoms) >= 4:
+                    coords = ring_atoms[['x', 'y', 'z']].values
+                    # Calculate planarity using SVD
+                    centered = coords - coords.mean(axis=0)
+                    _, s, _ = np.linalg.svd(centered)
+                    # If third singular value is small, atoms are coplanar
+                    if s[2] < 0.3:  # Threshold for planarity
+                        aromatic_rings.append(ring_atoms)
+        
+        return aromatic_rings
+    
     def detect_pi_stacking(self, protein_atoms, ligand_atoms, iteration_num):
         """Detect pi-stacking interactions between aromatic systems"""
         pi_interactions = []
@@ -956,43 +1052,58 @@ class ProteinLigandFluxAnalyzer:
                 ]
                 
                 if len(res_atoms) >= 3:
-                    # Check against ligand aromatic atoms
-                    # Simple heuristic: C atoms in specific patterns
-                    ligand_aromatic = ligand_atoms[
-                        (ligand_atoms['element'] == 'C') |
-                        (ligand_atoms['element'] == 'N')
-                    ]
+                    # Detect aromatic rings in ligand using graph analysis
+                    ligand_aromatic_rings = self.detect_aromatic_rings_networkx(ligand_atoms)
                     
-                    if len(ligand_aromatic) >= 3:
-                        # Calculate pi-stacking
-                        pi_result = self.calculate_pi_stacking(res_atoms, ligand_aromatic)
+                    # If networkx detection fails, fall back to simple heuristic
+                    if not ligand_aromatic_rings:
+                        # Simple heuristic: check for connected C/N atoms
+                        ligand_aromatic = ligand_atoms[
+                            (ligand_atoms['element'].isin(['C', 'N']))
+                        ]
                         
-                        if pi_result:
-                            interaction = {
-                                'frame': iteration_num,
-                                'protein_chain': res_atoms.iloc[0]['chain'],
-                                'protein_residue': res_id,
-                                'protein_resname': res_name,
-                                'protein_atom': 'RING',
-                                'protein_atom_id': -1,  # Special marker for pi-stacking
-                                'protein_residue_id': res_id,  # CRITICAL: Add residue mapping!
-                                'ligand_atom': 'RING',
-                                'distance': pi_result['distance'],
-                                'bond_type': pi_result['type'],
-                                'bond_energy': pi_result['energy'],
-                                'angle': pi_result['angle'],
-                                'offset_distance': pi_result['offset'],
-                                'centroid1_x': pi_result['center1'][0],
-                                'centroid1_y': pi_result['center1'][1],
-                                'centroid1_z': pi_result['center1'][2],
-                                'centroid2_x': pi_result['center2'][0],
-                                'centroid2_y': pi_result['center2'][1],
-                                'centroid2_z': pi_result['center2'][2],
-                                'vector_x': pi_result['center2'][0] - pi_result['center1'][0],
-                                'vector_y': pi_result['center2'][1] - pi_result['center1'][1],
-                                'vector_z': pi_result['center2'][2] - pi_result['center1'][2]
-                            }
-                            pi_interactions.append(interaction)
+                        if len(ligand_aromatic) >= 5:  # Minimum for aromatic ring
+                            # Check if atoms form a connected cluster
+                            coords = ligand_aromatic[['x', 'y', 'z']].values
+                            distances = cdist(coords, coords)
+                            # If most atoms are within bonding distance, likely aromatic
+                            close_pairs = (distances < 1.7) & (distances > 0.1)
+                            if np.sum(close_pairs) >= len(ligand_aromatic) * 1.5:
+                                ligand_aromatic_rings = [ligand_aromatic]
+                    
+                    # Check each ligand aromatic ring
+                    for ligand_ring in ligand_aromatic_rings:
+                        if len(ligand_ring) >= 3:
+                            # Calculate pi-stacking
+                            pi_result = self.calculate_pi_stacking(res_atoms, ligand_ring)
+                            
+                            if pi_result:
+                                interaction = {
+                                    'frame': iteration_num,
+                                    'protein_chain': res_atoms.iloc[0]['chain'],
+                                    'protein_residue': res_id,
+                                    'protein_resname': res_name,
+                                    'protein_atom': 'RING',
+                                    'protein_atom_id': -1,  # Special marker for pi-stacking
+                                    'protein_residue_id': res_id,  # CRITICAL: Add residue mapping!
+                                    'ligand_atom': 'RING',
+                                    'ligand_ring_size': len(ligand_ring),
+                                    'distance': pi_result['distance'],
+                                    'bond_type': pi_result['type'],
+                                    'bond_energy': pi_result['energy'],
+                                    'angle': pi_result['angle'],
+                                    'offset_distance': pi_result['offset'],
+                                    'centroid1_x': pi_result['center1'][0],
+                                    'centroid1_y': pi_result['center1'][1],
+                                    'centroid1_z': pi_result['center1'][2],
+                                    'centroid2_x': pi_result['center2'][0],
+                                    'centroid2_y': pi_result['center2'][1],
+                                    'centroid2_z': pi_result['center2'][2],
+                                    'vector_x': pi_result['center2'][0] - pi_result['center1'][0],
+                                    'vector_y': pi_result['center2'][1] - pi_result['center1'][1],
+                                    'vector_z': pi_result['center2'][2] - pi_result['center1'][2]
+                                }
+                                pi_interactions.append(interaction)
         
         return pi_interactions
     
@@ -1014,6 +1125,10 @@ class ProteinLigandFluxAnalyzer:
             else:
                 l_element = 'C'  # Default
                 print(f"Warning: Unknown element for ligand atom {l_atom_name}, defaulting to C")
+        
+        # Handle PDBQT aromatic carbon 'A' element
+        if l_element == 'A':
+            l_element = 'C'
         
         # Hydrogen bond detection
         if distance < 3.5:

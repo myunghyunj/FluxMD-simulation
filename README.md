@@ -70,6 +70,20 @@ pip install networkx  # For aromatic ring detection
 
 ## Recent Improvements
 
+### Enhanced Trajectory Dynamics (v2.1)
+- **More stochastic motion**: Increased Brownian component (3x amplification) for natural random walk
+- **Protein attraction**: Added weighted attraction forces toward closest protein atoms
+- **Flexible distance constraints**: Allow ±25% variation around target distance for natural fluctuations
+- **Soft constraints**: 70% proposed position + 30% adjusted position to maintain stochasticity
+- **Better exploration**: Removed rigid tangential/radial split that created circular patterns
+
+### Improved Aromatic Detection (v2.1)
+- **Fixed SMILES conversion**: Properly handles aromatic rings (benzene, pyridine, etc.)
+- **NetworkX integration**: Graph-based aromatic ring detection for accurate π-π stacking
+- **Multiple output formats**: Creates both PDB and PDBQT files for aromatic validation
+- **Planarity checking**: Uses SVD to verify aromatic ring geometry
+- **Fallback heuristics**: Connected cluster detection when NetworkX unavailable
+
 ### Fixed GPU/CPU Performance (v2.0)
 - **GPU now truly parallel**: Processes rotations in batches instead of sequentially
 - **CPU parallelization**: Uses all cores with joblib for rotation sampling
@@ -413,6 +427,12 @@ MIT License. See LICENSE file.
    - Check ligand file format (HETATM records required for PDB ligands)
    - Verify protein and ligand are within interaction distance
    - Try increasing approach distance parameter
+
+5. **SMILES conversion issues with aromatic rings**
+   - For aromatic ligands (benzene, pyridine, etc.), use the generated PDB file instead of PDBQT
+   - FluxMD now creates both formats and recommends PDB for aromatic systems
+   - Verify aromatic atoms are properly connected (check atom count)
+   - Install networkx for better aromatic detection: `pip install networkx`
 
 ## Support
 
