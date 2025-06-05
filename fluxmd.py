@@ -205,7 +205,7 @@ def run_complete_workflow():
     # Step 2: Set parameters
     print("\nSTEP 2: PARAMETERS")
     print("-" * 40)
-    print("\nPRESS ENTERS FOR REPRODUCIBLE RESULTS")
+    print("\nPress Enter for reproducible results")
     n_steps = int(input("Steps per approach (default 1000): ") or "100")
     n_iterations = int(input("Number of iterations (default 50): ") or "100")
     n_approaches = int(input("Number of approaches (default 5): ") or "5")
@@ -215,6 +215,9 @@ def run_complete_workflow():
     # Add pH parameter
     physiological_pH = float(input("pH for protonation state calculation (default 7.4): ") or "7.4")
     print(f"  Using pH {physiological_pH} for H-bond donor/acceptor assignment")
+
+    drift_choice = input("Enable drift toward target? (Y/n): ").strip().lower()
+    use_drift = drift_choice != 'n'
     
     output_dir = input("Output directory (default 'flux_analysis'): ").strip() or "flux_analysis"
     
@@ -245,6 +248,7 @@ def run_complete_workflow():
     print(f"  Final: ~{starting_distance - (n_approaches-1)*approach_distance:.1f} Å")
     print(f"  pH: {physiological_pH} (affects H-bond donors/acceptors)")
     print(f"  GPU: {'ENABLED' if use_gpu else 'DISABLED'}")
+    print(f"  Drift: {'ON' if use_drift else 'OFF'}")
     print(f"  Parallel: {'ENABLED' if n_jobs != 1 else 'DISABLED'}")
     
     confirm = input("\nProceed with analysis? (y/n): ").strip().lower()
@@ -264,7 +268,7 @@ def run_complete_workflow():
         iteration_data = trajectory_analyzer.run_complete_analysis(
             protein_file, ligand_file, output_dir, n_steps, n_iterations,
             n_approaches, approach_distance, starting_distance,
-            n_jobs=n_jobs, use_gpu=use_gpu
+            n_jobs=n_jobs, use_gpu=use_gpu, use_drift=use_drift
         )
         
         if iteration_data is None:
