@@ -549,11 +549,15 @@ class TrajectoryFluxAnalyzer:
                   f"({progress:.1f}% complete, ETA: {eta_str})")
             
             # Process CSV files in this iteration
-            residue_tensors = self.process_iteration_files(
-                iter_dir,
-                "flux_iteration_*_output_vectors.csv",
-                structure_file=protein_pdb
-            )
+            try:
+                residue_tensors = self.process_iteration_files(
+                    iter_dir,
+                    "flux_iteration_*_output_vectors.csv",
+                    structure_file=protein_pdb
+                )
+            except ValueError as e:
+                print(f"   ⚠️  Skipping {os.path.basename(iter_dir)}: {e}")
+                continue
             
             # Calculate flux differentials
             flux, derivatives = self.calculate_tensor_flux_differentials(

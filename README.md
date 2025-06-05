@@ -34,6 +34,7 @@ This approach reveals how proteins' internal stress fields guide ligand recognit
 - **GPU acceleration**: estimated 10-100x faster on Apple Silicon; actual speedups may vary (CUDA support implemented but untested)
 > **Note:** CUDA acceleration has not been validated and performance results are hypothetical.
 - **Statistical validation**: Bootstrap confidence intervals and p-values
+- **Parameter reuse**: Load trajectory parameters from previous simulations for consistent comparisons
 
 ## Installation
 
@@ -146,6 +147,14 @@ The program guides you through parameter selection, including:
 - Rotations per position (default 36)
 - GPU acceleration options
 - All parameters are saved to `simulation_parameters.txt`
+
+### Reusing Parameters for Comparisons
+When comparing different ligands or proteins, you can reuse trajectory parameters from a previous simulation:
+```
+Load parameters from existing simulation? (y/n): y
+Enter path to simulation_parameters.txt: /path/to/previous/simulation_parameters.txt
+```
+This ensures consistent trajectory conditions (steps, approaches, rotations, pH) across different runs, enabling fair comparisons while using different protein/ligand files.
 
 ## Output
 

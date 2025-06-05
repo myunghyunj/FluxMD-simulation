@@ -87,6 +87,42 @@ def convert_smiles_to_pdbqt(smiles_string, output_name="ligand"):
         return None
 
 
+def parse_simulation_parameters(params_file):
+    """Parse simulation parameters from existing file"""
+    params = {}
+    
+    try:
+        with open(params_file, 'r') as f:
+            lines = f.readlines()
+        
+        for line in lines:
+            line = line.strip()
+            if ': ' in line:
+                key, value = line.split(': ', 1)
+                
+                # Extract trajectory parameters
+                if key == "Steps per approach":
+                    params['n_steps'] = int(value)
+                elif key == "Number of iterations":
+                    params['n_iterations'] = int(value)
+                elif key == "Number of approaches":
+                    params['n_approaches'] = int(value)
+                elif key == "Approach distance":
+                    params['approach_distance'] = float(value.replace(' Å', ''))
+                elif key == "Starting distance":
+                    params['starting_distance'] = float(value.replace(' Å', ''))
+                elif key == "Rotations per position":
+                    params['n_rotations'] = int(value)
+                elif key == "pH":
+                    params['physiological_pH'] = float(value)
+        
+        return params
+    
+    except Exception as e:
+        print(f"Error parsing parameters file: {e}")
+        return None
+
+
 def validate_results(output_dir, protein_name):
     """Validate that results contain expected improvements"""
     print_banner("🔍 VALIDATING RESULTS")
@@ -206,19 +242,53 @@ def run_complete_workflow():
     # Step 2: Set parameters
     print("\nSTEP 2: PARAMETERS")
     print("-" * 40)
-    print("\nPress Enter for reproducible results")
-    n_steps = int(input("Steps per approach (default 1000): ") or "100")
-    n_iterations = int(input("Number of iterations (default 50): ") or "100")
-    n_approaches = int(input("Number of approaches (default 5): ") or "5")
-    approach_distance = float(input("Approach distance in Å (default 2.5): ") or "2.5")
-    starting_distance = float(input("Starting distance in Å (default 15): ") or "15")
     
-    # Add pH parameter
-    physiological_pH = float(input("pH for protonation state calculation (default 7.4): ") or "7.4")
-    print(f"  Using pH {physiological_pH} for H-bond donor/acceptor assignment")
+    # Ask if user wants to use existing parameters
+    use_existing = input("\nLoad parameters from existing simulation? (y/n): ").strip().lower()
+    
+    if use_existing == 'y':
+        params_file = input("Enter path to simulation_parameters.txt: ").strip()
+        if os.path.exists(params_file):
+            loaded_params = parse_simulation_parameters(params_file)
+            if loaded_params:
+                print("\n✓ Loaded parameters from file:")
+                for key, value in loaded_params.items():
+                    print(f"  {key}: {value}")
+                
+                confirm = input("\nUse these parameters? (y/n): ").strip().lower()
+                if confirm == 'y':
+                    # Use loaded parameters
+                    n_steps = loaded_params.get('n_steps', 100)
+                    n_iterations = loaded_params.get('n_iterations', 100)
+                    n_approaches = loaded_params.get('n_approaches', 5)
+                    approach_distance = loaded_params.get('approach_distance', 2.5)
+                    starting_distance = loaded_params.get('starting_distance', 15)
+                    n_rotations = loaded_params.get('n_rotations', 36)
+                    physiological_pH = loaded_params.get('physiological_pH', 7.4)
+                else:
+                    use_existing = 'n'  # Fall back to manual entry
+            else:
+                print("Failed to parse parameters file.")
+                use_existing = 'n'
+        else:
+            print(f"File not found: {params_file}")
+            use_existing = 'n'
+    
+    if use_existing != 'y':
+        # Manual parameter entry
+        print("\nEnter parameters manually (press Enter for defaults):")
+        n_steps = int(input("Steps per approach (default 100): ") or "100")
+        n_iterations = int(input("Number of iterations (default 100): ") or "100")
+        n_approaches = int(input("Number of approaches (default 5): ") or "5")
+        approach_distance = float(input("Approach distance in Å (default 2.5): ") or "2.5")
+        starting_distance = float(input("Starting distance in Å (default 15): ") or "15")
+        
+        # Add pH parameter
+        physiological_pH = float(input("pH for protonation state calculation (default 7.4): ") or "7.4")
+        print(f"  Using pH {physiological_pH} for H-bond donor/acceptor assignment")
 
-    # Cocoon trajectory parameters
-    n_rotations = int(input("Rotations per position (default 36): ") or "36")
+        # Cocoon trajectory parameters
+        n_rotations = int(input("Rotations per position (default 36): ") or "36")
     
     output_dir = input("Output directory (default 'flux_analysis'): ").strip() or "flux_analysis"
     

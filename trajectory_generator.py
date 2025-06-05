@@ -319,70 +319,142 @@ class ProteinLigandFluxAnalyzer:
         # Find center of protein
         protein_center = np.mean(protein_coords, axis=0)
         
-        # Find a point on protein surface (closest atom to center)
-        distances_to_center = cdist([protein_center], protein_coords)[0]
-        surface_idx = np.argmin(distances_to_center)
-        surface_point = protein_coords[surface_idx]
+        # Create random starting positions around protein at target distance
+        # This prevents getting stuck in local minima
+        n_start_attempts = 10
+        initial_pos = None
         
-        # Create initial position at target_distance from surface point
-        # Use a random direction
-        random_direction = np.random.randn(3)
-        random_direction /= np.linalg.norm(random_direction)
-        initial_pos = surface_point + random_direction * target_distance
+        for attempt in range(n_start_attempts):
+            # Random spherical coordinates
+            theta = np.random.uniform(0, 2 * np.pi)
+            phi = np.random.uniform(0, np.pi)
+            
+            # Convert to Cartesian
+            x = np.sin(phi) * np.cos(theta)
+            y = np.sin(phi) * np.sin(theta)
+            z = np.cos(phi)
+            
+            # Place at target distance from protein center
+            test_pos = protein_center + np.array([x, y, z]) * (np.max(cdist([protein_center], protein_coords)[0]) + target_distance)
+            
+            # Check if valid
+            test_coords = ligand_coords + (test_pos - ligand_coords.mean(axis=0))
+            if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                initial_pos = test_pos
+                break
+        
+        if initial_pos is None:
+            # Fallback to simpler method
+            random_direction = np.random.randn(3)
+            random_direction /= np.linalg.norm(random_direction)
+            initial_pos = protein_center + random_direction * (np.max(cdist([protein_center], protein_coords)[0]) + target_distance)
         
         trajectory = [initial_pos.copy()]
         times = [0]
         current_pos = initial_pos.copy()
         
+        # Track if we're stuck
+        stuck_counter = 0
+        last_pos = current_pos.copy()
+        
         for i in range(1, n_steps):
-            # Generate random displacement
+            # Generate random displacement with enhanced exploration
             displacement = np.random.randn(3) * step_size
+            
+            # Add tangential component to encourage surface exploration
+            # Find closest protein atom
+            distances = cdist([current_pos], protein_coords)[0]
+            closest_idx = np.argmin(distances)
+            closest_atom = protein_coords[closest_idx]
+            
+            # Radial direction
+            radial = current_pos - closest_atom
+            radial_norm = np.linalg.norm(radial)
+            if radial_norm > 0:
+                radial_unit = radial / radial_norm
+                
+                # Add tangential movement (perpendicular to radial)
+                tangent1 = np.cross(radial_unit, [1, 0, 0])
+                if np.linalg.norm(tangent1) < 0.1:
+                    tangent1 = np.cross(radial_unit, [0, 1, 0])
+                tangent1 /= np.linalg.norm(tangent1)
+                
+                tangent2 = np.cross(radial_unit, tangent1)
+                
+                # Mix radial and tangential movements (favor tangential for exploration)
+                displacement = (0.3 * np.dot(displacement, radial_unit) * radial_unit +
+                              0.7 * (np.dot(displacement, tangent1) * tangent1 +
+                                     np.dot(displacement, tangent2) * tangent2))
             
             # Propose new position
             new_pos = current_pos + displacement
             
-            # Find closest protein atom and adjust to maintain target distance
+            # Adjust to maintain target distance
             distances = cdist([new_pos], protein_coords)[0]
             closest_idx = np.argmin(distances)
             closest_atom = protein_coords[closest_idx]
             
-            # Vector from closest atom to ligand
             direction = new_pos - closest_atom
             direction_norm = np.linalg.norm(direction)
             
             if direction_norm > 0:
-                # Adjust position to maintain target distance
                 direction_unit = direction / direction_norm
                 new_pos = closest_atom + direction_unit * target_distance
             
             # Check collision
             test_coords = ligand_coords + (new_pos - ligand_coords.mean(axis=0))
             
+            position_accepted = False
             if not self.collision_detector.check_collision(test_coords, ligand_atoms):
                 current_pos = new_pos
+                position_accepted = True
             else:
-                # Try smaller steps if collision detected
-                for scale in [0.5, 0.25, 0.1]:
-                    smaller_displacement = displacement * scale
-                    smaller_pos = current_pos + smaller_displacement
+                # Try different angles if direct path blocked
+                for angle in [90, -90, 45, -45, 135, -135]:
+                    # Rotate displacement around radial axis
+                    angle_rad = np.radians(angle)
+                    rotation_axis = radial_unit if radial_norm > 0 else np.array([0, 0, 1])
                     
-                    # Re-adjust to maintain distance
-                    distances = cdist([smaller_pos], protein_coords)[0]
+                    # Rodrigues rotation formula
+                    cos_a = np.cos(angle_rad)
+                    sin_a = np.sin(angle_rad)
+                    rotated_disp = (displacement * cos_a +
+                                   np.cross(rotation_axis, displacement) * sin_a +
+                                   rotation_axis * np.dot(rotation_axis, displacement) * (1 - cos_a))
+                    
+                    test_pos = current_pos + rotated_disp
+                    
+                    # Adjust to target distance
+                    distances = cdist([test_pos], protein_coords)[0]
                     closest_idx = np.argmin(distances)
                     closest_atom = protein_coords[closest_idx]
-                    direction = smaller_pos - closest_atom
-                    direction_norm = np.linalg.norm(direction)
+                    direction = test_pos - closest_atom
+                    if np.linalg.norm(direction) > 0:
+                        test_pos = closest_atom + (direction / np.linalg.norm(direction)) * target_distance
                     
-                    if direction_norm > 0:
-                        direction_unit = direction / direction_norm
-                        smaller_pos = closest_atom + direction_unit * target_distance
-                    
-                    test_coords = ligand_coords + (smaller_pos - ligand_coords.mean(axis=0))
+                    test_coords = ligand_coords + (test_pos - ligand_coords.mean(axis=0))
                     
                     if not self.collision_detector.check_collision(test_coords, ligand_atoms):
-                        current_pos = smaller_pos
+                        current_pos = test_pos
+                        position_accepted = True
                         break
             
+            # Check if stuck
+            if np.linalg.norm(current_pos - last_pos) < 0.1:
+                stuck_counter += 1
+                if stuck_counter > 10:
+                    # Jump to a new random position
+                    theta = np.random.uniform(0, 2 * np.pi)
+                    phi = np.random.uniform(0, np.pi)
+                    jump_direction = np.array([np.sin(phi) * np.cos(theta),
+                                             np.sin(phi) * np.sin(theta),
+                                             np.cos(phi)])
+                    current_pos = protein_center + jump_direction * (np.max(cdist([protein_center], protein_coords)[0]) + target_distance)
+                    stuck_counter = 0
+            else:
+                stuck_counter = 0
+            
+            last_pos = current_pos.copy()
             trajectory.append(current_pos.copy())
             times.append(i * dt)
         
