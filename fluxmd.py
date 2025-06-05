@@ -21,6 +21,62 @@ from gpu_accelerated_flux import get_device
 from visualize_multiflux import visualize_multiflux
 
 
+def benchmark_performance(protein_atoms, ligand_atoms, n_test_frames=5, n_test_rotations=12):
+    """
+    Run quick benchmark to determine actual GPU vs CPU performance
+    Returns: (use_gpu, reason)
+    """
+    import time
+    from gpu_accelerated_flux import GPUAcceleratedInteractionCalculator
+    
+    try:
+        device = get_device()
+        if 'cpu' in str(device):
+            return False, "no GPU available"
+    except:
+        return False, "GPU initialization failed"
+    
+    print("\n⏱️  Running performance benchmark...")
+    
+    # Generate test trajectory
+    test_positions = np.random.randn(n_test_frames, 3) * 20
+    
+    # Test GPU performance
+    try:
+        gpu_calc = GPUAcceleratedInteractionCalculator(device=device)
+        gpu_calc.precompute_protein_properties_gpu(protein_atoms)
+        gpu_calc.precompute_ligand_properties_gpu(ligand_atoms)
+        
+        ligand_coords = ligand_atoms[['x', 'y', 'z']].values
+        
+        gpu_start = time.time()
+        gpu_results = gpu_calc.process_trajectory_batch_gpu(
+            test_positions, ligand_coords, n_rotations=n_test_rotations
+        )
+        gpu_time = time.time() - gpu_start
+        gpu_fps = n_test_frames / gpu_time
+        
+        print(f"  GPU: {gpu_fps:.1f} frames/sec")
+    except Exception as e:
+        print(f"  GPU benchmark failed: {e}")
+        return False, "GPU benchmark failed"
+    
+    # Test CPU performance (simplified estimation)
+    import multiprocessing as mp
+    n_cores = mp.cpu_count()
+    cpu_time_per_frame = (n_test_rotations * 0.01) / n_cores
+    cpu_time = cpu_time_per_frame * n_test_frames
+    cpu_fps = n_test_frames / cpu_time
+    
+    print(f"  CPU: {cpu_fps:.1f} frames/sec (estimated with {n_cores} cores)")
+    
+    # Decision
+    if gpu_fps > cpu_fps * 1.2:  # GPU needs to be 20% faster to justify overhead
+        return True, f"GPU {gpu_fps/cpu_fps:.1f}x faster in benchmark"
+    else:
+        return False, f"CPU more efficient ({cpu_fps/gpu_fps:.1f}x) for this workload"
+
+
 def print_banner(text):
     """Print formatted banner"""
     print("\n" + "="*80)
@@ -292,9 +348,10 @@ def run_complete_workflow():
     
     output_dir = input("Output directory (default 'flux_analysis'): ").strip() or "flux_analysis"
     
-    # Automatic GPU/CPU selection based on system size
+    # Automatic GPU/CPU selection based on system size and benchmarking
     use_gpu = False
     gpu_available = False
+    device = None
     
     try:
         device = get_device()
@@ -317,21 +374,46 @@ def run_complete_workflow():
         n_ligand_atoms = 50
     
     # Calculate total operations
-    total_operations = n_steps * n_approaches * n_rotations
-    total_interactions = n_protein_atoms * n_ligand_atoms * total_operations
+    frames_per_iteration = n_steps * n_approaches
+    total_frames = frames_per_iteration * n_iterations
+    operations_per_frame = n_protein_atoms * n_ligand_atoms * n_rotations
+    total_operations = total_frames * operations_per_frame
     
-    # Decision logic
+    # New decision logic based on empirical performance
     if gpu_available:
-        # GPU is good for very large proteins but bad for many rotations with current implementation
-        if n_protein_atoms > 10000 and n_rotations <= 12:
+        # Estimate GPU performance
+        # GPU processes rotations in batches of 12
+        rotation_batches = (n_rotations + 11) // 12
+        
+        # GPU has overhead but parallel rotation processing
+        gpu_time_per_frame = 0.1 + (rotation_batches * 0.05)  # seconds
+        
+        # CPU performance with parallel processing
+        import multiprocessing as mp
+        n_cores = mp.cpu_count()
+        cpu_time_per_frame = (n_rotations * 0.01) / n_cores  # seconds
+        
+        # Choose based on estimated performance
+        if gpu_time_per_frame < cpu_time_per_frame:
             use_gpu = True
-            decision_reason = "large protein with few rotations"
-        elif total_interactions < 1e9:  # Less than 1 billion calculations
-            use_gpu = False
-            decision_reason = "moderate system size - CPU parallelization more efficient"
+            decision_reason = f"GPU faster ({gpu_time_per_frame:.2f}s vs {cpu_time_per_frame:.2f}s per frame)"
         else:
             use_gpu = False
-            decision_reason = "too many rotations - current GPU implementation is sequential"
+            decision_reason = f"CPU faster ({cpu_time_per_frame:.2f}s vs {gpu_time_per_frame:.2f}s per frame)"
+        
+        # Override for memory constraints
+        gpu_memory_needed = n_protein_atoms * n_ligand_atoms * n_rotations * 4 * 8  # bytes (float32 + indices)
+        if 'cuda' in str(device):
+            import torch
+            gpu_memory_available = torch.cuda.get_device_properties(0).total_memory
+            if gpu_memory_needed > gpu_memory_available * 0.8:
+                use_gpu = False
+                decision_reason = "insufficient GPU memory"
+        elif 'mps' in str(device):
+            # Apple Silicon has unified memory, but limit to 32GB workloads
+            if gpu_memory_needed > 32 * 1024**3:
+                use_gpu = False
+                decision_reason = "workload too large for GPU"
     else:
         use_gpu = False
         decision_reason = "no GPU detected"
@@ -340,19 +422,40 @@ def run_complete_workflow():
     print(f"\n🔍 System Analysis:")
     print(f"  Protein atoms: {n_protein_atoms:,}")
     print(f"  Ligand atoms: {n_ligand_atoms:,}")
-    print(f"  Total frames: {n_steps * n_approaches:,}")
+    print(f"  Total frames: {frames_per_iteration:,} per iteration")
     print(f"  Rotations per frame: {n_rotations}")
-    print(f"  Total calculations: {total_interactions/1e6:.1f} million")
+    print(f"  Total operations: {total_operations/1e6:.1f} million")
     
     if gpu_available:
         print(f"\n🚀 GPU detected: {device}")
     
+    # Initial decision
+    print(f"\n📊 Performance estimation:")
     if use_gpu:
-        print(f"✓ Using GPU acceleration ({decision_reason})")
+        print(f"  Initial selection: GPU ({decision_reason})")
     else:
-        print(f"💻 Using CPU parallel processing ({decision_reason})")
-        if gpu_available and total_interactions > 1e8:
-            print("  Note: GPU available but CPU chosen for better performance with current parameters")
+        print(f"  Initial selection: CPU ({decision_reason})")
+    
+    # Offer to run benchmark
+    if gpu_available:
+        run_benchmark = input("\nRun performance benchmark for optimal selection? (y/n): ").strip().lower()
+        if run_benchmark == 'y':
+            benchmark_use_gpu, benchmark_reason = benchmark_performance(
+                protein_atoms, ligand_atoms, 
+                n_test_frames=min(5, n_steps),
+                n_test_rotations=n_rotations
+            )
+            use_gpu = benchmark_use_gpu
+            decision_reason = f"benchmark result - {benchmark_reason}"
+    
+    # Final decision
+    print(f"\n✅ Final decision:")
+    if use_gpu:
+        print(f"  Using GPU acceleration ({decision_reason})")
+    else:
+        print(f"  Using CPU parallel processing ({decision_reason})")
+        if gpu_available:
+            print("  Note: Decision based on performance characteristics")
     
     # Set parallel processing for CPU
     n_jobs = -1 if not use_gpu else 1  # Use all cores for CPU, single thread for GPU

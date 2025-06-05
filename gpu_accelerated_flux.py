@@ -1351,7 +1351,7 @@ class GPUAcceleratedInteractionCalculator:
                                    ligand_coords: np.ndarray,
                                    n_rotations: int = 36) -> List[Dict]:
         """
-        Process entire trajectory batch on GPU
+        Process entire trajectory batch on GPU with PARALLEL rotation processing
         """
         # Ensure properties are precomputed
         if self.protein_properties is None:
@@ -1363,10 +1363,28 @@ class GPUAcceleratedInteractionCalculator:
         
         # Calculate ligand center for translations
         ligand_center = ligand_base_gpu.mean(dim=0)
+        n_ligand_atoms = len(ligand_base_gpu)
+        
+        # Pre-generate ALL rotation matrices at once
+        angles = torch.linspace(0, 2*np.pi, n_rotations, device=self.device)
+        cos_angles = torch.cos(angles)
+        sin_angles = torch.sin(angles)
+        
+        # Create rotation matrices tensor [n_rotations, 3, 3]
+        rotation_matrices = torch.zeros((n_rotations, 3, 3), device=self.device)
+        rotation_matrices[:, 0, 0] = cos_angles
+        rotation_matrices[:, 0, 1] = -sin_angles
+        rotation_matrices[:, 1, 0] = sin_angles
+        rotation_matrices[:, 1, 1] = cos_angles
+        rotation_matrices[:, 2, 2] = 1.0
+        
+        # Center ligand once
+        ligand_centered = ligand_base_gpu - ligand_center  # [n_atoms, 3]
         
         results = []
         
         print(f"\n   Processing {len(trajectory)} frames with {n_rotations} rotations each...")
+        print(f"   Using PARALLEL GPU rotation processing")
         total_operations = len(trajectory) * n_rotations
         print(f"   Total operations: {total_operations:,}")
         
@@ -1374,7 +1392,7 @@ class GPUAcceleratedInteractionCalculator:
         start_time = time.time()
         
         for frame_idx, position in enumerate(trajectory_gpu):
-            # Progress reporting with ETA
+            # Progress reporting
             if frame_idx % 10 == 0 and frame_idx > 0:
                 elapsed = time.time() - start_time
                 frames_per_sec = frame_idx / elapsed
@@ -1386,60 +1404,51 @@ class GPUAcceleratedInteractionCalculator:
                       f"Speed: {frames_per_sec:.1f} fps, "
                       f"ETA: {eta_seconds/60:.1f} min")
             
+            # Apply ALL rotations at once
+            # ligand_centered: [n_atoms, 3]
+            # rotation_matrices: [n_rotations, 3, 3]
+            # Result: [n_rotations, n_atoms, 3]
+            rotated_ligands = torch.matmul(ligand_centered.unsqueeze(0), rotation_matrices.transpose(1, 2))
+            
+            # Translate all rotated ligands to target position
+            # position: [3] -> [1, 1, 3]
+            # Result: [n_rotations, n_atoms, 3]
+            transformed_ligands = rotated_ligands + position.unsqueeze(0).unsqueeze(0)
+            
+            # Process all rotations in parallel
+            best_energy = float('inf')
+            best_rotation = None
+            best_interactions = None
+            rotation_results = []
+            
+            # Process rotations in batches to manage memory
+            batch_size = min(n_rotations, 12)  # Process 12 rotations at a time
+            
+            for rot_start in range(0, n_rotations, batch_size):
+                rot_end = min(rot_start + batch_size, n_rotations)
+                batch_ligands = transformed_ligands[rot_start:rot_end]
+                
+                # Calculate interactions for all rotations in batch
+                batch_results = self._process_rotation_batch_gpu(
+                    batch_ligands, rot_start, angles[rot_start:rot_end]
+                )
+                
+                # Update best rotation
+                for i, result in enumerate(batch_results):
+                    rotation_results.append(result)
+                    if result['total_energy'] < best_energy:
+                        best_energy = result['total_energy']
+                        best_rotation = rot_start + i
+                        best_interactions = result['interactions']
+            
             frame_results = {
                 'frame': frame_idx,
                 'position': position.cpu().numpy(),
-                'interactions_by_rotation': [],
-                'best_rotation': None,
-                'best_energy': float('inf')
+                'interactions_by_rotation': rotation_results,
+                'best_rotation': best_rotation,
+                'best_energy': best_energy,
+                'best_interactions': best_interactions
             }
-            
-            # Generate rotation matrices
-            for rot_idx in range(n_rotations):
-                angle = 2 * np.pi * rot_idx / n_rotations
-                
-                # Create rotation matrix (around z-axis for simplicity)
-                cos_a = torch.cos(torch.tensor(angle, device=self.device))
-                sin_a = torch.sin(torch.tensor(angle, device=self.device))
-                
-                rot_matrix = torch.tensor([
-                    [cos_a, -sin_a, 0],
-                    [sin_a, cos_a, 0],
-                    [0, 0, 1]
-                ], device=self.device, dtype=torch.float32)
-                
-                # Rotate ligand around its center
-                ligand_centered = ligand_base_gpu - ligand_center
-                ligand_rotated = torch.matmul(ligand_centered, rot_matrix.T)
-                
-                # Translate to target position
-                ligand_transformed = ligand_rotated + position
-                
-                # Detect interactions (all on GPU!)
-                interactions = self.detect_all_interactions_gpu(
-                    self.protein_properties['coords'],
-                    ligand_transformed
-                )
-                
-                # Calculate total energy
-                total_energy = interactions.energies.sum().item()
-                
-                # Store rotation results
-                rotation_result = {
-                    'rotation': rot_idx,
-                    'angle': angle,
-                    'total_energy': total_energy,
-                    'n_interactions': len(interactions.indices),
-                    'interaction_summary': self._summarize_interactions(interactions)
-                }
-                
-                frame_results['interactions_by_rotation'].append(rotation_result)
-                
-                # Track best rotation
-                if total_energy < frame_results['best_energy']:
-                    frame_results['best_energy'] = total_energy
-                    frame_results['best_rotation'] = rot_idx
-                    frame_results['best_interactions'] = interactions
             
             results.append(frame_results)
         
@@ -1452,6 +1461,79 @@ class GPUAcceleratedInteractionCalculator:
         print(f"   Total time: {total_time:.1f} seconds")
         print(f"   Average: {avg_time_per_frame:.3f} sec/frame, {avg_time_per_operation:.3f} sec/operation")
         print(f"   Speed: {len(trajectory)/total_time:.1f} frames/sec")
+        
+        return results
+    
+    def _process_rotation_batch_gpu(self, 
+                                   ligand_batch: torch.Tensor,
+                                   start_idx: int,
+                                   angles: torch.Tensor) -> List[Dict]:
+        """
+        Process a batch of rotations in parallel on GPU
+        
+        Args:
+            ligand_batch: [batch_size, n_atoms, 3] tensor of ligand coordinates
+            start_idx: Starting rotation index
+            angles: [batch_size] tensor of rotation angles
+        """
+        batch_size = ligand_batch.shape[0]
+        n_ligand_atoms = ligand_batch.shape[1]
+        n_protein_atoms = len(self.protein_properties['coords'])
+        
+        results = []
+        
+        for i in range(batch_size):
+            ligand_coords = ligand_batch[i]
+            
+            # Calculate all pairwise distances at once
+            # protein_coords: [n_protein, 3]
+            # ligand_coords: [n_ligand, 3]
+            distances_matrix = torch.cdist(self.protein_properties['coords'], ligand_coords)
+            
+            # Find interactions within cutoff
+            max_cutoff = max(self.cutoffs.values())
+            within_cutoff = distances_matrix <= max_cutoff
+            
+            # Get indices of interacting pairs
+            protein_indices, ligand_indices = torch.where(within_cutoff)
+            
+            if len(protein_indices) > 0:
+                # Extract distances
+                distances = distances_matrix[protein_indices, ligand_indices]
+                
+                # Create index pairs
+                indices = torch.stack([protein_indices, ligand_indices], dim=1)
+                
+                # Detect interaction types
+                interaction_types = self._detect_interaction_types_gpu(indices, distances)
+                
+                # Calculate energies
+                energies = self._calculate_energies_gpu(distances, interaction_types)
+                
+                # Get residue IDs
+                residue_ids = self.protein_properties['residue_ids'][protein_indices]
+                
+                interactions = InteractionResult(
+                    indices=indices,
+                    distances=distances,
+                    types=interaction_types,
+                    energies=energies,
+                    residue_ids=residue_ids
+                )
+            else:
+                interactions = self._empty_result()
+            
+            # Calculate total energy
+            total_energy = interactions.energies.sum().item() if len(interactions.energies) > 0 else 0.0
+            
+            results.append({
+                'rotation': start_idx + i,
+                'angle': angles[i].item(),
+                'total_energy': total_energy,
+                'n_interactions': len(interactions.indices),
+                'interaction_summary': self._summarize_interactions(interactions),
+                'interactions': interactions
+            })
         
         return results
     

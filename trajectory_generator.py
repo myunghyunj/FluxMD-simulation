@@ -1500,11 +1500,15 @@ class ProteinLigandFluxAnalyzer:
                 
                 # Use scipy for rotation calculations
                 from scipy.spatial.transform import Rotation as R
+                from joblib import Parallel, delayed
                 
-                for step, position in enumerate(trajectory):
-                    if step % 10 == 0:
-                        print(f"\r    Progress: {step}/{n_steps} (sampling {n_rotations} rotations)", end="")
-                    
+                # Pre-generate all rotation angles and matrices
+                angles = np.linspace(0, 360, n_rotations, endpoint=False)
+                
+                # Define function for parallel processing
+                def process_step_rotations(step, position, protein_atoms, ligand_atoms, ligand_coords,
+                                         ca_coords, collision_detector, n_rotations, approach_idx, n_steps):
+                    """Process all rotations for a single trajectory step in parallel"""
                     # Find closest CA for rotation axis
                     distances = cdist([position], ca_coords)[0]
                     closest_idx = np.argmin(distances)
@@ -1513,18 +1517,16 @@ class ProteinLigandFluxAnalyzer:
                     # Calculate normal vector for rotation axis
                     normal = closest_ca / np.linalg.norm(closest_ca) if np.linalg.norm(closest_ca) > 0 else np.array([0, 0, 1])
                     
-                    # Try multiple rotations
-                    step_interactions = []
+                    # Get ligand center
+                    ligand_center = ligand_coords.mean(axis=0)
+                    centered_coords = ligand_coords - ligand_center
                     
-                    for rot_idx in range(n_rotations):
+                    # Process rotations in parallel
+                    def process_rotation(rot_idx):
                         angle = rot_idx * (360 / n_rotations)
                         
                         # Create rotation using scipy
                         rotation = R.from_rotvec(normal * np.radians(angle))
-                        
-                        # Get ligand center and translate to origin
-                        ligand_center = ligand_coords.mean(axis=0)
-                        centered_coords = ligand_coords - ligand_center
                         
                         # Apply rotation
                         rotated_coords = rotation.apply(centered_coords)
@@ -1537,7 +1539,7 @@ class ProteinLigandFluxAnalyzer:
                         ligand_atoms_rot[['x', 'y', 'z']] = final_coords
                         
                         # Check collision
-                        if not self.collision_detector.check_collision(final_coords, ligand_atoms_rot):
+                        if not collision_detector.check_collision(final_coords, ligand_atoms_rot):
                             # Calculate interactions
                             interactions = self.calculate_interactions(
                                 protein_atoms, ligand_atoms_rot,
@@ -1548,9 +1550,36 @@ class ProteinLigandFluxAnalyzer:
                                 # Add rotation info
                                 interactions['rotation'] = rot_idx
                                 interactions['rotation_angle'] = angle
-                                step_interactions.extend(interactions.to_dict('records'))
+                                return interactions.to_dict('records')
+                        return []
                     
-                    # Keep all interactions for this step (not just best)
+                    # Run rotations in parallel
+                    rotation_results = Parallel(n_jobs=-1, backend='threading')(
+                        delayed(process_rotation)(rot_idx) for rot_idx in range(n_rotations)
+                    )
+                    
+                    # Flatten results
+                    step_interactions = []
+                    for result in rotation_results:
+                        if result:
+                            step_interactions.extend(result)
+                    
+                    return step_interactions
+                
+                # Process all steps with progress reporting
+                print(f"\n  Using parallel CPU processing with {n_jobs} cores")
+                
+                step_results = []
+                for step, position in enumerate(trajectory):
+                    if step % 10 == 0:
+                        print(f"\r    Progress: {step}/{n_steps} steps processed", end="")
+                    
+                    # Process this step
+                    step_interactions = process_step_rotations(
+                        step, position, protein_atoms, ligand_atoms, ligand_coords,
+                        ca_coords, self.collision_detector, n_rotations, approach_idx, n_steps
+                    )
+                    
                     if step_interactions:
                         step_df = pd.DataFrame(step_interactions)
                         approach_interactions.append(step_df)
