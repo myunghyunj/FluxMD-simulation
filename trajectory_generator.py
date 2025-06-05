@@ -1,7 +1,14 @@
 """
-Protein-Ligand Trajectory Generator
+Protein-Ligand Trajectory Generator - Cocoon Mode
 Advanced molecular dynamics simulation with GPU acceleration
 Now with integrated intra-protein force field calculations
+
+COCOON TRAJECTORY MODE:
+- Maintains constant distance from protein surface (hovering)
+- Uses physics-based Brownian dynamics with MW-dependent diffusion
+- Samples multiple ligand orientations at each position
+- Creates a "cocoon" of trajectories at different distances
+- Inspired by legacy_cocoon_trajectory.py implementation
 """
 
 # Set matplotlib backend before any other imports
@@ -270,8 +277,9 @@ class ProteinLigandFluxAnalyzer:
         temp_kelvin = temperature + 273.15  # Convert to Kelvin
         
         # Approximate radius from molecular weight (Å)
-        # Using empirical relation: r ≈ 0.066 * MW^(1/3)
-        radius_angstrom = 0.066 * (molecular_weight ** (1/3))
+        # Using empirical relation: r ≈ 0.66 * MW^(1/3) for small molecules
+        # This gives ~4.4 Å for MW=300, which is realistic
+        radius_angstrom = 0.66 * (molecular_weight ** (1/3))
         radius_meter = radius_angstrom * 1e-10
         
         # Water viscosity at 36.5°C (Pa·s)
@@ -285,11 +293,107 @@ class ProteinLigandFluxAnalyzer:
         
         return D_angstrom_fs
     
+    def generate_cocoon_trajectory(self, protein_coords, ligand_coords, ligand_atoms,
+                                  molecular_weight, n_steps=100, dt=40, 
+                                  target_distance=35.0):
+        """
+        Generate cocoon-style Brownian trajectory maintaining target distance from protein
+        
+        Args:
+            protein_coords: Array of protein atom coordinates (or CA coords)
+            ligand_coords: Ligand atom coordinates
+            ligand_atoms: Ligand atom data
+            molecular_weight: Molecular weight of ligand
+            n_steps: Number of trajectory steps
+            dt: Time step (fs)
+            target_distance: Target distance from closest protein atom (Å)
+        
+        Returns:
+            trajectory: Array of positions shape (n_steps, 3)
+            times: Array of time points
+        """
+        # Calculate diffusion coefficient
+        D = self.calculate_diffusion_coefficient(molecular_weight)
+        step_size = np.sqrt(2 * D * dt)
+        
+        # Find center of protein
+        protein_center = np.mean(protein_coords, axis=0)
+        
+        # Find a point on protein surface (closest atom to center)
+        distances_to_center = cdist([protein_center], protein_coords)[0]
+        surface_idx = np.argmin(distances_to_center)
+        surface_point = protein_coords[surface_idx]
+        
+        # Create initial position at target_distance from surface point
+        # Use a random direction
+        random_direction = np.random.randn(3)
+        random_direction /= np.linalg.norm(random_direction)
+        initial_pos = surface_point + random_direction * target_distance
+        
+        trajectory = [initial_pos.copy()]
+        times = [0]
+        current_pos = initial_pos.copy()
+        
+        for i in range(1, n_steps):
+            # Generate random displacement
+            displacement = np.random.randn(3) * step_size
+            
+            # Propose new position
+            new_pos = current_pos + displacement
+            
+            # Find closest protein atom and adjust to maintain target distance
+            distances = cdist([new_pos], protein_coords)[0]
+            closest_idx = np.argmin(distances)
+            closest_atom = protein_coords[closest_idx]
+            
+            # Vector from closest atom to ligand
+            direction = new_pos - closest_atom
+            direction_norm = np.linalg.norm(direction)
+            
+            if direction_norm > 0:
+                # Adjust position to maintain target distance
+                direction_unit = direction / direction_norm
+                new_pos = closest_atom + direction_unit * target_distance
+            
+            # Check collision
+            test_coords = ligand_coords + (new_pos - ligand_coords.mean(axis=0))
+            
+            if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                current_pos = new_pos
+            else:
+                # Try smaller steps if collision detected
+                for scale in [0.5, 0.25, 0.1]:
+                    smaller_displacement = displacement * scale
+                    smaller_pos = current_pos + smaller_displacement
+                    
+                    # Re-adjust to maintain distance
+                    distances = cdist([smaller_pos], protein_coords)[0]
+                    closest_idx = np.argmin(distances)
+                    closest_atom = protein_coords[closest_idx]
+                    direction = smaller_pos - closest_atom
+                    direction_norm = np.linalg.norm(direction)
+                    
+                    if direction_norm > 0:
+                        direction_unit = direction / direction_norm
+                        smaller_pos = closest_atom + direction_unit * target_distance
+                    
+                    test_coords = ligand_coords + (smaller_pos - ligand_coords.mean(axis=0))
+                    
+                    if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                        current_pos = smaller_pos
+                        break
+            
+            trajectory.append(current_pos.copy())
+            times.append(i * dt)
+        
+        return np.array(trajectory), np.array(times)
+
     def generate_brownian_trajectory_collision_free(self, start_pos, end_pos, n_steps,
                                                   ligand_coords, ligand_atoms,
-                                                  molecular_weight=300.0, dt=40):
+                                                  molecular_weight=300.0, dt=40,
+                                                  biased=True):
         """
-        Generate physics-based Brownian trajectory (following legacy implementation)
+        Generate physics-based Brownian trajectory
         
         Args:
             start_pos: Starting position
@@ -299,6 +403,7 @@ class ProteinLigandFluxAnalyzer:
             ligand_atoms: Ligand atom data
             molecular_weight: Molecular weight for diffusion calculation
             dt: Time step (fs)
+            biased: If True, bias trajectory toward target (default). If False, pure random walk.
         """
         # Calculate diffusion coefficient
         D = self.calculate_diffusion_coefficient(molecular_weight)
@@ -334,14 +439,15 @@ class ProteinLigandFluxAnalyzer:
             direction_to_proposed = proposed_pos - protein_center
             distance_to_proposed = np.linalg.norm(direction_to_proposed)
             
-            if distance_to_proposed > 0:
-                # Blend physics-based position with distance constraint
+            if biased and distance_to_proposed > 0:
+                # For biased trajectory: blend physics with distance constraint
                 direction_unit = direction_to_proposed / distance_to_proposed
                 distance_constrained_pos = protein_center + direction_unit * current_target_distance
                 
                 # Weighted combination (favor physics, but respect constraints)
                 final_pos = 0.7 * proposed_pos + 0.3 * distance_constrained_pos
             else:
+                # For unbiased trajectory: use pure random displacement
                 final_pos = proposed_pos
             
             # Check collision
@@ -363,6 +469,82 @@ class ProteinLigandFluxAnalyzer:
             
             trajectory.append(current_pos.copy())
             times.append(i * dt)
+        
+        return np.array(trajectory)
+    
+    def generate_random_walk_trajectory(self, start_pos, n_steps, ligand_coords, 
+                                      ligand_atoms, molecular_weight=300.0, dt=40,
+                                      max_distance=None):
+        """
+        Generate a truly random Brownian walk with no directional bias.
+        
+        Args:
+            start_pos: Starting position
+            n_steps: Number of trajectory steps
+            ligand_coords: Ligand atom coordinates  
+            ligand_atoms: Ligand atom data
+            molecular_weight: Molecular weight for diffusion calculation
+            dt: Time step (fs)
+            max_distance: Optional maximum distance from origin (for boundary)
+            
+        Returns:
+            Array of positions shape (n_steps, 3)
+            
+        Note:
+            This generates TRUE Brownian motion with no bias. The molecule
+            will randomly diffuse according to Einstein's relation:
+            <r²> = 6Dt
+            
+            With corrected diffusion coefficient, a 300 Da molecule will have:
+            - D ≈ 7.4e-5 Å²/fs
+            - RMS displacement after 1 ps: ~0.67 Å
+            - RMS displacement after 1 ns: ~21 Å
+        """
+        # Calculate diffusion coefficient
+        D = self.calculate_diffusion_coefficient(molecular_weight)
+        
+        # Calculate step size
+        step_size = np.sqrt(2 * D * dt)
+        
+        trajectory = [start_pos]
+        current_pos = start_pos.copy()
+        protein_center = np.array([0.0, 0.0, 0.0])
+        
+        print(f"\nGenerating random walk:")
+        print(f"  Molecular weight: {molecular_weight} Da")
+        print(f"  Diffusion coefficient: {D:.6f} Å²/fs")
+        print(f"  RMS step size: {step_size:.4f} Å per {dt} fs")
+        print(f"  Total simulation: {n_steps * dt} fs = {n_steps * dt / 1000:.1f} ps")
+        
+        n_rejected = 0
+        
+        for i in range(1, n_steps):
+            # Generate random displacement - TRUE Brownian motion
+            displacement = np.random.randn(3) * step_size
+            proposed_pos = current_pos + displacement
+            
+            # Optional: enforce maximum distance boundary
+            if max_distance is not None:
+                distance_from_center = np.linalg.norm(proposed_pos - protein_center)
+                if distance_from_center > max_distance:
+                    # Reflect off boundary
+                    direction = (proposed_pos - protein_center) / distance_from_center
+                    proposed_pos = protein_center + direction * (2 * max_distance - distance_from_center)
+            
+            # Check collision
+            test_coords = ligand_coords + (proposed_pos - ligand_coords.mean(axis=0))
+            
+            if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                current_pos = proposed_pos
+            else:
+                n_rejected += 1
+                # For true random walk, if collision occurs, stay in place
+                # (don't try smaller steps as that would bias the distribution)
+            
+            trajectory.append(current_pos.copy())
+        
+        if n_rejected > 0:
+            print(f"  Rejected {n_rejected}/{n_steps} steps due to collisions")
         
         return np.array(trajectory)
     
@@ -853,7 +1035,7 @@ class ProteinLigandFluxAnalyzer:
         return smooth_coords
 
     def visualize_trajectory_cocoon(self, protein_atoms, trajectory, iteration_num, approach_idx, output_dir):
-        """Visualize the Brownian trajectory around protein with professional backbone representation"""
+        """Visualize the cocoon-style Brownian trajectory around protein"""
         fig = plt.figure(figsize=(15, 12))
         
         # Extract CA backbone
@@ -887,7 +1069,7 @@ class ProteinLigandFluxAnalyzer:
         ax1.set_xlabel('X (Å)', fontsize=12, fontweight='bold')
         ax1.set_ylabel('Y (Å)', fontsize=12, fontweight='bold')
         ax1.set_zlabel('Z (Å)', fontsize=12, fontweight='bold')
-        ax1.set_title(f'Ligand Trajectory - Iteration {iteration_num}, Approach {approach_idx + 1}',
+        ax1.set_title(f'Cocoon Trajectory - Iteration {iteration_num}, Approach {approach_idx + 1}',
                      fontsize=14, fontweight='bold')
         ax1.legend(fontsize=11)
         ax1.view_init(elev=20, azim=45)
@@ -905,11 +1087,17 @@ class ProteinLigandFluxAnalyzer:
             distances = cdist([pos], ca_coords)[0]
             min_distances.append(np.min(distances))
         
-        ax2.plot(range(len(trajectory)), min_distances, 'k-', linewidth=3, solid_capstyle='round')
-        ax2.fill_between(range(len(trajectory)), min_distances, alpha=0.3, color='lightgray')
+        # Calculate expected target distance (should be roughly constant for cocoon)
+        target_distance = np.mean(min_distances)
+        
+        ax2.plot(range(len(trajectory)), min_distances, 'b-', linewidth=2, label='Actual distance')
+        ax2.axhline(y=target_distance, color='r', linestyle='--', linewidth=2, 
+                   label=f'Target: {target_distance:.1f} Å')
+        ax2.fill_between(range(len(trajectory)), min_distances, alpha=0.3, color='lightblue')
         ax2.set_xlabel('Trajectory Step', fontsize=12, fontweight='bold')
         ax2.set_ylabel('Distance to Backbone (Å)', fontsize=12, fontweight='bold')
-        ax2.set_title('Distance from Protein Backbone', fontsize=14, fontweight='bold')
+        ax2.set_title('Cocoon Distance Maintenance', fontsize=14, fontweight='bold')
+        ax2.legend(fontsize=11)
         ax2.grid(True, alpha=0.2, color='gray', linewidth=0.5)
         ax2.spines['top'].set_visible(False)
         ax2.spines['right'].set_visible(False)
@@ -976,8 +1164,13 @@ class ProteinLigandFluxAnalyzer:
     
     def run_single_iteration(self, protein_file, ligand_file, output_dir,
                            n_steps, n_approaches, approach_distance,
-                           starting_distance, iteration_num, use_gpu=False):
-        """Run a single iteration of the flux analysis"""
+                           starting_distance, iteration_num, use_gpu=False,
+                           n_rotations=36):
+        """Run a single iteration of the flux analysis with cocoon trajectories
+        
+        Args:
+            n_rotations: Number of rotations to try at each trajectory position
+        """
         print(f"\n{'='*60}")
         print(f"Iteration {iteration_num}")
         print(f"{'='*60}")
@@ -1026,15 +1219,15 @@ class ProteinLigandFluxAnalyzer:
         protein_coords = protein_atoms[['x', 'y', 'z']].values
         ligand_coords = ligand_atoms[['x', 'y', 'z']].values
         
+        # Extract CA coordinates for cocoon trajectory  
+        ca_coords = self.extract_ca_backbone(protein_atoms)
+        
+        # Calculate molecular weight
+        ligand_mw = self.calculate_molecular_weight(ligand_atoms)
+        print(f"  Ligand molecular weight: {ligand_mw:.1f} Da")
+        
         # Build collision detection tree
         self.collision_detector.build_protein_tree(protein_coords, protein_atoms)
-        
-        # Get protein surface starting points
-        surface_points = self.get_protein_surface_points(
-            protein_coords,
-            n_points=n_approaches * 10,  # Generate extra points
-            buffer_distance=starting_distance
-        )
         
         # Create iteration directory
         iter_dir = os.path.join(output_dir, f'iteration_{iteration_num}')
@@ -1160,68 +1353,86 @@ class ProteinLigandFluxAnalyzer:
                 use_gpu = False
         
         if not use_gpu:
-            # CPU processing
+            # CPU processing with cocoon trajectories
+            print("\n🌀 Generating cocoon trajectories...")
+            
             for approach_idx in range(n_approaches):
                 print(f"\nApproach {approach_idx + 1}/{n_approaches}")
                 
-                # Select random starting point from surface
-                start_idx = np.random.randint(0, len(surface_points))
-                start_point = surface_points[start_idx]
-                
-                # Calculate end point (closer to protein)
-                direction = protein_coords.mean(axis=0) - start_point
-                direction = direction / np.linalg.norm(direction)
-                
+                # Calculate target distance for this approach
                 current_distance = starting_distance - approach_idx * approach_distance
-                end_point = start_point + direction * approach_distance
+                print(f"  Target distance: {current_distance:.1f} Å")
                 
-                print(f"  Starting distance: {current_distance:.1f} Å")
-                
-                # Generate collision-free Brownian trajectory with molecular weight
-                ligand_mw = self.calculate_molecular_weight(ligand_atoms)
-                trajectory = self.generate_brownian_trajectory_collision_free(
-                    start_point, end_point, n_steps, ligand_coords, ligand_atoms,
-                    molecular_weight=ligand_mw
+                # Generate cocoon trajectory maintaining target distance
+                trajectory, times = self.generate_cocoon_trajectory(
+                    ca_coords, ligand_coords, ligand_atoms,
+                    ligand_mw, n_steps=n_steps, dt=40,
+                    target_distance=current_distance
                 )
                 
                 all_trajectories.append(trajectory)
                 
+                # Save trajectory data
+                traj_df = pd.DataFrame({
+                    'step': range(len(trajectory)),
+                    'time_ps': times / 1000,  # Convert fs to ps
+                    'x': trajectory[:, 0],
+                    'y': trajectory[:, 1], 
+                    'z': trajectory[:, 2],
+                    'approach': approach_idx,
+                    'distance': current_distance
+                })
+                traj_path = os.path.join(iter_dir, f'trajectory_iteration_{iteration_num}_approach_{approach_idx}.csv')
+                traj_df.to_csv(traj_path, index=False)
+                print(f"  Saved trajectory to {traj_path}")
+                
                 # Visualize trajectory (cocoon)
                 self.visualize_trajectory_cocoon(protein_atoms, trajectory, iteration_num, approach_idx, iter_dir)
                 
-                # Calculate interactions at each position
-                print("  Calculating interactions...")
+                # Calculate interactions at each position with rotations
+                print(f"  Calculating interactions with {n_rotations} rotations per position...")
                 approach_interactions = []
+                
+                # Use scipy for rotation calculations
+                from scipy.spatial.transform import Rotation as R
                 
                 for step, position in enumerate(trajectory):
                     if step % 10 == 0:
-                        print(f"\r    Progress: {step}/{n_steps}", end="")
+                        print(f"\r    Progress: {step}/{n_steps} (sampling {n_rotations} rotations)", end="")
+                    
+                    # Find closest CA for rotation axis
+                    distances = cdist([position], ca_coords)[0]
+                    closest_idx = np.argmin(distances)
+                    closest_ca = ca_coords[closest_idx]
+                    
+                    # Calculate normal vector for rotation axis
+                    normal = closest_ca / np.linalg.norm(closest_ca) if np.linalg.norm(closest_ca) > 0 else np.array([0, 0, 1])
                     
                     # Try multiple rotations
-                    best_interactions = None
-                    best_energy = float('inf')
+                    step_interactions = []
                     
-                    for rotation in range(0, 360, 10):  # 36 rotations
-                        # Rotate ligand
-                        angle = np.radians(rotation)
-                        rotation_matrix = np.array([
-                            [np.cos(angle), -np.sin(angle), 0],
-                            [np.sin(angle), np.cos(angle), 0],
-                            [0, 0, 1]
-                        ])
+                    for rot_idx in range(n_rotations):
+                        angle = rot_idx * (360 / n_rotations)
                         
-                        # Apply rotation around ligand center
+                        # Create rotation using scipy
+                        rotation = R.from_rotvec(normal * np.radians(angle))
+                        
+                        # Get ligand center and translate to origin
                         ligand_center = ligand_coords.mean(axis=0)
-                        rotated_coords = ligand_coords - ligand_center
-                        rotated_coords = rotated_coords @ rotation_matrix.T
-                        rotated_coords = rotated_coords + position
+                        centered_coords = ligand_coords - ligand_center
+                        
+                        # Apply rotation
+                        rotated_coords = rotation.apply(centered_coords)
+                        
+                        # Translate to trajectory position
+                        final_coords = rotated_coords + position
                         
                         # Update ligand atoms with new coordinates
                         ligand_atoms_rot = ligand_atoms.copy()
-                        ligand_atoms_rot[['x', 'y', 'z']] = rotated_coords
+                        ligand_atoms_rot[['x', 'y', 'z']] = final_coords
                         
                         # Check collision
-                        if not self.collision_detector.check_collision(rotated_coords, ligand_atoms_rot):
+                        if not self.collision_detector.check_collision(final_coords, ligand_atoms_rot):
                             # Calculate interactions
                             interactions = self.calculate_interactions(
                                 protein_atoms, ligand_atoms_rot,
@@ -1229,19 +1440,26 @@ class ProteinLigandFluxAnalyzer:
                             )
                             
                             if len(interactions) > 0:
-                                total_energy = interactions['bond_energy'].sum()
-                                if total_energy < best_energy:
-                                    best_energy = total_energy
-                                    best_interactions = interactions
+                                # Add rotation info
+                                interactions['rotation'] = rot_idx
+                                interactions['rotation_angle'] = angle
+                                step_interactions.extend(interactions.to_dict('records'))
                     
-                    if best_interactions is not None:
-                        approach_interactions.append(best_interactions)
+                    # Keep all interactions for this step (not just best)
+                    if step_interactions:
+                        step_df = pd.DataFrame(step_interactions)
+                        approach_interactions.append(step_df)
                 
-                print(f"\n  Found {len(approach_interactions)} valid conformations")
+                print(f"\n  Found interactions at {len(approach_interactions)} positions")
                 
                 if approach_interactions:
                     combined_interactions = pd.concat(approach_interactions, ignore_index=True)
                     all_interactions.append(combined_interactions)
+                    
+                    # Save detailed interaction data
+                    interaction_file = os.path.join(iter_dir, f'interactions_approach_{approach_idx}.csv')
+                    combined_interactions.to_csv(interaction_file, index=False)
+                    print(f"  Saved {len(combined_interactions)} interactions to {interaction_file}")
         
         # Combine all interactions
         if all_interactions:
@@ -1347,10 +1565,14 @@ class ProteinLigandFluxAnalyzer:
     def run_complete_analysis(self, protein_file, ligand_file, output_dir,
                             n_steps=100, n_iterations=3, n_approaches=5,
                             approach_distance=2.5, starting_distance=35,
-                            n_jobs=-1, use_gpu=False):
-        """Run complete flux analysis with multiple iterations"""
+                            n_jobs=-1, use_gpu=False, n_rotations=36):
+        """Run complete flux analysis with cocoon trajectories
+        
+        Args:
+            n_rotations: Number of rotations to sample at each trajectory position
+        """
         print("\n" + "="*80)
-        print("PROTEIN-LIGAND FLUX ANALYSIS")
+        print("PROTEIN-LIGAND FLUX ANALYSIS - COCOON TRAJECTORY MODE")
         print("="*80)
         print(f"Protein: {protein_file}")
         print(f"Ligand: {ligand_file}")
@@ -1359,6 +1581,8 @@ class ProteinLigandFluxAnalyzer:
         print(f"Steps per approach: {n_steps}")
         print(f"Number of approaches: {n_approaches}")
         print(f"Starting distance: {starting_distance} Å")
+        print(f"Approach step: {approach_distance} Å")
+        print(f"Rotations per position: {n_rotations}")
         print(f"GPU acceleration: {'ENABLED' if use_gpu else 'DISABLED'}")
         print("="*80)
         
@@ -1380,11 +1604,12 @@ class ProteinLigandFluxAnalyzer:
             
             iteration_start = time.time()
             
-            # Run single iteration
+            # Run single iteration with cocoon trajectories
             interactions = self.run_single_iteration(
                 protein_file, ligand_file, output_dir,
                 n_steps, n_approaches, approach_distance,
-                starting_distance, iteration + 1, use_gpu
+                starting_distance, iteration + 1, use_gpu,
+                n_rotations=n_rotations
             )
             
             iteration_time = time.time() - iteration_start
@@ -1436,19 +1661,35 @@ def main():
     analyzer = ProteinLigandFluxAnalyzer()
     
     # Example usage
-    print("PROTEIN-LIGAND TRAJECTORY GENERATOR")
-    print("-" * 50)
+    print("PROTEIN-LIGAND TRAJECTORY GENERATOR - COCOON MODE")
+    print("=" * 60)
+    print("This generator creates cocoon-style trajectories that maintain")
+    print("constant distance from the protein surface while exploring")
+    print("different orientations through Brownian dynamics.")
+    print("-" * 60)
     
     protein_file = input("Enter protein PDB file: ").strip()
     ligand_file = input("Enter ligand PDB/PDBQT file: ").strip()
     output_dir = input("Output directory (default: flux_output): ").strip() or "flux_output"
     
+    # Optional: ask for trajectory parameters
+    print("\nTrajectory parameters (press Enter for defaults):")
+    n_steps = input("  Steps per approach [100]: ").strip()
+    n_steps = int(n_steps) if n_steps else 100
+    
+    n_approaches = input("  Number of approaches [5]: ").strip()
+    n_approaches = int(n_approaches) if n_approaches else 5
+    
+    n_rotations = input("  Rotations per position [36]: ").strip()
+    n_rotations = int(n_rotations) if n_rotations else 36
+    
     # Run analysis
     analyzer.run_complete_analysis(
         protein_file, ligand_file, output_dir,
-        n_steps=100, n_iterations=3, n_approaches=5,
+        n_steps=n_steps, n_iterations=3, n_approaches=n_approaches,
         approach_distance=2.5, starting_distance=35,
-        use_gpu=True  # Try to use GPU if available
+        use_gpu=True,  # Try to use GPU if available
+        n_rotations=n_rotations
     )
 
 

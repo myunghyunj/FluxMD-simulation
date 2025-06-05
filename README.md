@@ -20,6 +20,9 @@ This approach reveals how proteins' internal stress fields guide ligand recognit
 ## Features
 
 - **Physics-based trajectories**: Brownian motion with molecular weight-dependent diffusion (40 fs time step)
+  - Corrected molecular radius calculation: r ≈ 0.66 × MW^(1/3) Å
+  - Biased trajectories: Approach protein surface (default)
+  - Unbiased random walks: True Brownian motion available on request
 - **Protonation-aware interactions**: pH-dependent H-bond donor/acceptor assignment and charge states
 - **Complete interaction detection**: H-bonds (3.5 Å), salt bridges (4.0 Å), π-π stacking (4.5 Å), π-cation (6.0 Å), VDW (1-5 Å)
 - **Intra-protein force field**: Static internal protein forces combined with ligand interactions
@@ -65,6 +68,8 @@ pip install networkx  # For aromatic ring detection
 
 - **`trajectory_generator.py`** - Ligand trajectory simulation engine
   - Brownian motion with molecular weight-dependent diffusion (40 fs time step)
+  - Corrected molecular radius: r ≈ 0.66 × MW^(1/3) Å (realistic for small molecules)
+  - Biased trajectories (default) or true random walks
   - Collision detection using VDW radii and KD-trees
   - Surface point generation for approach angles
   - Protonation-aware interaction detection (pH-dependent)
@@ -281,6 +286,36 @@ FluxMD uses the Henderson-Hasselbalch equation to determine protonation states:
 - For bases: fraction_protonated = 1 / (1 + 10^(pKa - pH))
 - Atoms with >50% protonation probability are assigned their protonated state
 - This affects H-bond donor/acceptor roles and formal charges
+
+### Brownian Dynamics Implementation
+
+FluxMD implements physically accurate Brownian motion for ligand trajectories:
+
+#### Diffusion Coefficient Calculation
+- **Stokes-Einstein equation**: D = k_B × T / (6π × η × r)
+- **Molecular radius**: r ≈ 0.66 × MW^(1/3) Å
+  - Gives ~4.4 Å for MW=300 Da (realistic for drug-like molecules)
+  - Previous error (0.066) underestimated radius by 10×
+- **Diffusion coefficient**: ~7.4×10^-5 Å²/fs for 300 Da molecule at 36.5°C
+- **RMS displacement**: 
+  - After 1 ps: ~0.67 Å
+  - After 1 ns: ~21 Å
+
+#### Trajectory Generation Modes
+1. **Biased trajectories** (default): 
+   - Ligand approaches protein surface 
+   - Maintains decreasing distance constraint
+   - Efficient for binding site exploration
+   
+2. **Unbiased random walks** (`generate_random_walk_trajectory`):
+   - True Brownian motion with no directional bias
+   - Follows Einstein's relation: ⟨r²⟩ = 6Dt
+   - Available for studying diffusion dynamics
+
+#### Time Step Considerations
+- **40 fs time step**: Appropriate for Brownian dynamics
+- **Step size**: Δx = √(2D × Δt)
+- **Collision detection**: Ensures physically valid trajectories
 
 ## Citation
 
