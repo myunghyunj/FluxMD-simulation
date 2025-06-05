@@ -10,7 +10,7 @@ FluxMD identifies protein-ligand binding sites through energy flux differential 
 FluxMD combines static intra-protein force fields with dynamic protein-ligand interactions to identify binding sites. The method:
 
 1. Pre-calculates internal protein forces (one-time computation)
-2. Generates **cocoon trajectories** that maintain constant distance from the protein surface
+2. Generates **winding trajectories** that spiral around the protein like thread
 3. Samples multiple ligand orientations (36 rotations) at each trajectory position
 4. Calculates combined force vectors (합벡터) at each residue
 5. Identifies binding sites where forces converge
@@ -20,11 +20,12 @@ This approach reveals how proteins' internal stress fields guide ligand recognit
 
 ## Features
 
-- **Cocoon trajectories**: Ligand maintains constant distance from protein surface while exploring via Brownian motion
-  - Distance-constrained hovering around protein
-  - Multiple approach distances (e.g., 15Å → 5Å in steps)
+- **Winding trajectories**: Ligand winds around protein like thread, exploring entire surface geometry
+  - Free distance variation from 5Å to 2.5×target distance (e.g., 5-50Å)
+  - Thread-like motion using spherical coordinates with angular momentum
+  - Natural oscillatory in/out motion for organic exploration
   - Samples 36 rotations at each trajectory position
-  - Ensures comprehensive surface exploration
+  - Principal axes alignment for protein-shape-aware winding
 - **Physics-based motion**: Molecular weight-dependent diffusion (40 fs time step)
   - Corrected molecular radius calculation: r ≈ 0.66 × MW^(1/3) Å
   - True Brownian dynamics with distance constraints
@@ -70,12 +71,13 @@ pip install networkx  # For aromatic ring detection
 
 ## Recent Improvements
 
-### Enhanced Trajectory Dynamics (v2.1)
-- **More stochastic motion**: Increased Brownian component (3x amplification) for natural random walk
-- **Protein attraction**: Added weighted attraction forces toward closest protein atoms
-- **Flexible distance constraints**: Allow ±25% variation around target distance for natural fluctuations
-- **Soft constraints**: 70% proposed position + 30% adjusted position to maintain stochasticity
-- **Better exploration**: Removed rigid tangential/radial split that created circular patterns
+### Winding Trajectory Implementation (v2.1)
+- **Thread-like motion**: Complete redesign - ligand now winds around protein like thread
+- **Free distance variation**: 5Å to 2.5×target distance range (e.g., 5-50Å)
+- **Spherical coordinates**: Angular momentum system for natural spiraling motion
+- **Oscillatory dynamics**: Natural in/out breathing motion during winding
+- **Principal axes alignment**: Uses PCA to align winding with protein shape
+- **Soft boundaries**: Gentle forces instead of hard constraints
 
 ### Improved Aromatic Detection (v2.1)
 - **Fixed SMILES conversion**: Properly handles aromatic rings (benzene, pyridine, etc.)
@@ -100,12 +102,12 @@ pip install networkx  # For aromatic ring detection
   - Parameter configuration and validation
   - Coordinates the complete analysis pipeline
 
-- **`trajectory_generator.py`** - Cocoon trajectory simulation engine
-  - **Cocoon mode**: Maintains constant distance from protein surface
-  - Multiple approach distances with gradual approach (e.g., 15→5 Å)
+- **`trajectory_generator.py`** - Winding trajectory simulation engine
+  - **Winding mode**: Thread-like motion spiraling around protein geometry
+  - Free distance variation (5Å to 2.5×target, e.g., 5-50Å range)
   - Samples 36 rotations per trajectory position
-  - Brownian motion with molecular weight-dependent diffusion (40 fs time step)
-  - Corrected molecular radius: r ≈ 0.66 × MW^(1/3) Å
+  - Spherical coordinates with angular momentum for smooth winding
+  - Natural oscillatory in/out motion during exploration
   - Collision detection using VDW radii and KD-trees
   - Protonation-aware interaction detection (pH-dependent)
   - Integrated intra-protein force field calculations
@@ -355,15 +357,15 @@ FluxMD uses the Henderson-Hasselbalch equation to determine protonation states:
 - Atoms with >50% protonation probability are assigned their protonated state
 - This affects H-bond donor/acceptor roles and formal charges
 
-### Cocoon Trajectory Implementation
+### Winding Trajectory Implementation
 
-FluxMD uses cocoon trajectories that maintain constant distance from the protein surface:
+FluxMD uses winding trajectories that spiral around the protein like thread:
 
-#### Cocoon Mode Features
-- **Distance maintenance**: Ligand hovers at fixed distance from closest protein atom
-- **Multiple approaches**: Gradually decreases distance (e.g., 15→10→5 Å)
-- **Rotation sampling**: 36 orientations tested at each position
-- **Surface exploration**: Brownian motion constrained to spherical shell
+#### Winding Mode Features
+- **Thread-like motion**: Spirals around protein using spherical coordinates
+- **Free distance variation**: 5Å to 2.5×target distance (e.g., 5-50Å)
+- **Angular momentum**: Smooth winding with momentum-based dynamics
+- **Natural oscillation**: Breathing in/out motion during exploration
 
 #### Physics Implementation
 - **Stokes-Einstein equation**: D = k_B × T / (6π × η × r)
