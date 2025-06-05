@@ -1237,7 +1237,7 @@ class ProteinLigandFluxAnalyzer:
     def run_single_iteration(self, protein_file, ligand_file, output_dir,
                            n_steps, n_approaches, approach_distance,
                            starting_distance, iteration_num, use_gpu=False,
-                           n_rotations=36):
+                           n_rotations=36, n_jobs=-1):
         """Run a single iteration of the flux analysis with cocoon trajectories
         
         Args:
@@ -1507,7 +1507,8 @@ class ProteinLigandFluxAnalyzer:
                 
                 # Define function for parallel processing
                 def process_step_rotations(step, position, protein_atoms, ligand_atoms, ligand_coords,
-                                         ca_coords, collision_detector, n_rotations, approach_idx, n_steps):
+                                         ca_coords, collision_detector, n_rotations, approach_idx, n_steps,
+                                         analyzer_self):
                     """Process all rotations for a single trajectory step in parallel"""
                     # Find closest CA for rotation axis
                     distances = cdist([position], ca_coords)[0]
@@ -1541,7 +1542,7 @@ class ProteinLigandFluxAnalyzer:
                         # Check collision
                         if not collision_detector.check_collision(final_coords, ligand_atoms_rot):
                             # Calculate interactions
-                            interactions = self.calculate_interactions(
+                            interactions = analyzer_self.calculate_interactions(
                                 protein_atoms, ligand_atoms_rot,
                                 approach_idx * n_steps + step
                             )
@@ -1554,7 +1555,7 @@ class ProteinLigandFluxAnalyzer:
                         return []
                     
                     # Run rotations in parallel
-                    rotation_results = Parallel(n_jobs=-1, backend='threading')(
+                    rotation_results = Parallel(n_jobs=n_jobs, backend='threading')(
                         delayed(process_rotation)(rot_idx) for rot_idx in range(n_rotations)
                     )
                     
@@ -1567,7 +1568,9 @@ class ProteinLigandFluxAnalyzer:
                     return step_interactions
                 
                 # Process all steps with progress reporting
-                print(f"\n  Using parallel CPU processing with {n_jobs} cores")
+                import multiprocessing as mp
+                actual_cores = mp.cpu_count() if n_jobs == -1 else n_jobs
+                print(f"\n  Using parallel CPU processing with {actual_cores} cores")
                 
                 step_results = []
                 for step, position in enumerate(trajectory):
@@ -1577,7 +1580,8 @@ class ProteinLigandFluxAnalyzer:
                     # Process this step
                     step_interactions = process_step_rotations(
                         step, position, protein_atoms, ligand_atoms, ligand_coords,
-                        ca_coords, self.collision_detector, n_rotations, approach_idx, n_steps
+                        ca_coords, self.collision_detector, n_rotations, approach_idx, n_steps,
+                        self
                     )
                     
                     if step_interactions:
@@ -1745,7 +1749,7 @@ class ProteinLigandFluxAnalyzer:
                 protein_file, ligand_file, output_dir,
                 n_steps, n_approaches, approach_distance,
                 starting_distance, iteration + 1, use_gpu,
-                n_rotations=n_rotations
+                n_rotations=n_rotations, n_jobs=n_jobs
             )
             
             iteration_time = time.time() - iteration_start
