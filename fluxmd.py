@@ -472,10 +472,10 @@ def run_complete_workflow():
     
     # Performance estimate
     if use_gpu:
-        estimated_time = (total_interactions / 1e6) * 0.1  # Rough estimate: 0.1 sec per million on GPU
+        estimated_time = (total_operations / 1e6) * 0.1  # Rough estimate: 0.1 sec per million on GPU
     else:
         cores = mp.cpu_count() if n_jobs == -1 else n_jobs
-        estimated_time = (total_interactions / 1e6) * 0.5 / cores  # 0.5 sec per million per core
+        estimated_time = (total_operations / 1e6) * 0.5 / cores  # 0.5 sec per million per core
     
     print(f"\n⏱️  Estimated processing time: {estimated_time:.0f} seconds ({estimated_time/60:.1f} minutes)")
     
