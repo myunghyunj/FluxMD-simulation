@@ -36,7 +36,7 @@ def benchmark_performance(protein_atoms, ligand_atoms, n_test_frames=5, n_test_r
     except:
         return False, "GPU initialization failed"
     
-    print("\n⏱️  Running performance benchmark...")
+    print("\n[TIME]  Running performance benchmark...")
     
     # Generate test trajectory
     test_positions = np.random.randn(n_test_frames, 3) * 20
@@ -92,7 +92,7 @@ def convert_cif_to_pdb(cif_file):
     try:
         subprocess.run(['obabel', cif_file, '-O', pdb_file],
                       check=True, capture_output=True, text=True)
-        print(f"✓ Converted to: {pdb_file}")
+        print(f"[OK] Converted to: {pdb_file}")
         return pdb_file
     except subprocess.CalledProcessError as e:
         print(f"Error converting file: {e.stderr}")
@@ -153,22 +153,22 @@ def convert_smiles_to_pdb_cactus(smiles_string, output_name="ligand"):
         # Check SDF for aromatic bonds (bond type 4)
         aromatic_bonds = sdf_content.count('  4  ') + sdf_content.count(' 4 0 ')
         
-        print(f"✓ Generated {atom_count} atoms")
+        print(f"[OK] Generated {atom_count} atoms")
         if aromatic_bonds > 0:
-            print(f"✓ Preserved {aromatic_bonds} aromatic bonds")
-        print(f"✓ Created: {pdb_file} (for FluxMD)")
-        print(f"✓ Created: {sdf_file} (with aromatic bond info)")
+            print(f"[OK] Preserved {aromatic_bonds} aromatic bonds")
+        print(f"[OK] Created: {pdb_file} (for FluxMD)")
+        print(f"[OK] Created: {sdf_file} (with aromatic bond info)")
         
         # Analyze structure
         if any(marker in smiles_string.lower() for marker in ['c1cc', 'c1nc', 'c1cn', 'c1=c']):
-            print("\n💡 Aromatic system detected:")
+            print("\n[TIP] Aromatic system detected:")
             print("   - 3D coordinates generated with proper planarity")
             print("   - Aromatic bonds preserved in SDF format")
             print("   - PDB file contains 3D structure for FluxMD analysis")
         
         # For benzene specifically
         if smiles_string.lower() in ['c1ccccc1', 'c1=cc=cc=c1']:
-            print("\n✓ Benzene structure:")
+            print("\n[OK] Benzene structure:")
             print("   - 6 carbon atoms in planar hexagonal arrangement")
             print("   - 6 hydrogen atoms added automatically")
             print("   - Aromatic system properly represented")
@@ -215,12 +215,12 @@ def convert_smiles_to_pdb_openbabel(smiles_string, output_name="ligand"):
                 content = f.read()
                 atom_count = content.count('HETATM')
             
-            print(f"✓ Generated {atom_count} atoms")
-            print(f"✓ Created: {pdb_file}")
+            print(f"[OK] Generated {atom_count} atoms")
+            print(f"[OK] Created: {pdb_file}")
             
             # Warning for aromatics
             if any(marker in smiles_string.lower() for marker in ['c1cc', 'c1nc', 'c1cn']):
-                print("\n⚠️  Note: OpenBabel may not handle aromatics perfectly.")
+                print("\n[WARNING]  Note: OpenBabel may not handle aromatics perfectly.")
                 print("   Consider using CACTUS method for better results.")
             
             return pdb_file
@@ -293,26 +293,26 @@ def validate_results(output_dir, protein_name):
                 aromatic_flux = aromatic_residues['average_flux'].mean()
                 total_flux = df['average_flux'].mean()
                 
-                print(f"✓ Found {len(aromatic_residues)} aromatic residues")
+                print(f"[OK] Found {len(aromatic_residues)} aromatic residues")
                 print(f"  Average flux: {aromatic_flux:.3f} (vs overall {total_flux:.3f})")
                 
                 if aromatic_flux > total_flux:
-                    print("  ✓ Aromatic residues show higher flux")
+                    print("  [OK] Aromatic residues show higher flux")
                 else:
-                    print("  ⚠️  Aromatic residues don't show enhanced flux")
+                    print("  [WARNING]  Aromatic residues don't show enhanced flux")
             else:
-                print("⚠️  No aromatic residues found")
+                print("[WARNING]  No aromatic residues found")
         
         # Check for statistical validation
         if 'p_value' in df.columns:
             significant = df[df['p_value'] < 0.05]
-            print(f"\n✓ Statistical validation present")
+            print(f"\n[OK] Statistical validation present")
             print(f"  {len(significant)}/{len(df)} residues significant (p<0.05)")
         else:
-            print("\n⚠️  No statistical validation found")
+            print("\n[WARNING]  No statistical validation found")
             validation_passed = False
     else:
-        print("❌ No flux data file found!")
+        print("[ERROR] No flux data file found!")
         validation_passed = False
     
     # Check iteration files for pi-stacking
@@ -337,10 +337,10 @@ def validate_results(output_dir, protein_name):
         
         if pi_stacking_found:
             pi_percentage = (pi_interactions / total_interactions) * 100
-            print(f"\n✓ Pi-stacking interactions found!")
+            print(f"\n[OK] Pi-stacking interactions found!")
             print(f"  {pi_interactions}/{total_interactions} ({pi_percentage:.1f}%)")
         else:
-            print("\n⚠️  No pi-stacking interactions detected")
+            print("\n[WARNING]  No pi-stacking interactions detected")
             print("  This might be normal if ligand lacks aromatic rings")
     
     return validation_passed
@@ -411,7 +411,7 @@ def run_complete_workflow():
         if os.path.exists(params_file):
             loaded_params = parse_simulation_parameters(params_file)
             if loaded_params:
-                print("\n✓ Loaded parameters from file:")
+                print("\n[OK] Loaded parameters from file:")
                 for key, value in loaded_params.items():
                     print(f"  {key}: {value}")
                 
@@ -531,10 +531,10 @@ def run_complete_workflow():
     print(f"  Total operations: {total_operations/1e6:.1f} million")
     
     if gpu_available:
-        print(f"\n🚀 GPU detected: {device}")
+        print(f"\nGPU detected: {device}")
     
     # Initial decision
-    print(f"\n📊 Performance estimation:")
+    print(f"\n[STATS] Performance estimation:")
     if use_gpu:
         print(f"  Initial selection: GPU ({decision_reason})")
     else:
@@ -553,7 +553,7 @@ def run_complete_workflow():
             decision_reason = f"benchmark result - {benchmark_reason}"
     
     # Final decision
-    print(f"\n✅ Final decision:")
+    print(f"\n[DONE] Final decision:")
     if use_gpu:
         print(f"  Using GPU acceleration ({decision_reason})")
     else:
@@ -581,11 +581,11 @@ def run_complete_workflow():
         cores = mp.cpu_count() if n_jobs == -1 else n_jobs
         estimated_time = (total_operations / 1e6) * 0.5 / cores  # 0.5 sec per million per core
     
-    print(f"\n⏱️  Estimated processing time: {estimated_time:.0f} seconds ({estimated_time/60:.1f} minutes)")
+    print(f"\n[TIME]  Estimated processing time: {estimated_time:.0f} seconds ({estimated_time/60:.1f} minutes)")
     
     # Provide optimization suggestions if slow
     if estimated_time > 300:  # More than 5 minutes
-        print("\n⚠️  Long processing time expected. Consider:")
+        print("\n[WARNING]  Long processing time expected. Consider:")
         if n_rotations > 24:
             print(f"  • Reduce rotations to 12-24 (currently {n_rotations})")
         if n_steps > 50:
@@ -640,7 +640,7 @@ def run_complete_workflow():
         f.write("-" * 40 + "\n")
         f.write(f"{os.path.abspath(output_dir)}\n")
     
-    print(f"\n✓ Parameters saved to: {params_file}")
+    print(f"\n[OK] Parameters saved to: {params_file}")
     
     # Step 3: Run trajectory analysis
     print_banner("STEP 3: WINDING TRAJECTORY GENERATION")
@@ -661,7 +661,7 @@ def run_complete_workflow():
             print("\n✗ Trajectory analysis was cancelled.")
             return
         
-        print("\n✓ Trajectory analysis complete!")
+        print("\n[OK] Trajectory analysis complete!")
         
         # Verify output
         import glob
@@ -687,7 +687,7 @@ def run_complete_workflow():
     try:
         # Check if we can use integrated GPU pipeline
         if use_gpu and hasattr(trajectory_analyzer, 'gpu_trajectory_results') and trajectory_analyzer.gpu_trajectory_results is not None:
-            print("\n🚀 Using integrated GPU flux pipeline (bypassing CSV parsing)...")
+            print("\nUsing integrated GPU flux pipeline (bypassing CSV parsing)...")
             # Use integrated GPU pipeline for maximum efficiency
             flux_data = flux_analyzer.create_integrated_flux_pipeline(
                 protein_file, 
@@ -716,7 +716,7 @@ def run_complete_workflow():
             # Save processed data
             flux_analyzer.save_processed_data(flux_data, output_dir)
         
-        print("\n✓ Flux analysis complete!")
+        print("\n[OK] Flux analysis complete!")
         
     except Exception as e:
         print(f"\nError in flux analysis: {e}")
@@ -857,24 +857,24 @@ def main():
             generator.generate_dna(sequence)
             generator.write_pdb(output_name)
             
-            print(f"\n✓ Structure successfully written to: {output_name}")
+            print(f"\n[OK] Structure successfully written to: {output_name}")
             print(f"  Total atoms: {len(generator.atoms)}")
             print(f"  Base pairs: {len(sequence)}")
             print(f"  Chains: A (5'→3'), B (3'→5')")
             
             # Provide usage tips
-            print("\n📊 Structure details:")
+            print("\n[STATS] Structure details:")
             print("  • Strand A: 5' to 3' direction")
             print("  • Strand B: 3' to 5' direction (complementary)")
             print("  • Standard B-DNA geometry (10.5 bp/turn)")
             print("  • All atoms including hydrogens")
             
-            print("\n🔧 Usage in FluxMD:")
+            print("\n[INFO] Usage in FluxMD:")
             print("  1. Use this DNA as the 'ligand' in workflow option 1")
             print("  2. FluxMD will analyze protein-DNA interactions")
             print("  3. High flux regions indicate DNA binding sites")
             
-            print("\n🎨 Visualization tips:")
+            print("\n[VIZ] Visualization tips:")
             print("  pymol " + output_name)
             print("  PyMOL commands:")
             print("    show cartoon")
@@ -885,13 +885,13 @@ def main():
             print("    set stick_radius, 0.2")
             
             # Offer to generate a test protein-DNA complex
-            print("\n💡 Tip: For testing protein-DNA interactions:")
+            print("\n[TIP] Tip: For testing protein-DNA interactions:")
             print("  • Use a DNA-binding protein (e.g., transcription factor)")
             print("  • DNA groove widths: Major ~22Å, Minor ~12Å")
             print("  • Typical protein-DNA interface: 10-20 base pairs")
             
         except Exception as e:
-            print(f"\n❌ Error generating DNA structure: {e}")
+            print(f"\n[ERROR] Error generating DNA structure: {e}")
             import traceback
             traceback.print_exc()
             print("\nTroubleshooting:")

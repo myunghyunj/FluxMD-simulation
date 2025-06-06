@@ -29,7 +29,7 @@ except ImportError as e:
 def print_banner():
     """Print FluxMD UMA banner."""
     banner = f"""
-{Fore.CYAN}╔══════════════════════════════════════════════════════════════════╗
+{Fore.CYAN}╔------------------------------------------------------------╗
 ║                                                                  ║
 ║  {Fore.WHITE}███████╗██╗     ██╗   ██╗██╗  ██╗███╗   ███╗██████╗{Fore.CYAN}           ║
 ║  {Fore.WHITE}██╔════╝██║     ██║   ██║╚██╗██╔╝████╗ ████║██╔══██╗{Fore.CYAN}          ║
@@ -38,10 +38,10 @@ def print_banner():
 ║  {Fore.WHITE}██║     ███████╗╚██████╔╝██╔╝ ██╗██║ ╚═╝ ██║██████╔╝{Fore.CYAN}          ║
 ║  {Fore.WHITE}╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝{Fore.CYAN}           ║
 ║                                                                  ║
-║          {Fore.YELLOW}🚀 Unified Memory Architecture Edition 🚀{Fore.CYAN}               ║
+║          {Fore.YELLOW} Unified Memory Architecture Edition {Fore.CYAN}               ║
 ║                                                                  ║
 ║  {Fore.GREEN}Zero-Copy GPU Processing | 100x Faster | No File I/O{Fore.CYAN}           ║
-╚══════════════════════════════════════════════════════════════════╝{Style.RESET_ALL}
+╚------------------------------------------------------------╝{Style.RESET_ALL}
 """
     print(banner)
 
@@ -51,12 +51,12 @@ def check_gpu_status():
     device = get_device()
     
     if device.type == 'mps':
-        print(f"\n{Fore.GREEN}✓ Apple Silicon GPU detected (Metal Performance Shaders)")
+        print(f"\n{Fore.GREEN}[OK] Apple Silicon GPU detected (Metal Performance Shaders)")
         print(f"  → Unified Memory Architecture: Zero-copy data transfer")
         print(f"  → CPU and GPU share the same high-speed memory pool")
         return True
     elif device.type == 'cuda':
-        print(f"\n{Fore.GREEN}✓ NVIDIA GPU detected")
+        print(f"\n{Fore.GREEN}[OK] NVIDIA GPU detected")
         print(f"  → Device: {torch.cuda.get_device_name()}")
         print(f"  → Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
         return True
@@ -158,7 +158,7 @@ def main():
                 if avg_flux[idx] > 0:
                     print(f"  {i+1}. Residue {res_indices[idx]} ({res_names[idx]}): {avg_flux[idx]:.4f}")
         
-        print(f"\n{Fore.GREEN}✅ Analysis complete!")
+        print(f"\n{Fore.GREEN}[DONE] Analysis complete!")
         return 0
         
     except Exception as e:
