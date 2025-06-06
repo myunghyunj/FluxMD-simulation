@@ -8,8 +8,7 @@ import os
 import sys
 import argparse
 import torch
-from colorama import init, Fore, Style
-init(autoreset=True)
+# Removed colorama for cleaner output
 
 # Check for required modules
 try:
@@ -26,24 +25,10 @@ except ImportError as e:
     sys.exit(1)
 
 
-def print_banner():
-    """Print FluxMD UMA banner."""
-    banner = f"""
-{Fore.CYAN}╔------------------------------------------------------------╗
-║                                                                  ║
-║  {Fore.WHITE}███████╗██╗     ██╗   ██╗██╗  ██╗███╗   ███╗██████╗{Fore.CYAN}           ║
-║  {Fore.WHITE}██╔════╝██║     ██║   ██║╚██╗██╔╝████╗ ████║██╔══██╗{Fore.CYAN}          ║
-║  {Fore.WHITE}█████╗  ██║     ██║   ██║ ╚███╔╝ ██╔████╔██║██║  ██║{Fore.CYAN}          ║
-║  {Fore.WHITE}██╔══╝  ██║     ██║   ██║ ██╔██╗ ██║╚██╔╝██║██║  ██║{Fore.CYAN}          ║
-║  {Fore.WHITE}██║     ███████╗╚██████╔╝██╔╝ ██╗██║ ╚═╝ ██║██████╔╝{Fore.CYAN}          ║
-║  {Fore.WHITE}╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝{Fore.CYAN}           ║
-║                                                                  ║
-║          {Fore.YELLOW} Unified Memory Architecture Edition {Fore.CYAN}               ║
-║                                                                  ║
-║  {Fore.GREEN}Zero-Copy GPU Processing | 100x Faster | No File I/O{Fore.CYAN}           ║
-╚------------------------------------------------------------╝{Style.RESET_ALL}
-"""
-    print(banner)
+def print_header():
+    """Print simple header."""
+    print("\nFluxMD UMA - Zero-copy GPU processing")
+    print("------------------------------------")
 
 
 def check_gpu_status():
@@ -51,18 +36,18 @@ def check_gpu_status():
     device = get_device()
     
     if device.type == 'mps':
-        print(f"\n{Fore.GREEN}[OK] Apple Silicon GPU detected (Metal Performance Shaders)")
-        print(f"  → Unified Memory Architecture: Zero-copy data transfer")
-        print(f"  → CPU and GPU share the same high-speed memory pool")
+        print("\n[OK] Apple Silicon GPU detected (Metal Performance Shaders)")
+        print("     Unified Memory Architecture: Zero-copy data transfer")
+        print("     CPU and GPU share the same high-speed memory pool")
         return True
     elif device.type == 'cuda':
-        print(f"\n{Fore.GREEN}[OK] NVIDIA GPU detected")
-        print(f"  → Device: {torch.cuda.get_device_name()}")
-        print(f"  → Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+        print("\n[OK] NVIDIA GPU detected")
+        print(f"     Device: {torch.cuda.get_device_name()}")
+        print(f"     Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
         return True
     else:
-        print(f"\n{Fore.YELLOW}⚠ No GPU detected - using CPU")
-        print(f"  → UMA optimizations will still work but with reduced performance")
+        print("\n[WARNING] No GPU detected - using CPU")
+        print("          UMA optimizations will still work but with reduced performance")
         return False
 
 
@@ -93,36 +78,36 @@ def main():
     
     args = parser.parse_args()
     
-    # Print banner
-    print_banner()
+    # Print header
+    print_header()
     
     # Check files exist
     if not os.path.exists(args.protein):
-        print(f"{Fore.RED}Error: Protein file not found: {args.protein}")
+        print(f"Error: Protein file not found: {args.protein}")
         return 1
     
     if not os.path.exists(args.ligand):
-        print(f"{Fore.RED}Error: Ligand file not found: {args.ligand}")
+        print(f"Error: Ligand file not found: {args.ligand}")
         return 1
     
     # Check GPU status
     has_gpu = check_gpu_status() and not args.cpu
     
     # Print analysis parameters
-    print(f"\n{Fore.CYAN}Analysis Parameters:")
+    print("\nAnalysis Parameters:")
     print(f"  Protein: {args.protein}")
     print(f"  Ligand: {args.ligand}")
     print(f"  Output: {args.output}")
     print(f"  Steps: {args.steps}")
     print(f"  Iterations: {args.iterations}")
     print(f"  Approaches: {args.approaches}")
-    print(f"  Distance: {args.distance} Å")
+    print(f"  Distance: {args.distance} Angstroms")
     print(f"  Rotations: {args.rotations}")
     print(f"  pH: {args.ph}")
     print(f"  Device: {'GPU (UMA-optimized)' if has_gpu else 'CPU'}")
     
     # Initialize analyzer
-    print(f"\n{Fore.CYAN}Initializing FluxMD analyzer...")
+    print("\nInitializing FluxMD analyzer...")
     analyzer = ProteinLigandFluxAnalyzer(physiological_pH=args.ph)
     
     # Monkey-patch the UMA methods
@@ -132,7 +117,7 @@ def main():
     
     try:
         # Run UMA-optimized analysis
-        print(f"\n{Fore.CYAN}Starting UMA-optimized analysis...")
+        print("\nStarting UMA-optimized analysis...")
         flux_data = analyzer.run_complete_analysis_uma(
             protein_file=args.protein,
             ligand_file=args.ligand,
@@ -148,7 +133,8 @@ def main():
         
         # Report top binding sites
         if flux_data is not None:
-            print(f"\n{Fore.GREEN}Top 5 Binding Sites (by flux):")
+            import numpy as np
+            print("\nTop 5 Binding Sites (by flux):")
             avg_flux = flux_data['avg_flux']
             res_indices = flux_data['res_indices']
             res_names = flux_data['res_names']
@@ -158,11 +144,11 @@ def main():
                 if avg_flux[idx] > 0:
                     print(f"  {i+1}. Residue {res_indices[idx]} ({res_names[idx]}): {avg_flux[idx]:.4f}")
         
-        print(f"\n{Fore.GREEN}[DONE] Analysis complete!")
+        print("\n[DONE] Analysis complete!")
         return 0
         
     except Exception as e:
-        print(f"\n{Fore.RED}Error during analysis: {e}")
+        print(f"\nError during analysis: {e}")
         import traceback
         traceback.print_exc()
         return 1
