@@ -10,8 +10,8 @@ import sys
 fluxmd_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, fluxmd_dir)
 
-# Now we can import from the old location
-import flux_analyzer
+# Now import from the correct location
+from fluxmd.analysis.flux_analyzer import TrajectoryFluxAnalyzer
 import numpy as np
 import pandas as pd
 from glob import glob
@@ -58,7 +58,7 @@ def continue_from_iterations(output_dir, protein_file, protein_name="protein"):
         
         # Create visualization
         try:
-            analyzer = flux_analyzer.TrajectoryFluxAnalyzer()
+            analyzer = TrajectoryFluxAnalyzer()
             
             # Create flux_data dict for visualization
             flux_data = {

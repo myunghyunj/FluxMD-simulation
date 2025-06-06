@@ -3,6 +3,8 @@
 Modified trajectory_generator.py section for UMA-optimized workflow.
 This shows the key changes needed to integrate the in-memory GPU pipeline.
 """
+import os
+import numpy as np
 
 # Add to imports at the top of trajectory_generator.py:
 from ..gpu.gpu_accelerated_flux_uma import GPUAcceleratedInteractionCalculator, InteractionResult, get_device
@@ -84,6 +86,11 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
     protein_atoms_df = self.parse_structure_robust(protein_file, parse_heterogens=False)
     ligand_atoms_df = self.parse_structure_robust(ligand_file, parse_heterogens=True)
     
+    # Import required modules
+    import numpy as np
+    import torch
+    import pandas as pd
+    
     # Get device
     device = get_device() if use_gpu else torch.device('cpu')
     
@@ -99,7 +106,7 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
     structure = PDBParser(QUIET=True).get_structure('protein', protein_file)
     
     # Initialize intra-protein calculator
-    from intra_protein_interactions import IntraProteinInteractions
+    from .intra_protein_interactions import IntraProteinInteractions
     self.intra_protein_calc = IntraProteinInteractions(structure, physiological_pH=physiological_pH)
     intra_protein_vectors = self.intra_protein_calc.calculate_all_interactions()
     print("   ✓ Static force field computed")
@@ -175,6 +182,9 @@ def _save_parameters_uma(self, output_dir, protein_file, ligand_file,
                         starting_distance, n_rotations, physiological_pH,
                         device_type):
     """Save simulation parameters for UMA run."""
+    import pandas as pd
+    import os
+    
     params = {
         'workflow': 'UMA-optimized (Unified Memory Architecture)',
         'protein_file': protein_file,
