@@ -25,6 +25,7 @@ def run_single_iteration_uma(self, iteration_num, protein_atoms_df, ligand_atoms
     
     Args:
         save_trajectories: If True, generate and save trajectory visualizations
+        approach_distance: Step size to advance ligand in Angstroms
     """
     print(f"\n{'='*60}")
     print(f"ITERATION {iteration_num + 1}")
@@ -106,8 +107,8 @@ def run_single_iteration_uma(self, iteration_num, protein_atoms_df, ligand_atoms
 # Add this new method to run complete UMA-optimized analysis:
 def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
                              n_steps=200, n_iterations=10, n_approaches=10,
-                             starting_distance=20.0, n_rotations=36,
-                             use_gpu=True, physiological_pH=7.4,
+                             starting_distance=20.0, approach_distance=2.5,
+                             n_rotations=36, use_gpu=True, physiological_pH=7.4,
                              save_trajectories=False):
     """
     Orchestrates the entire analysis with UMA-optimized GPU workflow.
@@ -115,6 +116,7 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
     
     Args:
         save_trajectories: If True, generate and save trajectory visualizations
+        approach_distance: Step size to advance ligand in Angstroms
     """
     print("\n" + "="*80)
     print("FLUXMD ANALYSIS - UNIFIED MEMORY ARCHITECTURE (UMA) OPTIMIZED")
@@ -191,6 +193,7 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
             starting_distance, n_steps, n_approaches, n_rotations,
             output_dir, gpu_calc, approach_angles,
             ca_coords=ca_coords, ligand_mw=ligand_mw,
+            approach_distance=approach_distance,
             save_trajectories=save_trajectories
         )
         
@@ -286,7 +289,9 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
         output_dir, protein_file, ligand_file,
         n_steps, n_iterations, n_approaches,
         starting_distance, n_rotations, physiological_pH,
-        device.type
+        device.type,
+        save_trajectories=save_trajectories,
+        approach_distance=approach_distance
     )
     
     print("\n" + "="*80)

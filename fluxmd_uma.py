@@ -189,6 +189,8 @@ def main():
                        help='Number of iterations (default: 10)')
     parser.add_argument('-a', '--approaches', type=int, default=10,
                        help='Number of approach angles (default: 10)')
+    parser.add_argument('--approach-distance', dest='approach_distance', type=float, default=2.5,
+                       help='Distance advanced between approaches in Angstroms (default: 2.5)')
     parser.add_argument('-d', '--distance', type=float, default=20.0,
                        help='Starting distance in Angstroms (default: 20.0)')
     parser.add_argument('-r', '--rotations', type=int, default=36,
@@ -237,6 +239,8 @@ def main():
             args.approaches = loaded_params['n_approaches']
         if 'starting_distance' in loaded_params:
             args.distance = loaded_params['starting_distance']
+        if 'approach_distance' in loaded_params:
+            args.approach_distance = loaded_params['approach_distance']
         if 'n_rotations' in loaded_params:
             args.rotations = loaded_params['n_rotations']
         if 'physiological_pH' in loaded_params:
@@ -275,6 +279,7 @@ def main():
     print(f"  Steps: {args.steps}")
     print(f"  Iterations: {args.iterations}")
     print(f"  Approaches: {args.approaches}")
+    print(f"  Approach distance: {args.approach_distance} Angstroms")
     print(f"  Distance: {args.distance} Angstroms")
     print(f"  Rotations: {args.rotations}")
     print(f"  pH: {args.ph}")
@@ -335,6 +340,7 @@ def main():
         def capturing_run_complete(*args, **kwargs):
             # Add save_trajectories to kwargs from command-line args
             kwargs['save_trajectories'] = cmd_args.save_trajectories
+            kwargs['approach_distance'] = cmd_args.approach_distance
             
             # Call original method
             result = original_run_complete(*args, **kwargs)
@@ -352,6 +358,7 @@ def main():
             n_steps=args.steps,
             n_iterations=args.iterations,
             n_approaches=args.approaches,
+            approach_distance=args.approach_distance,
             starting_distance=args.distance,
             n_rotations=args.rotations,
             use_gpu=has_gpu,
