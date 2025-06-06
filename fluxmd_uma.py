@@ -330,10 +330,11 @@ def main():
         
         # Modified wrapper to capture iteration results
         original_run_complete = analyzer.run_complete_analysis_uma
+        cmd_args = args  # Store command-line args
         
         def capturing_run_complete(*args, **kwargs):
-            # Add save_trajectories to kwargs
-            kwargs['save_trajectories'] = args.save_trajectories
+            # Add save_trajectories to kwargs from command-line args
+            kwargs['save_trajectories'] = cmd_args.save_trajectories
             
             # Call original method
             result = original_run_complete(*args, **kwargs)
