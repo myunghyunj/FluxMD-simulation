@@ -300,32 +300,51 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
 def _save_parameters_uma(self, output_dir, protein_file, ligand_file,
                         n_steps, n_iterations, n_approaches,
                         starting_distance, n_rotations, physiological_pH,
-                        device_type, save_trajectories=False):
-    """Save simulation parameters for UMA run."""
+                        device_type, save_trajectories=False, approach_distance=2.5):
+    """Save simulation parameters for UMA run in standard format."""
     import pandas as pd
     import os
+    from datetime import datetime
     
-    params = {
-        'workflow': 'UMA-optimized (Unified Memory Architecture)',
-        'protein_file': protein_file,
-        'ligand_file': ligand_file,
-        'n_steps': n_steps,
-        'n_iterations': n_iterations,
-        'n_approaches': n_approaches,
-        'starting_distance': starting_distance,
-        'n_rotations': n_rotations,
-        'physiological_pH': physiological_pH,
-        'device': device_type,
-        'optimization': 'Zero-copy GPU processing with scatter operations',
-        'trajectory_visualization': 'Enabled' if save_trajectories else 'Disabled'
-    }
+    # Get protein name from filename
+    protein_name = os.path.splitext(os.path.basename(protein_file))[0]
     
-    param_file = os.path.join(output_dir, 'simulation_parameters_uma.txt')
+    param_file = os.path.join(output_dir, 'simulation_parameters.txt')
     with open(param_file, 'w') as f:
-        f.write("FluxMD UMA-Optimized Simulation Parameters\n")
-        f.write("="*50 + "\n\n")
-        for key, value in params.items():
-            f.write(f"{key}: {value}\n")
-        f.write(f"\nTimestamp: {pd.Timestamp.now()}\n")
+        f.write("FLUXMD SIMULATION PARAMETERS\n")
+        f.write("="*60 + "\n")
+        f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write("\n")
+        f.write("INPUT FILES\n")
+        f.write("-"*40 + "\n")
+        f.write(f"Protein: {os.path.abspath(protein_file)}\n")
+        f.write(f"Ligand: {os.path.abspath(ligand_file)}\n")
+        f.write(f"Protein name: {protein_name}\n")
+        f.write("\n")
+        f.write("TRAJECTORY PARAMETERS\n")
+        f.write("-"*40 + "\n")
+        f.write(f"Mode: UMA-OPTIMIZED WINDING TRAJECTORY\n")
+        f.write(f"Steps per approach: {n_steps}\n")
+        f.write(f"Number of iterations: {n_iterations}\n")
+        f.write(f"Number of approaches: {n_approaches}\n")
+        f.write(f"Approach distance: {approach_distance} Angstroms\n")
+        f.write(f"Starting distance: {starting_distance} Angstroms\n")
+        f.write(f"Distance range: ~5-{starting_distance * 2.5:.0f} Angstroms (free variation)\n")
+        f.write(f"Rotations per position: {n_rotations}\n")
+        f.write(f"Total steps per iteration: {n_steps * n_approaches}\n")
+        f.write(f"Total rotations sampled: {n_steps * n_approaches * n_rotations}\n")
+        f.write("\n")
+        f.write("CALCULATION PARAMETERS\n")
+        f.write("-"*40 + "\n")
+        f.write(f"pH: {physiological_pH}\n")
+        f.write(f"GPU acceleration: {'ENABLED' if device_type != 'cpu' else 'DISABLED'}\n")
+        if device_type != 'cpu':
+            f.write(f"GPU device: {device_type}\n")
+        f.write(f"Optimization: Zero-copy GPU processing (UMA)\n")
+        f.write(f"Trajectory visualization: {'ENABLED' if save_trajectories else 'DISABLED'}\n")
+        f.write("\n")
+        f.write("OUTPUT DIRECTORY\n")
+        f.write("-"*40 + "\n")
+        f.write(f"{os.path.abspath(output_dir)}\n")
     
     print(f"   Saved parameters to: {param_file}")
