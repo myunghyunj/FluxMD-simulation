@@ -34,7 +34,17 @@ def process_flux_iterations(output_dir, protein_file, protein_name="protein"):
         
         try:
             df = pd.read_csv(flux_file)
-            if 'residue_id' in df.columns and 'flux' in df.columns:
+            # Check if this is the new format with combined_magnitude
+            if 'protein_residue_id' in df.columns and 'combined_magnitude' in df.columns:
+                # Convert to expected format
+                converted_df = pd.DataFrame({
+                    'residue_id': df['protein_residue_id'],
+                    'residue_name': df['protein_resname'],
+                    'flux': df['combined_magnitude'],
+                    'is_aromatic': df['protein_resname'].isin(['PHE', 'TYR', 'TRP', 'HIS']).astype(int)
+                })
+                all_flux_data.append(converted_df)
+            elif 'residue_id' in df.columns and 'flux' in df.columns:
                 all_flux_data.append(df)
         except Exception as e:
             print(f"Warning: Could not read {flux_file}: {e}")

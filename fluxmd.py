@@ -793,13 +793,75 @@ def main():
         print("This uses zero-copy GPU processing for maximum performance.")
         print("Best for Apple Silicon Macs and systems with unified memory.\n")
         
-        import subprocess
+        # Get input files
         protein_file = input("Enter protein PDB file: ").strip()
+        if not os.path.exists(protein_file):
+            print(f"Error: {protein_file} not found!")
+            return
+        
         ligand_file = input("Enter ligand PDB file: ").strip()
+        if not os.path.exists(ligand_file):
+            print(f"Error: {ligand_file} not found!")
+            return
+        
         output_dir = input("Output directory (default 'flux_analysis_uma'): ").strip() or "flux_analysis_uma"
         
-        # Run fluxmd_uma as subprocess
-        cmd = [sys.executable, "fluxmd_uma.py", protein_file, ligand_file, "-o", output_dir]
+        # Ask about simulation parameters
+        print("\nSIMULATION PARAMETERS")
+        print("Press Enter to use defaults, or enter custom values:\n")
+        
+        n_steps = input("Steps per trajectory (default 200): ").strip()
+        n_steps = int(n_steps) if n_steps else 200
+        
+        n_iterations = input("Number of iterations (default 10): ").strip()
+        n_iterations = int(n_iterations) if n_iterations else 10
+        
+        n_approaches = input("Number of approach angles (default 10): ").strip()
+        n_approaches = int(n_approaches) if n_approaches else 10
+        
+        starting_distance = input("Starting distance in Angstroms (default 20.0): ").strip()
+        starting_distance = float(starting_distance) if starting_distance else 20.0
+        
+        n_rotations = input("Rotations per position (default 36): ").strip()
+        n_rotations = int(n_rotations) if n_rotations else 36
+        
+        physiological_pH = input("pH for protonation states (default 7.4): ").strip()
+        physiological_pH = float(physiological_pH) if physiological_pH else 7.4
+        
+        # Show summary
+        print("\nUMA ANALYSIS CONFIGURATION:")
+        print(f"  Protein: {protein_file}")
+        print(f"  Ligand: {ligand_file}")
+        print(f"  Output: {output_dir}")
+        print(f"  Steps: {n_steps}")
+        print(f"  Iterations: {n_iterations}")
+        print(f"  Approaches: {n_approaches}")
+        print(f"  Distance: {starting_distance} Å")
+        print(f"  Rotations: {n_rotations}")
+        print(f"  pH: {physiological_pH}")
+        
+        # Calculate total operations
+        total_frames = n_steps * n_approaches * n_iterations
+        print(f"\nTotal trajectory frames: {total_frames:,}")
+        
+        confirm = input("\nProceed with UMA-optimized analysis? (y/n): ").strip().lower()
+        if confirm != 'y':
+            print("Analysis cancelled.")
+            return
+        
+        # Run fluxmd_uma as subprocess with parameters
+        import subprocess
+        cmd = [
+            sys.executable, "fluxmd_uma.py", 
+            protein_file, ligand_file, 
+            "-o", output_dir,
+            "-s", str(n_steps),
+            "-i", str(n_iterations),
+            "-a", str(n_approaches),
+            "-d", str(starting_distance),
+            "-r", str(n_rotations),
+            "--ph", str(physiological_pH)
+        ]
         subprocess.run(cmd)
     elif choice == "3":
         print_banner("SMILES TO PDB CONVERTER")

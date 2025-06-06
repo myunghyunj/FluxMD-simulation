@@ -6,17 +6,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Running the Analysis
 ```bash
-# Run complete FluxMD workflow (interactive) - main entry point
-python fluxmd.py
+# Standard workflow with file I/O (interactive menu)
+fluxmd
+
+# UMA-optimized workflow for 100x+ faster processing (zero file I/O)
+fluxmd-uma protein.pdb ligand.pdb -o results_uma
 
 # Generate trajectories directly (advanced usage)
-python trajectory_generator.py
+python -m fluxmd.core.trajectory_generator
+
+# DNA structure generation
+fluxmd-dna ATCGATCG -o my_dna.pdb
+```
+
+### Testing and Code Quality
+```bash
+# Run all tests with coverage
+pytest -v --cov=fluxmd --cov-report=html --cov-report=term
+
+# Run specific test file
+pytest tests/test_uma_optimization.py
+
+# Linting and formatting
+black --check fluxmd/ tests/     # Check formatting
+flake8 fluxmd/ tests/            # Style checking
+ruff check fluxmd/ tests/        # Fast linter
+mypy fluxmd/                     # Type checking
+
+# Full quality check pipeline
+black --check fluxmd/ && flake8 fluxmd/ && mypy fluxmd/ && pytest -v --cov=fluxmd
 ```
 
 ### Installation and Setup
 ```bash
-# Install Python dependencies
-pip install -r requirements.txt
+# Install as package in development mode
+pip install -e .
 
 # Install OpenBabel for molecular file conversions (required)  
 conda install -c conda-forge openbabel
@@ -35,30 +59,34 @@ obabel input.cif -O output.pdb
 
 # Convert SMILES to PDB (for ligand input)
 # Method 1: Using NCI CACTUS (recommended - preserves aromaticity)
-python fluxmd.py  # Choose option 2, then option 1
+fluxmd  # Choose option 2, then option 1
 # Creates both .pdb and .sdf files with aromatic bonds preserved
 
 # Method 2: Using OpenBabel (local fallback)
-python fluxmd.py  # Choose option 2, then option 2
+fluxmd  # Choose option 2, then option 2
 # Simple conversion, may have issues with aromatics
 ```
 
 ### Visualization
 ```bash
 # Create publication-quality figures
-python visualize_multiflux.py
+python -m fluxmd.visualization.visualize_multiflux
+
+# Command-line mode with multiple proteins
+python -m fluxmd.visualization.visualize_multiflux \
+  --proteins GPX4-wt.pdb GPX4-single.pdb \
+  --fluxes wt_flux.csv single_flux.csv \
+  --labels "GPX4-WT" "GPX4-Single" \
+  --output comparison.png
 ```
 
-### Testing and Validation
+### Performance Benchmarking
 ```bash
-# Test GPU cutoff algorithms
-python tests/test_gpu_cutoffs.py
+# Run UMA optimization benchmark
+python benchmarks/benchmark_uma.py
 
-# Validate trajectory generation
-python trajectory_generator.py  # Has interactive test mode
-
-# Check SMILES to PDBQT conversion
-python fluxmd.py  # Option 2 in menu
+# Test GPU vs CPU performance in main workflow
+fluxmd  # Option to benchmark during GPU/CPU selection
 ```
 
 ## Architecture Overview

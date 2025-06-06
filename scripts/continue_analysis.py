@@ -31,7 +31,7 @@ def continue_from_iterations(output_dir, protein_file, protein_name="protein"):
         df = pd.read_csv(all_flux_file)
         
         # Group by residue and calculate statistics
-        grouped = df.groupby('residue_index')
+        grouped = df.groupby('residue_id')
         
         processed_data = pd.DataFrame({
             'residue_index': grouped.groups.keys(),
