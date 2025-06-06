@@ -10,7 +10,7 @@ from scipy.spatial.distance import cdist
 from typing import Dict, List, Tuple, Optional
 import logging
 from itertools import combinations
-from protonation_aware_interactions import ProtonationAwareInteractionDetector
+from .protonation_aware_interactions import ProtonationAwareInteractionDetector
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

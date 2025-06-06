@@ -46,14 +46,12 @@ This approach reveals how proteins' internal stress fields guide ligand recognit
 ## Installation
 
 ```bash
-git clone https://github.com/panelarin/FluxMD.git
+git clone https://github.com/yourusername/FluxMD.git
 cd FluxMD
 conda create -n fluxmd python=3.8
 conda activate fluxmd
-pip install -r requirements.txt
+pip install -e .  # Install FluxMD package in development mode
 conda install -c conda-forge openbabel
-pip install torch>=2.0  # For GPU support (Apple Silicon MPS or NVIDIA CUDA)
-pip install networkx  # For aromatic ring detection
 ```
 
 ### Test Installation
@@ -61,11 +59,11 @@ pip install networkx  # For aromatic ring detection
 # Test Apple Silicon GPU detection
 python -c "import torch; print(f'MPS available: {torch.backends.mps.is_available()}')"
 
-# Test CACTUS service
-python test_cactus_benzene.py
+# Test FluxMD installation
+fluxmd --help
 
 # Full system check
-python fluxmd.py
+fluxmd
 # The startup will show GPU detection status
 ```
 
@@ -204,45 +202,42 @@ python fluxmd.py
 
 ### Quick Start - Test with Benzene
 ```bash
-# Test CACTUS service with benzene
-python test_cactus_benzene.py
-
-# Or use the main program
-python fluxmd.py
+# Use the main program
+fluxmd
 # Choose option 2, enter "c1ccccc1" for benzene
 ```
 
 ### Generate DNA Structure
 ```bash
 # From command line - generates double helix with automatic complement
-python dna_to_pdb.py ATCGATCG -o my_dna.pdb
+fluxmd-dna ATCGATCG -o my_dna.pdb
 
 # Example: input ATCG generates:
 # Strand 1 (5'→3'): ATCG
 # Strand 2 (3'→5'): CGAT (automatic complement)
 
 # Or through main menu
-python fluxmd.py
+fluxmd
 # Choose option 3, enter DNA sequence
 ```
 
 ### Run Complete Workflow
 ```bash
 # Standard workflow (with file I/O)
-python fluxmd.py
+fluxmd
 # Choose option 1 for full analysis
 
 # UMA-optimized workflow (zero file I/O, 100x faster)
-python fluxmd_uma.py protein.pdb ligand.pdb -o results_uma
+fluxmd-uma protein.pdb ligand.pdb -o results_uma
 ```
 
 ### Run Individual Components
 ```bash
 # Generate trajectories only
-python trajectory_generator.py
+python -m fluxmd.core.trajectory_generator
 
 # Analyze existing trajectory data
-python flux_analyzer.py
+python -m fluxmd.analysis.flux_analyzer
 ```
 
 Input files:
@@ -379,7 +374,7 @@ Zero-copy pipeline for Unified Memory Architecture (Apple Silicon, etc.):
 
 ```bash
 # Use UMA-optimized version for maximum performance
-python fluxmd_uma.py protein.pdb ligand.pdb -o results_uma
+fluxmd-uma protein.pdb ligand.pdb -o results_uma
 ```
 
 **Benefits of UMA optimization:**

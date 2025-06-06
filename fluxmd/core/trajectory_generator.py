@@ -29,8 +29,8 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Import intra-protein interaction calculator
-from intra_protein_interactions import IntraProteinInteractions
-from protonation_aware_interactions import calculate_interactions_with_protonation
+from .intra_protein_interactions import IntraProteinInteractions
+from .protonation_aware_interactions import calculate_interactions_with_protonation
 
 
 class CollisionDetector:

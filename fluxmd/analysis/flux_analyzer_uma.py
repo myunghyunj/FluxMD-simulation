@@ -15,7 +15,7 @@ from typing import List, Dict, Optional, Tuple
 from Bio.PDB import PDBParser
 import matplotlib.pyplot as plt
 import seaborn as sns
-from gpu_accelerated_flux_uma import InteractionResult
+from ..gpu.gpu_accelerated_flux_uma import InteractionResult
 
 class TrajectoryFluxAnalyzer:
     """Analyzes trajectory data to compute and visualize energy flux."""

@@ -6,8 +6,8 @@ Quick test of UMA optimization to verify it works correctly
 import torch
 import numpy as np
 import pandas as pd
-from gpu_accelerated_flux_uma import GPUAcceleratedInteractionCalculator, get_device
-from flux_analyzer_uma import TrajectoryFluxAnalyzer
+from fluxmd.gpu.gpu_accelerated_flux_uma import GPUAcceleratedInteractionCalculator, get_device
+from fluxmd.analysis.flux_analyzer_uma import TrajectoryFluxAnalyzer
 
 def test_uma_pipeline():
     """Test the UMA-optimized pipeline with synthetic data."""

@@ -13,10 +13,10 @@ init(autoreset=True)
 
 # Check for required modules
 try:
-    from gpu_accelerated_flux_uma import get_device
-    from trajectory_generator import ProteinLigandFluxAnalyzer
+    from fluxmd.gpu.gpu_accelerated_flux_uma import get_device
+    from fluxmd.core.trajectory_generator import ProteinLigandFluxAnalyzer
     # Import the UMA methods we'll monkey-patch
-    from trajectory_generator_uma import (
+    from fluxmd.core.trajectory_generator_uma import (
         run_single_iteration_uma, 
         run_complete_analysis_uma,
         _save_parameters_uma

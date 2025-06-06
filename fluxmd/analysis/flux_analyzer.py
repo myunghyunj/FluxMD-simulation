@@ -611,44 +611,44 @@ class TrajectoryFluxAnalyzer:
             start_time = time.time()
             
             for idx, iter_dir in enumerate(iter_dirs):
-            iter_start = time.time()
+                iter_start = time.time()
+                
+                # Progress tracking
+                progress = (idx / total_iterations) * 100
             
-            # Progress tracking
-            progress = (idx / total_iterations) * 100
-            
-            if idx > 0:
-                elapsed = time.time() - start_time
-                avg_time_per_iter = elapsed / idx
-                remaining_iters = total_iterations - idx
-                eta_seconds = avg_time_per_iter * remaining_iters
-                eta = datetime.now() + timedelta(seconds=eta_seconds)
-                eta_str = eta.strftime("%H:%M:%S")
-            else:
-                eta_str = "Calculating..."
-            
-            print(f"\n   [{idx+1}/{total_iterations}] Processing {os.path.basename(iter_dir)}... "
-                  f"({progress:.1f}% complete, ETA: {eta_str})")
-            
-            # Process CSV files in this iteration
-            try:
-                residue_tensors = self.process_iteration_files(
-                    iter_dir,
-                    "flux_iteration_*_output_vectors.csv",
-                    structure_file=protein_pdb
-                )
-            except ValueError as e:
-                print(f"   ⚠️  Skipping {os.path.basename(iter_dir)}: {e}")
-                continue
-            
-            # Calculate flux differentials
-            flux, derivatives = self.calculate_tensor_flux_differentials(
-                residue_tensors, ca_coords, res_indices)
-            
-            all_flux_data.append(flux)
-            all_derivatives.append(derivatives)
-            
-            iter_time = time.time() - iter_start
-            print(f"   ✓ Calculated flux for {len(flux)} residues in {iter_time:.2f}s")
+                if idx > 0:
+                    elapsed = time.time() - start_time
+                    avg_time_per_iter = elapsed / idx
+                    remaining_iters = total_iterations - idx
+                    eta_seconds = avg_time_per_iter * remaining_iters
+                    eta = datetime.now() + timedelta(seconds=eta_seconds)
+                    eta_str = eta.strftime("%H:%M:%S")
+                else:
+                    eta_str = "Calculating..."
+                
+                print(f"\n   [{idx+1}/{total_iterations}] Processing {os.path.basename(iter_dir)}... "
+                      f"({progress:.1f}% complete, ETA: {eta_str})")
+                
+                # Process CSV files in this iteration
+                try:
+                    residue_tensors = self.process_iteration_files(
+                        iter_dir,
+                        "flux_iteration_*_output_vectors.csv",
+                        structure_file=protein_pdb
+                    )
+                except ValueError as e:
+                    print(f"   ⚠️  Skipping {os.path.basename(iter_dir)}: {e}")
+                    continue
+                
+                # Calculate flux differentials
+                flux, derivatives = self.calculate_tensor_flux_differentials(
+                    residue_tensors, ca_coords, res_indices)
+                
+                all_flux_data.append(flux)
+                all_derivatives.append(derivatives)
+                
+                iter_time = time.time() - iter_start
+                print(f"   ✓ Calculated flux for {len(flux)} residues in {iter_time:.2f}s")
         
         # Average flux across iterations
         print("\n3. Averaging flux across iterations...")

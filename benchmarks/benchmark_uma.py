@@ -13,9 +13,9 @@ from typing import List
 import os
 
 # Import both implementations
-from gpu_accelerated_flux import GPUAcceleratedInteractionCalculator as OriginalGPU
-from gpu_accelerated_flux_uma import GPUAcceleratedInteractionCalculator as UMAOptimizedGPU
-from gpu_accelerated_flux_uma import InteractionResult, get_device
+from fluxmd.gpu.gpu_accelerated_flux import GPUAcceleratedInteractionCalculator as OriginalGPU
+from fluxmd.gpu.gpu_accelerated_flux_uma import GPUAcceleratedInteractionCalculator as UMAOptimizedGPU
+from fluxmd.gpu.gpu_accelerated_flux_uma import InteractionResult, get_device
 
 
 def create_mock_data(n_protein_atoms=5000, n_ligand_atoms=50):

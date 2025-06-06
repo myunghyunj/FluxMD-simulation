@@ -14,7 +14,7 @@ import warnings
 import time
 from dataclasses import dataclass
 from scipy.spatial import cKDTree
-from protonation_aware_interactions import ProtonationAwareInteractionDetector
+from ..core.protonation_aware_interactions import ProtonationAwareInteractionDetector
 
 # Check for Apple Silicon and available backends
 def get_device():

@@ -15,10 +15,10 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # Import our modules
-from trajectory_generator import ProteinLigandFluxAnalyzer
-from flux_analyzer import TrajectoryFluxAnalyzer
-from gpu_accelerated_flux import get_device
-from visualize_multiflux import visualize_multiflux
+from fluxmd.core.trajectory_generator import ProteinLigandFluxAnalyzer
+from fluxmd.analysis.flux_analyzer import TrajectoryFluxAnalyzer
+from fluxmd.gpu.gpu_accelerated_flux import get_device
+from fluxmd.visualization.visualize_multiflux import visualize_multiflux
 
 
 def benchmark_performance(protein_atoms, ligand_atoms, n_test_frames=5, n_test_rotations=12):
@@ -27,7 +27,7 @@ def benchmark_performance(protein_atoms, ligand_atoms, n_test_frames=5, n_test_r
     Returns: (use_gpu, reason)
     """
     import time
-    from gpu_accelerated_flux import GPUAcceleratedInteractionCalculator
+    from fluxmd.gpu.gpu_accelerated_flux import GPUAcceleratedInteractionCalculator
     
     try:
         device = get_device()
@@ -466,7 +466,7 @@ def run_complete_workflow():
     
     # Calculate system complexity
     # Parse structures temporarily to get atom counts
-    from trajectory_generator import ProteinLigandFluxAnalyzer
+    from fluxmd.core.trajectory_generator import ProteinLigandFluxAnalyzer
     temp_analyzer = ProteinLigandFluxAnalyzer()
     try:
         protein_atoms = temp_analyzer.parse_structure(protein_file, parse_heterogens=False)
@@ -837,13 +837,13 @@ def main():
         # Import the improved generator
         try:
             # First try to import from separate file
-            from dna_to_pdb_improved import DNAStructureGenerator
+            from fluxmd.utils.dna_to_pdb_improved import DNAStructureGenerator
         except ImportError:
             # If not available as separate file, use the embedded version
             print("Using embedded DNA generator...")
             # Here you would have the DNAStructureGenerator class defined inline
             # For now, fall back to original
-            from dna_to_pdb import DNAStructureGenerator
+            from fluxmd.utils.dna_to_pdb import DNAStructureGenerator
         
         print(f"\nGenerating B-DNA structure for: {sequence}")
         print(f"Sequence length: {len(sequence)} bp")

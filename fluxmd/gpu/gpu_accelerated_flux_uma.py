@@ -13,7 +13,7 @@ import pandas as pd
 from typing import Dict, List, Optional
 import platform
 from dataclasses import dataclass
-from protonation_aware_interactions import ProtonationAwareInteractionDetector
+from ..core.protonation_aware_interactions import ProtonationAwareInteractionDetector
 
 def get_device():
     """Detects and returns the best available PyTorch device."""

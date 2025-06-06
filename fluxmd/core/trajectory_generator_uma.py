@@ -5,8 +5,8 @@ This shows the key changes needed to integrate the in-memory GPU pipeline.
 """
 
 # Add to imports at the top of trajectory_generator.py:
-from gpu_accelerated_flux_uma import GPUAcceleratedInteractionCalculator, InteractionResult, get_device
-from flux_analyzer_uma import TrajectoryFluxAnalyzer
+from ..gpu.gpu_accelerated_flux_uma import GPUAcceleratedInteractionCalculator, InteractionResult, get_device
+from ..analysis.flux_analyzer_uma import TrajectoryFluxAnalyzer
 
 # Replace the run_single_iteration method with this version:
 def run_single_iteration_uma(self, iteration_num, protein_atoms_df, ligand_atoms_df, 
