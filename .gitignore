@@ -1,9 +1,86 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Unit test / coverage reports
+htmlcov/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
 .DS_Store
-CLAUDE.md
-__pycache__/flux_analyzer.cpython-312.pyc
-__pycache__/gpu_accelerated_flux.cpython-312.pyc
-__pycache__/intra_protein_interactions.cpython-312.pyc
-__pycache__/protonation_aware_interactions.cpython-312.pyc
-__pycache__/trajectory_generator.cpython-312.pyc
-__pycache__/visualize_multiflux.cpython-312.pyc
-__pycache__/dna_to_pdb.cpython-312.pyc
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# FluxMD specific
+flux_analysis/
+results/
+output/
+*.pdb
+*.cif
+*.sdf
+*.mol2
+*.pdbqt
+!examples/*.pdb
+!tests/data/*.pdb
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+temp/
+tmp/
+
+# Keep CLAUDE.md
+!CLAUDE.md
