@@ -125,79 +125,127 @@ fluxmd
 
 ## Code Structure
 
+```
+FluxMD/
+├── fluxmd.py                    # Main entry point with interactive CLI
+├── fluxmd_uma.py                # UMA-optimized zero-copy entry point
+├── pyproject.toml               # Package configuration and dependencies
+├── requirements.txt             # Core dependencies
+├── requirements-dev.txt         # Development dependencies
+├── setup.py                     # Legacy setup script
+│
+├── fluxmd/                      # Main package directory
+│   ├── __init__.py             # Package initialization
+│   ├── __version__.py          # Version information
+│   ├── cli.py                  # Command-line interface definitions
+│   │
+│   ├── core/                   # Core computational modules
+│   │   ├── __init__.py
+│   │   ├── trajectory_generator.py          # Winding trajectory engine
+│   │   ├── trajectory_generator_uma.py      # UMA-optimized trajectories
+│   │   ├── intra_protein_interactions.py    # Static force field calculator
+│   │   └── protonation_aware_interactions.py # pH-dependent interactions
+│   │
+│   ├── gpu/                    # GPU acceleration modules
+│   │   ├── __init__.py
+│   │   ├── gpu_accelerated_flux.py     # Standard GPU acceleration
+│   │   └── gpu_accelerated_flux_uma.py # UMA zero-copy GPU pipeline
+│   │
+│   ├── analysis/               # Analysis and statistics
+│   │   ├── __init__.py
+│   │   ├── flux_analyzer.py          # Statistical analysis & visualization
+│   │   └── flux_analyzer_uma.py      # UMA-optimized flux analysis
+│   │
+│   ├── utils/                  # Utility functions
+│   │   ├── __init__.py
+│   │   └── dna_to_pdb.py            # DNA structure generator
+│   │
+│   └── visualization/          # Visualization tools
+│       ├── __init__.py
+│       └── visualize_multiflux.py   # Multi-protein comparison plots
+│
+├── tests/                      # Test suite
+│   ├── __init__.py
+│   ├── test_flux_analyzer_example.py
+│   └── test_uma_optimization.py
+│
+├── examples/                   # Usage examples
+│   ├── basic_usage.py         # Simple example script
+│   └── README.md              # Examples documentation
+│
+├── benchmarks/                 # Performance benchmarks
+│   ├── benchmark_uma.py       # UMA vs standard comparison
+│   └── README.md              # Benchmark documentation
+│
+└── scripts/                    # Utility scripts
+    ├── continue_analysis.py   # Resume interrupted runs
+    ├── process_completed_iterations.py
+    └── README.md              # Scripts documentation
+```
+
 ### Core Modules
 
-- **`fluxmd.py`** - Main entry point and workflow (user interface)
-  - Interactive command-line interface
-  - File format conversions (CIF→PDB, SMILES→PDBQT, DNA→PDB)
-  - Parameter configuration and validation
-  - Coordinates the complete analysis pipeline
+#### Main Entry Points
+- **`fluxmd.py`** - Interactive command-line interface
+  - File format conversions (CIF→PDB, SMILES→PDB, DNA→PDB)
+  - Parameter configuration with smart GPU/CPU selection
+  - Coordinates standard analysis pipeline
 
-- **`trajectory_generator.py`** - Winding trajectory simulation engine
-  - **Winding mode**: Thread-like motion spiraling around protein geometry
-  - Free distance variation (5Å to 2.5×target, e.g., 5-50Å range)
-  - Samples 36 rotations per trajectory position
-  - Spherical coordinates with angular momentum for smooth winding
-  - Natural oscillatory in/out motion during exploration
-  - Collision detection using VDW radii and KD-trees
-  - Protonation-aware interaction detection (pH-dependent)
-  - Integrated intra-protein force field calculations
+- **`fluxmd_uma.py`** - UMA-optimized entry point
+  - Zero file I/O for 100x+ speedup
+  - Direct GPU memory pipeline
+  - Command-line arguments for automation
 
-- **`gpu_accelerated_flux.py`** - GPU acceleration module
+#### Core Package (`fluxmd/core/`)
+- **`trajectory_generator.py`** - Winding trajectory simulation
+  - Thread-like motion spiraling around protein
+  - Free distance variation (5Å to 2.5×target)
+  - Collision detection using VDW radii
+  - pH-aware interaction detection
+
+- **`intra_protein_interactions.py`** - Static force field
+  - Pre-computes n×n residue interaction matrix
+  - One-time O(n²) calculation
+  - pH-dependent H-bonds and salt bridges
+
+#### GPU Acceleration (`fluxmd/gpu/`)
+- **`gpu_accelerated_flux.py`** - Standard GPU module
   - Auto-detects Apple Silicon (MPS) or NVIDIA CUDA
-  - Spatial hashing for systems >10K atoms
-  - Octree optimization for very large systems
-  - Batch processing with memory-aware algorithms
-  - Supports combined inter/intra force calculations
-  - **Integrated optimization**: Scatter operations for 100x+ speedup
-  - **Direct flux calculation**: No intermediate file I/O needed
-  - **Vector tracking**: Maintains force vectors through pipeline
+  - Integrated scatter operations for speedup
+  - Memory-aware algorithm selection
 
-- **`flux_analyzer.py`** - Statistical analysis and visualization
-  - Energy flux differential calculation: Φᵢ = ⟨|Eᵢ|⟩ · Cᵢ · (1 + τᵢ)
+- **`gpu_accelerated_flux_uma.py`** - UMA optimization
+  - Zero-copy operations on unified memory
+  - Direct tensor passing between modules
+  - Eliminates all file I/O bottlenecks
+
+#### Analysis (`fluxmd/analysis/`)
+- **`flux_analyzer.py`** - Statistical analysis
+  - Energy flux calculation: Φᵢ = ⟨|E̅ᵢ|⟩ · Cᵢ · (1 + τᵢ)
   - Bootstrap validation (1000 iterations)
-  - P-value and confidence interval computation
-  - Heatmap generation and result reporting
-  - Tracks separate inter/intra-protein contributions
+  - Heatmap visualization generation
 
-- **`intra_protein_interactions.py`** - Static protein force field calculator
-  - Pre-computes complete n×n residue-residue interaction matrix
-  - Calculates all atom-atom forces between every residue pair
-  - pH-dependent H-bond and salt bridge detection
-  - Tests H-bonds, salt bridges, π-π, π-cation, VDW for each atom pair
-  - Generates comprehensive residue-level force vectors
-  - One-time O(n²) calculation, then O(1) lookup during trajectory
-
-- **`protonation_aware_interactions.py`** - pH-dependent interaction detection
-  - Henderson-Hasselbalch calculations for ionizable residues
-  - Dynamic donor/acceptor role assignment based on pH
-  - Handles ASP, GLU, HIS, LYS, ARG, CYS, TYR protonation states
-  - Critical for accurate H-bond and salt bridge detection
-
-- **`dna_to_pdb.py`** - DNA sequence to structure converter
-  - Generates B-DNA double helix from sequence
-  - Pure Python implementation with numpy
-  - Automatic complementary strand generation
-  - Watson-Crick base pairing (A-T, G-C)
-  - Full atomic detail with proper sugar-phosphate backbone
-  - Proper intertwined double helix geometry
-  - Command-line tool for easy use
-  - Enables protein-DNA binding site analysis
+#### Utilities (`fluxmd/utils/`)
+- **`dna_to_pdb.py`** - DNA structure generator
+  - Creates B-DNA double helix from sequence
+  - Automatic Watson-Crick pairing
+  - Full atomic detail with backbone
 
 ### Key Features by Module
 
 | Module | Primary Function | Key Features |
 |--------|-----------------|--------------|
-| fluxmd.py | Workflow control | File conversions, GPU detection, pH input, user interface |
-| fluxmd_uma.py | UMA-optimized workflow | Zero file I/O, direct GPU pipeline, 100x+ speedup |
-| trajectory_generator.py | Dynamics simulation | Brownian motion, collision detection, pH-aware interactions |
-| gpu_accelerated_flux.py | GPU acceleration | Auto-detect GPU, integrated optimization, direct flux calc |
-| gpu_accelerated_flux_uma.py | UMA GPU calculator | Zero-copy operations, raw GPU tensors, shared memory |
-| flux_analyzer.py | Results analysis | Statistical validation, visualization, pH tracking |
-| flux_analyzer_uma.py | UMA flux analysis | Direct GPU tensor processing, scatter operations |
-| intra_protein_interactions.py | Internal forces | Complete n×n residue matrix, pH-aware interactions |
-| protonation_aware_interactions.py | pH-dependent states | Henderson-Hasselbalch, donor/acceptor assignment |
-| dna_to_pdb.py | DNA structure generation | B-DNA double helix, automatic complement, full atomic detail |
+| fluxmd.py | Workflow control | Interactive CLI, file conversions, smart GPU detection |
+| fluxmd_uma.py | UMA entry point | Zero file I/O, command-line interface, 100x+ speedup |
+| core/trajectory_generator.py | Winding trajectories | Thread-like motion, collision detection, pH-aware |
+| core/intra_protein_interactions.py | Static forces | n×n residue matrix, pH-dependent interactions |
+| core/protonation_aware_interactions.py | pH calculations | Henderson-Hasselbalch, dynamic protonation states |
+| gpu/gpu_accelerated_flux.py | GPU acceleration | MPS/CUDA detection, scatter ops, memory-aware |
+| gpu/gpu_accelerated_flux_uma.py | UMA optimization | Zero-copy tensors, unified memory, no file I/O |
+| analysis/flux_analyzer.py | Statistical analysis | Bootstrap validation, heatmaps, p-values |
+| analysis/flux_analyzer_uma.py | UMA analysis | Direct GPU processing, scatter operations |
+| utils/dna_to_pdb.py | DNA generator | B-DNA helix, Watson-Crick pairing, full atoms |
+| visualization/visualize_multiflux.py | Multi-protein plots | Publication figures, comparative analysis |
 
 ## Usage
 
