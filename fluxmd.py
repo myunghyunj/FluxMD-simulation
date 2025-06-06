@@ -560,6 +560,13 @@ def run_complete_workflow():
         print(f"  Using CPU parallel processing ({decision_reason})")
         if gpu_available:
             print("  Note: Decision based on performance characteristics")
+            
+            # Offer to override and use GPU anyway
+            override = input("\nWould you like to use GPU anyway? (y/n): ").strip().lower()
+            if override == 'y':
+                use_gpu = True
+                decision_reason = "user override"
+                print("  Using GPU based on user preference")
     
     # Set parallel processing for CPU
     n_jobs = -1 if not use_gpu else 1  # Use all cores for CPU, single thread for GPU
@@ -769,17 +776,32 @@ def main():
     
     print("Welcome to FluxMD - GPU-accelerated binding site prediction")
     print("\nOptions:")
-    print("1. Run complete workflow")
-    print("2. Convert SMILES to PDB (CACTUS with aromatics or OpenBabel)")
-    print("3. Generate DNA structure from sequence")
-    print("4. Visualize multiple proteins (compare flux)")
-    print("5. Exit")
+    print("1. Run complete workflow (standard)")
+    print("2. Run UMA-optimized workflow (zero-copy GPU, 100x faster)")
+    print("3. Convert SMILES to PDB (CACTUS with aromatics or OpenBabel)")
+    print("4. Generate DNA structure from sequence")
+    print("5. Visualize multiple proteins (compare flux)")
+    print("6. Exit")
     
-    choice = input("\nEnter choice (1-5): ").strip()
+    choice = input("\nEnter choice (1-6): ").strip()
     
     if choice == "1":
         run_complete_workflow()
     elif choice == "2":
+        # Run UMA-optimized workflow
+        print_banner("UMA-OPTIMIZED WORKFLOW")
+        print("This uses zero-copy GPU processing for maximum performance.")
+        print("Best for Apple Silicon Macs and systems with unified memory.\n")
+        
+        import subprocess
+        protein_file = input("Enter protein PDB file: ").strip()
+        ligand_file = input("Enter ligand PDB file: ").strip()
+        output_dir = input("Output directory (default 'flux_analysis_uma'): ").strip() or "flux_analysis_uma"
+        
+        # Run fluxmd_uma as subprocess
+        cmd = [sys.executable, "fluxmd_uma.py", protein_file, ligand_file, "-o", output_dir]
+        subprocess.run(cmd)
+    elif choice == "3":
         print_banner("SMILES TO PDB CONVERTER")
         smiles = input("Enter SMILES string: ").strip()
         if smiles:
@@ -795,7 +817,7 @@ def main():
                 convert_smiles_to_pdb_cactus(smiles, name)
             else:
                 convert_smiles_to_pdb_openbabel(smiles, name)
-    elif choice == "3":
+    elif choice == "4":
         print_banner("DNA SEQUENCE TO STRUCTURE")
         print("Generate 3D B-DNA structure from sequence")
         print("\nNote: This creates atomically-detailed B-DNA for protein-DNA interaction analysis")
@@ -899,7 +921,7 @@ def main():
             print("  - Ensure write permissions in current directory")
             print("  - Try a shorter test sequence first")
         
-    elif choice == "4":
+    elif choice == "5":
         print_banner("MULTI-PROTEIN FLUX COMPARISON")
         n_proteins = int(input("How many proteins to compare? "))
         
@@ -924,7 +946,7 @@ def main():
             visualize_multiflux(protein_flux_pairs, output_file)
         else:
             print("No valid protein-flux pairs provided.")
-    elif choice == "5":
+    elif choice == "6":
         print("\nThank you for using FluxMD!")
     else:
         print("Invalid choice!")
