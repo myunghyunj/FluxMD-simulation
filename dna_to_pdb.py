@@ -1,437 +1,255 @@
 #!/usr/bin/env python3
 """
-DNA Sequence to PDB Converter for FluxMD
-Generates 3D B-DNA double helix structures from sequences
-Automatically creates complementary strand with Watson-Crick base pairing
-Based on reference implementation with proper backbone connectivity
+DNA Sequence to PDB Converter
+Generates a 3D B-DNA double helix structure from a given DNA sequence.
+It automatically creates the complementary strand with Watson-Crick base pairing
+and constructs a PDB file with correct atomic coordinates.
+
+NOTE: CONECT records are omitted to ensure compatibility with visualization
+software like PyMOL for very large structures. Viewers will infer bonds
+based on standard residue templates and atom proximity.
 """
 
 import numpy as np
-import os
 import argparse
-from typing import List, Tuple, Dict
 import math
 
 class DNAStructureGenerator:
-    """Generate 3D B-DNA structures from sequences with proper atomic detail"""
+    """
+    Generates 3D B-DNA structures from DNA sequences.
+    The class holds atomic coordinate data and applies geometric transformations
+    to build a double helix structure.
+    """
     
-    # B-DNA helical parameters (from reference)
-    DELTA_X = 3.38  # Rise per base pair in Angstroms
-    DELTA_X_REV_OFFSET = 0.78  # Offset for reverse strand
-    BASES_PER_TURN = 10.5  # Standard B-DNA
-    TWIST_PER_BASE = 360.0 / BASES_PER_TURN  # 34.3 degrees
-    RADIUS = 10.175  # Approximate radius of each base in Angstroms
-    THETA_REV_OFFSET = 0.07476  # Reverse strand angular offset
+    # B-DNA helical parameters
+    DELTA_Z = 3.38  # Rise per base pair in Angstroms
+    TWIST_PER_BASE = 34.3  # Degrees of twist per base pair
+    HELIX_RADIUS = 10.0  # Radius of the helix in Angstroms
     
-    # Base atoms with proper coordinates for Watson-Crick pairing
-    # Coordinates from reference PDB files, adjusted for proper orientation
+    # Atom coordinates for bases positioned at standard orientation
+    # These will be transformed to create the helix
     BASE_ATOMS = {
-        'A': {  # Adenine
+        'A': {
             'atoms': [
-                ('N9', 'N', np.array([1.660, 4.388, 1.478])),
-                ('C8', 'C', np.array([1.580, 4.837, 0.184])),
-                ('N7', 'N', np.array([1.650, 3.888, -0.699])),
-                ('C5', 'C', np.array([1.800, 2.740, 0.058])),
-                ('C6', 'C', np.array([1.930, 1.379, -0.294])),
-                ('N6', 'N', np.array([1.940, 0.938, -1.548])),
-                ('N1', 'N', np.array([2.050, 0.492, 0.705])),
-                ('C2', 'C', np.array([2.040, 0.932, 1.960])),
-                ('N3', 'N', np.array([1.920, 2.160, 2.415])),
-                ('C4', 'C', np.array([1.800, 3.025, 1.391])),
-            ],
-            'bonds': [(1,2), (2,3), (3,4), (4,5), (5,6), (5,7), (7,8), (8,9), (9,10), (10,1), (10,4)]
+                ('N9', 'N', np.array([1.660, 0.000, 0.000])),
+                ('C8', 'C', np.array([1.580, 0.000, 1.390])),
+                ('N7', 'N', np.array([1.650, 0.000, 2.490])),
+                ('C5', 'C', np.array([1.800, 0.000, 3.760])),
+                ('C6', 'C', np.array([1.930, 0.000, 5.130])),
+                ('N6', 'N', np.array([1.940, 0.000, 6.420])),
+                ('N1', 'N', np.array([2.050, 0.000, 5.950])),
+                ('C2', 'C', np.array([2.040, 0.000, 4.660])),
+                ('N3', 'N', np.array([1.920, 0.000, 3.540])),
+                ('C4', 'C', np.array([1.800, 0.000, 2.730])),
+            ]
         },
-        'T': {  # Thymine
+        'T': {
             'atoms': [
-                ('N1', 'N', np.array([1.660, 4.387, 1.478])),
-                ('C2', 'C', np.array([1.810, 3.022, 1.600])),
-                ('O2', 'O', np.array([1.900, 2.465, 2.679])),
-                ('N3', 'N', np.array([1.850, 2.324, 0.409])),
-                ('C4', 'C', np.array([1.760, 2.855, -0.855])),
-                ('O4', 'O', np.array([1.810, 2.126, -1.853])),
-                ('C5', 'C', np.array([1.610, 4.289, -0.887])),
-                ('C5M', 'C', np.array([1.500, 4.911, -2.246])),  # Methyl group
-                ('C6', 'C', np.array([1.560, 5.003, 0.255])),
-            ],
-            'bonds': [(1,2), (2,3), (2,4), (4,5), (5,6), (5,7), (7,8), (7,9), (9,1)]
+                ('N1', 'N', np.array([1.660, 0.000, 0.000])),
+                ('C2', 'C', np.array([1.810, 0.000, 1.370])),
+                ('O2', 'O', np.array([1.900, 0.000, 2.420])),
+                ('N3', 'N', np.array([1.850, 0.000, 1.280])),
+                ('C4', 'C', np.array([1.760, 0.000, 2.570])),
+                ('O4', 'O', np.array([1.810, 0.000, 3.640])),
+                ('C5', 'C', np.array([1.610, 0.000, 2.460])),
+                ('C5M','C', np.array([1.500, 0.000, 3.830])),
+                ('C6', 'C', np.array([1.560, 0.000, 1.170])),
+            ]
         },
-        'G': {  # Guanine
+        'G': {
             'atoms': [
-                ('N9', 'N', np.array([1.660, 4.388, 1.478])),
-                ('C8', 'C', np.array([1.580, 4.816, 0.169])),
-                ('N7', 'N', np.array([1.660, 3.855, -0.713])),
-                ('C5', 'C', np.array([1.800, 2.699, 0.057])),
-                ('C6', 'C', np.array([1.930, 1.348, -0.339])),
-                ('O6', 'O', np.array([1.950, 0.870, -1.471])),
-                ('N1', 'N', np.array([2.050, 0.496, 0.775])),
-                ('C2', 'C', np.array([2.050, 0.908, 2.091])),
-                ('N2', 'N', np.array([2.180, -0.052, 3.010])),
-                ('N3', 'N', np.array([1.920, 2.179, 2.465])),
-                ('C4', 'C', np.array([1.800, 3.020, 1.403])),
-            ],
-            'bonds': [(1,2), (2,3), (3,4), (4,5), (5,6), (5,7), (7,8), (8,9), (8,10), (10,11), (11,1), (11,4)]
+                ('N9', 'N', np.array([1.660, 0.000, 0.000])),
+                ('C8', 'C', np.array([1.580, 0.000, 1.390])),
+                ('N7', 'N', np.array([1.660, 0.000, 2.490])),
+                ('C5', 'C', np.array([1.800, 0.000, 3.760])),
+                ('C6', 'C', np.array([1.930, 0.000, 5.130])),
+                ('O6', 'O', np.array([1.950, 0.000, 6.330])),
+                ('N1', 'N', np.array([2.050, 0.000, 5.950])),
+                ('C2', 'C', np.array([2.050, 0.000, 4.660])),
+                ('N2', 'N', np.array([2.180, 0.000, 4.450])),
+                ('N3', 'N', np.array([1.920, 0.000, 3.540])),
+                ('C4', 'C', np.array([1.800, 0.000, 2.730])),
+            ]
         },
-        'C': {  # Cytosine
+        'C': {
             'atoms': [
-                ('N1', 'N', np.array([1.660, 4.387, 1.478])),
-                ('C2', 'C', np.array([1.810, 3.008, 1.585])),
-                ('O2', 'O', np.array([1.900, 2.501, 2.713])),
-                ('N3', 'N', np.array([1.860, 2.297, 0.254])),
-                ('C4', 'C', np.array([1.760, 2.843, -0.750])),
-                ('N4', 'N', np.array([1.810, 2.070, -1.826])),
-                ('C5', 'C', np.array([1.610, 4.258, -0.890])),
-                ('C6', 'C', np.array([1.560, 4.983, 0.259])),
-            ],
-            'bonds': [(1,2), (2,3), (2,4), (4,5), (5,6), (5,7), (7,8), (8,1)]
+                ('N1', 'N', np.array([1.660, 0.000, 0.000])),
+                ('C2', 'C', np.array([1.810, 0.000, 1.370])),
+                ('O2', 'O', np.array([1.900, 0.000, 2.420])),
+                ('N3', 'N', np.array([1.860, 0.000, 1.280])),
+                ('C4', 'C', np.array([1.760, 0.000, 2.570])),
+                ('N4', 'N', np.array([1.810, 0.000, 3.640])),
+                ('C5', 'C', np.array([1.610, 0.000, 2.460])),
+                ('C6', 'C', np.array([1.560, 0.000, 1.170])),
+            ]
         }
     }
     
-    # Sugar-phosphate backbone atoms (deoxyribose)
-    # Coordinates from reference PDB
+    # Sugar atoms positioned relative to base
     SUGAR_ATOMS = [
-        ("C5'", 'C', np.array([-0.690, 7.424, 2.047])),
-        ("C4'", 'C', np.array([0.040, 6.861, 3.247])),
-        ("O4'", 'O', np.array([0.250, 5.429, 3.037])),
-        ("C3'", 'C', np.array([1.440, 7.413, 3.508])),
-        ("O3'", 'O', np.array([1.830, 7.271, 4.868])),
-        ("C2'", 'C', np.array([2.320, 6.527, 2.637])),
-        ("C1'", 'C', np.array([1.610, 5.184, 2.732])),
+        ("C5'", 'C', np.array([-2.350, 0.000, -1.550])),
+        ("C4'", 'C', np.array([-1.620, 0.000, -2.850])),
+        ("O4'", 'O', np.array([-0.360, 0.000, -2.640])),
+        ("C3'", 'C', np.array([-2.320, 0.000, -4.110])),
+        ("O3'", 'O', np.array([-2.130, 0.000, -5.420])),
+        ("C2'", 'C', np.array([-1.490, 0.000, -3.790])),
+        ("C1'", 'C', np.array([-0.140, 0.000, -1.290])),
     ]
     
-    # 5' end atoms (includes OH)
-    FIVE_PRIME_END = [
-        ('HTER', 'H', np.array([-1.547, 9.377, -1.216])),
-        ('OXT', 'O', np.array([-1.440, 8.896, -0.401])),
-    ]
-    
-    # Phosphate group atoms
+    # Phosphate atoms
     PHOSPHATE_ATOMS = [
-        ('P', 'P', np.array([0.000, 8.910, 0.000])),
-        ('O1P', 'O', np.array([0.220, 10.175, 0.734])),
-        ('O2P', 'O', np.array([0.790, 8.733, -1.240])),
-        ("O5'", 'O', np.array([0.250, 7.669, 0.971])),
+        ('P',   'P', np.array([-2.270, 0.000, -6.910])),
+        ('O1P', 'O', np.array([-2.450, -1.200, -7.640])),
+        ('O2P', 'O', np.array([-2.490, 1.200, -7.640])),
+        ("O5'", 'O', np.array([-1.700, 0.000, -0.370])),
     ]
-    
-    # 3' end cap (H)
-    THREE_PRIME_CAP = ('HCAP', 'H', np.array([1.699, 6.361, 5.144]))
-    
-    # Watson-Crick base pairs
+
     COMPLEMENT = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
     
     def __init__(self):
         self.atoms = []
-        self.bonds = []
-        self.atom_id = 1
+        self.atom_id_counter = 1
         
-    def rotation_matrix_x(self, angle: float) -> np.ndarray:
-        """Rotation matrix around X axis (angle in radians)"""
-        c, s = np.cos(angle), np.sin(angle)
-        return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+    def _rotate_z(self, coord, angle):
+        """Rotate coordinate around Z axis"""
+        cos_a, sin_a = math.cos(angle), math.sin(angle)
+        x, y, z = coord
+        return np.array([x*cos_a - y*sin_a, x*sin_a + y*cos_a, z])
     
-    def rotation_matrix_y(self, angle: float) -> np.ndarray:
-        """Rotation matrix around Y axis (angle in radians)"""
-        c, s = np.cos(angle), np.sin(angle)
-        return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+    def _rotate_x(self, coord, angle):
+        """Rotate coordinate around X axis"""
+        cos_a, sin_a = math.cos(angle), math.sin(angle)
+        x, y, z = coord
+        return np.array([x, y*cos_a - z*sin_a, y*sin_a + z*cos_a])
     
-    def rotation_matrix_z(self, angle: float) -> np.ndarray:
-        """Rotation matrix around Z axis (angle in radians)"""
-        c, s = np.cos(angle), np.sin(angle)
-        return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
-    
-    def apply_transform(self, coords: np.ndarray, matrix: np.ndarray) -> np.ndarray:
-        """Apply 4x4 transformation matrix to coordinates"""
-        if coords.ndim == 1:
-            coords = coords.reshape(1, -1)
-        
-        # Add homogeneous coordinate
-        rows = coords.shape[0]
-        homo_coords = np.hstack((coords, np.ones((rows, 1))))
-        
-        # Apply transformation (use only 3x4 part of matrix)
-        transformed = np.dot(homo_coords, matrix[:3, :].T)
-        
-        return transformed
-    
-    def make_translation(self, x: float, y: float, z: float) -> np.ndarray:
-        """Create 4x4 translation matrix"""
-        m = np.eye(4)
-        m[:3, 3] = [x, y, z]
-        return m
-    
-    def build_nucleotide(self, base: str, position: int, strand: int,
-                        is_5_prime: bool, is_3_prime: bool) -> List[Dict]:
-        """Build a complete nucleotide with proper geometry"""
-        
+    def _build_nucleotide(self, base, res_id, chain, position, twist_angle, is_complement=False):
+        """Constructs a single nucleotide at the specified position and orientation."""
         nucleotide_atoms = []
-        residue_name = f' D{base}'
-        chain = 'A' if strand == 1 else 'B'
         
-        # Starting atom ID for this residue
-        start_atom_id = self.atom_id
+        # Determine if this is the first residue (no 5' phosphate for first residue)
+        is_first = (res_id == 1)
         
-        # Add 5' end atoms if this is the first residue
-        if is_5_prime:
-            for name, element, coord in self.FIVE_PRIME_END:
-                nucleotide_atoms.append({
-                    'id': self.atom_id,
-                    'name': name,
-                    'element': element,
-                    'coord': coord.copy(),
-                    'residue_name': residue_name,
-                    'chain': chain,
-                    'residue_id': position
-                })
-                self.atom_id += 1
-        
-        # Add phosphate group (except for 5' end)
-        if not is_5_prime:
+        # Add atoms (skip phosphate for first residue)
+        if not is_first:
             for name, element, coord in self.PHOSPHATE_ATOMS:
                 nucleotide_atoms.append({
-                    'id': self.atom_id,
                     'name': name,
                     'element': element,
-                    'coord': coord.copy(),
-                    'residue_name': residue_name,
-                    'chain': chain,
-                    'residue_id': position
+                    'coord': coord.copy()
                 })
-                self.atom_id += 1
-        else:
-            # For 5' end, only add O5'
-            name, element, coord = self.PHOSPHATE_ATOMS[3]  # O5'
-            nucleotide_atoms.append({
-                'id': self.atom_id,
-                'name': name,
-                'element': element,
-                'coord': coord.copy(),
-                'residue_name': residue_name,
-                'chain': chain,
-                'residue_id': position
-            })
-            self.atom_id += 1
         
-        # Add sugar atoms
         for name, element, coord in self.SUGAR_ATOMS:
             nucleotide_atoms.append({
-                'id': self.atom_id,
                 'name': name,
                 'element': element,
-                'coord': coord.copy(),
-                'residue_name': residue_name,
-                'chain': chain,
-                'residue_id': position
+                'coord': coord.copy()
             })
-            self.atom_id += 1
         
-        # Add base atoms
-        base_data = self.BASE_ATOMS[base]
-        for name, element, coord in base_data['atoms']:
+        for name, element, coord in self.BASE_ATOMS[base]['atoms']:
             nucleotide_atoms.append({
-                'id': self.atom_id,
                 'name': name,
                 'element': element,
-                'coord': coord.copy(),
-                'residue_name': residue_name,
-                'chain': chain,
-                'residue_id': position
+                'coord': coord.copy()
             })
-            self.atom_id += 1
         
-        # Add 3' cap if this is the last residue
-        if is_3_prime:
-            name, element, coord = self.THREE_PRIME_CAP
-            nucleotide_atoms.append({
-                'id': self.atom_id,
-                'name': name,
-                'element': element,
-                'coord': coord.copy(),
-                'residue_name': residue_name,
-                'chain': chain,
-                'residue_id': position
-            })
-            self.atom_id += 1
+        # Transform all atoms
+        for atom in nucleotide_atoms:
+            # For complementary strand, rotate 180° around X axis (flip upside down)
+            if is_complement:
+                atom['coord'] = self._rotate_x(atom['coord'], math.pi)
+            
+            # Position at helix radius
+            atom['coord'][0] += self.HELIX_RADIUS
+            
+            # Apply helical twist
+            atom['coord'] = self._rotate_z(atom['coord'], twist_angle)
+            
+            # Translate along Z axis
+            atom['coord'][2] += position
+            
+            # Add metadata
+            atom['residue_id'] = res_id
+            atom['residue_name'] = f'D{base}'
+            atom['chain'] = chain
+            atom['atom_id'] = self.atom_id_counter
+            self.atom_id_counter += 1
         
         return nucleotide_atoms
-    
-    def generate_dna(self, sequence: str) -> None:
-        """Generate B-DNA double helix from sequence with automatic complementary strand"""
-        sequence = sequence.upper()
+
+    def generate_dna(self, sequence):
+        """Generates the full double helix structure."""
         n_bases = len(sequence)
         
-        # Build strand 1 (5' to 3')
-        print(f"Building strand 1 (5' to 3'): {sequence}")
-        
+        # Strand 1 (5' to 3', Chain A)
         for i, base in enumerate(sequence):
-            # Build nucleotide
-            is_5_prime = (i == 0)
-            is_3_prime = (i == n_bases - 1)
+            res_id = i + 1
+            z_position = i * self.DELTA_Z
+            twist_angle = math.radians(i * self.TWIST_PER_BASE)
             
-            nucleotide = self.build_nucleotide(base, i+1, 1, is_5_prime, is_3_prime)
-            
-            # Calculate position and orientation
-            z_offset = i * self.DELTA_X
-            twist_angle = i * np.radians(self.TWIST_PER_BASE)
-            
-            # Create transformation matrix
-            trans_matrix = self.make_translation(0, 0, z_offset)
-            rot_matrix = np.eye(4)
-            rot_matrix[:3, :3] = self.rotation_matrix_z(twist_angle)
-            
-            # Combined transformation
-            transform = np.dot(trans_matrix, rot_matrix)
-            
-            # Apply transformation to all atoms
-            for atom in nucleotide:
-                atom['coord'] = self.apply_transform(atom['coord'], transform)[0]
-            
+            nucleotide = self._build_nucleotide(base, res_id, 'A', z_position, twist_angle, False)
             self.atoms.extend(nucleotide)
         
-        # Build strand 2 (3' to 5', complementary)
-        # Generate complementary sequence
-        complement_seq = ''.join([self.COMPLEMENT[base] for base in sequence[::-1]])
-        print(f"Building strand 2 (3' to 5'): {complement_seq}")
+        # Strand 2 (3' to 5', Chain B) - antiparallel and complementary
+        complement_seq = [self.COMPLEMENT[b] for b in reversed(sequence)]
         
-        for i in range(n_bases):
-            # Get complementary base
-            original_base = sequence[n_bases - 1 - i]
-            base = self.COMPLEMENT[original_base]
+        for i, base in enumerate(complement_seq):
+            res_id = i + 1
+            # Position this base pair-wise with its partner on strand 1
+            partner_index = n_bases - 1 - i
+            z_position = partner_index * self.DELTA_Z
+            # Same twist as partner, but add 180° offset for opposite side of helix
+            twist_angle = math.radians(partner_index * self.TWIST_PER_BASE + 180)
             
-            # Build nucleotide
-            is_5_prime = (i == 0)
-            is_3_prime = (i == n_bases - 1)
-            
-            nucleotide = self.build_nucleotide(base, i+1, 2, is_5_prime, is_3_prime)
-            
-            # Calculate position for antiparallel strand
-            # This base pairs with sequence[n_bases-1-i]
-            z_offset = (n_bases - 1 - i) * self.DELTA_X + self.DELTA_X_REV_OFFSET
-            # Add 180 degrees to position on opposite side of helix, plus offset
-            twist_angle = (n_bases - 1 - i) * np.radians(self.TWIST_PER_BASE) + np.pi + self.THETA_REV_OFFSET
-            
-            # Create transformation matrices
-            trans_matrix = self.make_translation(0, 0, z_offset)
-            rot_z_matrix = np.eye(4)
-            rot_z_matrix[:3, :3] = self.rotation_matrix_z(twist_angle)
-            
-            # Combined transformation
-            transform = np.dot(trans_matrix, rot_z_matrix)
-            
-            # Flip around local Y axis to face bases inward
-            flip_matrix = np.eye(4)
-            flip_matrix[:3, :3] = self.rotation_matrix_y(np.pi)
-            transform = np.dot(transform, flip_matrix)
-            
-            # Apply transformation
-            for atom in nucleotide:
-                atom['coord'] = self.apply_transform(atom['coord'], transform)[0]
-            
+            nucleotide = self._build_nucleotide(base, res_id, 'B', z_position, twist_angle, True)
             self.atoms.extend(nucleotide)
-    
-    def write_pdb(self, filename: str) -> None:
-        """Write structure to PDB file"""
+
+    def write_pdb(self, filename):
+        """Writes the generated structure to a PDB file."""
         with open(filename, 'w') as f:
-            f.write("REMARK   Generated by FluxMD DNA Structure Generator\n")
-            f.write("REMARK   B-DNA double helix\n")
+            f.write("REMARK   Generated by DNA to PDB Python Script\n")
+            f.write("REMARK   B-DNA double helix structure\n")
+            f.write(f"REMARK   Total base pairs: {len([a for a in self.atoms if a['chain'] == 'A' and a['name'] == 'N1' or a['name'] == 'N9'])}\n")
             
-            # Write atoms
             for atom in self.atoms:
                 atom_name = atom['name']
+                # PDB format requires specific spacing for atom names
                 if len(atom_name) < 4:
-                    atom_name = ' ' + atom_name.ljust(3)
-                else:
-                    atom_name = atom_name.ljust(4)
+                    if atom['element'] in ['C', 'N', 'O', 'P', 'S']:
+                        atom_name = ' ' + atom_name.ljust(3)
+                    else:
+                        atom_name = atom_name.ljust(4)
                 
-                # Format: ATOM or HETATM
-                record_type = "ATOM  "
-                
-                f.write(f"{record_type}{atom['id']:>5d} {atom_name} "
-                       f"{atom['residue_name']} {atom['chain']}{atom['residue_id']:>4d}    "
-                       f"{atom['coord'][0]:>8.3f}{atom['coord'][1]:>8.3f}{atom['coord'][2]:>8.3f}"
-                       f"  1.00  0.00          {atom['element']:>2s}  \n")
-            
-            # Add CONECT records for backbone connectivity
-            self._write_conect_records(f)
+                line = (
+                    f"ATOM  {atom['atom_id']:>5} {atom_name:<4} {atom['residue_name']:>3} {atom['chain']}"
+                    f"{atom['residue_id']:>4}    {atom['coord'][0]:>8.3f}{atom['coord'][1]:>8.3f}"
+                    f"{atom['coord'][2]:>8.3f}  1.00  0.00          {atom['element']:>2}\n"
+                )
+                f.write(line)
             
             f.write("END\n")
-    
-    def _write_conect_records(self, f):
-        """Write CONECT records for proper connectivity"""
-        # Group atoms by residue
-        residue_atoms = {}
-        for atom in self.atoms:
-            key = (atom['chain'], atom['residue_id'])
-            if key not in residue_atoms:
-                residue_atoms[key] = {}
-            residue_atoms[key][atom['name']] = atom['id']
-        
-        # Write backbone connectivity
-        for (chain, res_id), atoms in sorted(residue_atoms.items()):
-            # Phosphate bonds
-            if 'P' in atoms:
-                if "O5'" in atoms:
-                    f.write(f"CONECT{atoms['P']:>5d}{atoms["O5'"]:>5d}\n")
-                if 'O1P' in atoms:
-                    f.write(f"CONECT{atoms['P']:>5d}{atoms['O1P']:>5d}\n")
-                if 'O2P' in atoms:
-                    f.write(f"CONECT{atoms['P']:>5d}{atoms['O2P']:>5d}\n")
-            
-            # Sugar bonds
-            sugar_bonds = [
-                ("O5'", "C5'"), ("C5'", "C4'"), ("C4'", "C3'"),
-                ("C3'", "O3'"), ("C3'", "C2'"), ("C2'", "C1'"),
-                ("C1'", "O4'"), ("O4'", "C4'")
-            ]
-            
-            for a1, a2 in sugar_bonds:
-                if a1 in atoms and a2 in atoms:
-                    f.write(f"CONECT{atoms[a1]:>5d}{atoms[a2]:>5d}\n")
-            
-            # Glycosidic bond
-            if "C1'" in atoms:
-                c1_id = atoms["C1'"]
-                if 'N9' in atoms:  # Purine
-                    n9_id = atoms['N9']
-                    f.write(f"CONECT{c1_id:>5d}{n9_id:>5d}\n")
-                elif 'N1' in atoms:  # Pyrimidine
-                    n1_id = atoms['N1']
-                    f.write(f"CONECT{c1_id:>5d}{n1_id:>5d}\n")
-            
-            # Connect O3' to next residue's P
-            if "O3'" in atoms:
-                # For chain A: connect to res_id + 1
-                # For chain B: connect to res_id + 1 (both chains go 5' to 3' in structure)
-                next_key = (chain, res_id + 1)
-                if next_key in residue_atoms and 'P' in residue_atoms[next_key]:
-                    f.write(f"CONECT{atoms["O3'"]:>5d}{residue_atoms[next_key]['P']:>5d}\n")
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Generate B-DNA double helix PDB files from sequences for FluxMD')
-    parser.add_argument('sequence', help='DNA sequence (e.g., ATCGATCG)')
-    parser.add_argument('-o', '--output', default='dna_structure.pdb',
-                       help='Output PDB filename')
+    parser = argparse.ArgumentParser(description='Generate a B-DNA double helix PDB file from a DNA sequence.')
+    parser.add_argument('sequence', help='The DNA sequence (e.g., "ATGC").')
+    parser.add_argument('-o', '--output', default='dna_structure.pdb', help='Output PDB filename.')
     
     args = parser.parse_args()
     
-    # Validate sequence
-    valid_bases = set('ATGC')
-    if not all(base.upper() in valid_bases for base in args.sequence):
-        print("Error: Sequence must contain only A, T, G, C")
+    sequence_upper = args.sequence.upper()
+    if not all(base in 'ATGC' for base in sequence_upper):
+        print("Error: Sequence must only contain A, T, G, or C.")
         return
     
-    # Generate structure
-    print(f"Generating B-DNA double helix for: {args.sequence}")
+    print(f"Generating B-DNA structure for sequence: {sequence_upper}")
+    print(f"Complementary strand: {''.join(DNAStructureGenerator.COMPLEMENT[b] for b in reversed(sequence_upper))}")
+    
     generator = DNAStructureGenerator()
-    generator.generate_dna(args.sequence)
+    generator.generate_dna(sequence_upper)
     generator.write_pdb(args.output)
     
-    # Print statistics
+    print(f"Successfully generated {args.output}")
     print(f"Total atoms: {len(generator.atoms)}")
-    print(f"Base pairs: {len(args.sequence)}")
-    print(f"Helix length: {len(args.sequence) * generator.DELTA_X:.1f} Å")
-    print(f"Structure written to: {args.output}")
+    print(f"Structure contains {len(sequence_upper)} base pairs")
 
 if __name__ == '__main__':
     main()
-
-#   p53 consensus binding site [Note] ACTGACTGACTGACTGACTGACTGACTGACTGACTGACTGACTGACTGACTGACTGACTGACTGACTGACAGGCAAGTTTGATCTGGGGCATGCTTGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACG
