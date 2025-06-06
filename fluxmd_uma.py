@@ -27,6 +27,51 @@ except ImportError as e:
     sys.exit(1)
 
 
+def parse_simulation_parameters(params_file):
+    """Parse simulation parameters from existing file"""
+    params = {}
+    
+    try:
+        with open(params_file, 'r') as f:
+            lines = f.readlines()
+        
+        for line in lines:
+            line = line.strip()
+            if ': ' in line:
+                key, value = line.split(': ', 1)
+                
+                # Extract trajectory parameters
+                if key == "Steps per approach":
+                    params['n_steps'] = int(value)
+                elif key == "Number of iterations":
+                    params['n_iterations'] = int(value)
+                elif key == "Number of approaches":
+                    params['n_approaches'] = int(value)
+                elif key == "Approach distance":
+                    params['approach_distance'] = float(value.replace(' Angstroms', '').replace(' Å', ''))
+                elif key == "Starting distance":
+                    params['starting_distance'] = float(value.replace(' Angstroms', '').replace(' Å', ''))
+                elif key == "Rotations per position":
+                    params['n_rotations'] = int(value)
+                elif key == "pH":
+                    params['physiological_pH'] = float(value)
+                elif key == "Protein":
+                    params['protein_file'] = value
+                elif key == "Ligand":
+                    params['ligand_file'] = value
+                elif key == "Protein name":
+                    params['protein_name'] = value
+                elif key == "Output directory" or "OUTPUT DIRECTORY" in key:
+                    # Skip the header line
+                    continue
+        
+        return params
+    
+    except Exception as e:
+        print(f"Error parsing parameters file: {e}")
+        return None
+
+
 def print_header():
     """Print simple header."""
     print("\nFluxMD UMA - Zero-copy GPU processing")
@@ -116,13 +161,28 @@ def print_interaction_summary(interaction_counts, total_interactions):
 def main():
     """Main entry point for UMA-optimized FluxMD."""
     parser = argparse.ArgumentParser(
-        description="FluxMD UMA - Zero-copy GPU processing for binding site analysis"
+        description="FluxMD UMA - Zero-copy GPU processing for binding site analysis",
+        epilog="""\nExamples:
+  # Standard usage
+  fluxmd-uma protein.pdb ligand.pdb -o results_uma
+  
+  # Load parameters from previous run
+  fluxmd-uma -p /path/to/simulation_parameters.txt
+  
+  # Override some loaded parameters
+  fluxmd-uma -p params.txt -i 20 -s 100
+  
+  # With visualizations and interaction details
+  fluxmd-uma protein.pdb ligand.pdb --save-trajectories --interaction-details
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
-    parser.add_argument('protein', help='Protein PDB file')
-    parser.add_argument('ligand', help='Ligand PDB file')
+    parser.add_argument('protein', nargs='?', help='Protein PDB file')
+    parser.add_argument('ligand', nargs='?', help='Ligand PDB file')
     parser.add_argument('-o', '--output', default='flux_analysis_uma', 
                        help='Output directory (default: flux_analysis_uma)')
+    parser.add_argument('-p', '--params', help='Load parameters from simulation_parameters.txt file')
     parser.add_argument('-s', '--steps', type=int, default=200,
                        help='Number of steps per trajectory (default: 200)')
     parser.add_argument('-i', '--iterations', type=int, default=10,
@@ -146,6 +206,54 @@ def main():
     
     # Print header
     print_header()
+    
+    # Handle parameter file loading
+    if args.params:
+        print(f"\nLoading parameters from: {args.params}")
+        if not os.path.exists(args.params):
+            print(f"Error: Parameters file not found: {args.params}")
+            return 1
+        
+        loaded_params = parse_simulation_parameters(args.params)
+        if not loaded_params:
+            print("Failed to parse parameters file")
+            return 1
+        
+        # Override command line arguments with loaded parameters
+        print("\nLoaded parameters:")
+        for key, value in loaded_params.items():
+            print(f"  {key}: {value}")
+        
+        # Set values from loaded parameters
+        if 'protein_file' in loaded_params and not args.protein:
+            args.protein = loaded_params['protein_file']
+        if 'ligand_file' in loaded_params and not args.ligand:
+            args.ligand = loaded_params['ligand_file']
+        if 'n_steps' in loaded_params:
+            args.steps = loaded_params['n_steps']
+        if 'n_iterations' in loaded_params:
+            args.iterations = loaded_params['n_iterations']
+        if 'n_approaches' in loaded_params:
+            args.approaches = loaded_params['n_approaches']
+        if 'starting_distance' in loaded_params:
+            args.distance = loaded_params['starting_distance']
+        if 'n_rotations' in loaded_params:
+            args.rotations = loaded_params['n_rotations']
+        if 'physiological_pH' in loaded_params:
+            args.ph = loaded_params['physiological_pH']
+        
+        # Ask for confirmation
+        confirm = input("\nUse these parameters? (y/n): ").strip().lower()
+        if confirm != 'y':
+            print("Parameter loading cancelled.")
+            return 1
+    
+    # Check if we have required files
+    if not args.protein or not args.ligand:
+        print("\nError: Protein and ligand files are required.")
+        print("Provide them as arguments or use -p to load from a parameters file.")
+        parser.print_help()
+        return 1
     
     # Check files exist
     if not os.path.exists(args.protein):
@@ -171,6 +279,10 @@ def main():
     print(f"  Rotations: {args.rotations}")
     print(f"  pH: {args.ph}")
     print(f"  Device: {'GPU (UMA-optimized)' if has_gpu else 'CPU'}")
+    
+    # If loaded from parameters file, show the source
+    if args.params:
+        print(f"\nParameters loaded from: {args.params}")
     
     # Initialize analyzer
     print("\nInitializing FluxMD analyzer...")
@@ -242,7 +354,8 @@ def main():
             starting_distance=args.distance,
             n_rotations=args.rotations,
             use_gpu=has_gpu,
-            physiological_pH=args.ph
+            physiological_pH=args.ph,
+            save_trajectories=args.save_trajectories
         )
         
         # Report top binding sites
