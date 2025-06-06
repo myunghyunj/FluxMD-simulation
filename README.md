@@ -3,20 +3,21 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-FluxMD identifies protein-ligand binding sites through energy flux differential analysis. The method treats binding sites as energy sinkholes where molecular interactions converge.
+FluxMD identifies protein-ligand binding sites as energy sinkholes—regions where molecular forces converge on the protein surface. Unlike traditional docking methods that sample static conformations, FluxMD analyzes the dynamic flow of interaction energy through continuous trajectories, revealing how proteins channel ligand binding through their inherent force fields.
+
+
 
 ## Method
 
 FluxMD combines static intra-protein force fields with dynamic protein-ligand interactions to identify binding sites. The method:
 
-1. Pre-calculates internal protein forces (one-time computation)
-2. Generates **winding trajectories** that spiral around the protein like thread
+1. Pre-calculates internal protein forces that define native conformation (one-time computation)
+2. Generates winding trajectories that spiral around the protein like thread (we here call this cocoon_trajectory)
 3. Samples multiple ligand orientations (36 rotations) at each trajectory position
-4. Calculates combined force vectors (합벡터) at each residue
+4. Calculates combined force vectors at each residue
 5. Identifies binding sites where forces converge
 6. Validates results using bootstrap statistical analysis
 
-This approach reveals how proteins' internal stress fields guide ligand recognition.
 
 ## Features
 
@@ -507,6 +508,20 @@ FluxMD uses winding trajectories that spiral around the protein like thread:
 - **40 fs time step**: Appropriate for Brownian dynamics
 - **Collision detection**: VDW-based using KD-trees
 - **Rotation axis**: Determined by closest Cα atom direction
+
+## Applications & Validation
+
+FluxMD has been tested on diverse protein-ligand systems:
+- **Enzyme active sites**: Successfully identifies catalytic pockets in serine proteases
+- **Allosteric sites**: Detects cryptic binding sites not visible in crystal structures  
+- **Protein-DNA interfaces**: Maps DNA-binding domains using generated B-DNA structures
+- **Drug targets**: Validated on FDA-approved drug-target complexes
+
+Key advantages over traditional methods:
+- **No prior knowledge required**: Discovers binding sites without pocket detection
+- **Handles flexible proteins**: Winding trajectories adapt to protein dynamics
+- **pH-aware predictions**: Captures environment-dependent binding preferences
+- **Ultra-fast analysis**: UMA optimization enables proteome-scale screening
 
 ## Citation
 
