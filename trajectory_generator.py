@@ -140,6 +140,9 @@ class ProteinLigandFluxAnalyzer:
         self.intra_protein_calc = None
         self.intra_protein_vectors = None
         
+        # Store GPU trajectory results for integrated pipeline
+        self.gpu_trajectory_results = None
+        
     def init_residue_properties(self):
         """Initialize residue property definitions"""
         # Hydrogen bond donors
@@ -1576,6 +1579,9 @@ class ProteinLigandFluxAnalyzer:
                 
                 # Store trajectories for visualization
                 all_trajectories = all_gpu_trajectories
+                
+                # Store GPU results for integrated flux pipeline
+                self.gpu_trajectory_results = gpu_results
                 
                 # Visualize trajectories for each approach
                 for approach_idx, approach_trajectory in enumerate(all_trajectories):

@@ -58,6 +58,8 @@ class InteractionResult:
     types: torch.Tensor       # [N] interaction types
     energies: torch.Tensor    # [N] energies
     residue_ids: torch.Tensor # [N] residue IDs
+    vectors: torch.Tensor = None  # [N, 3] interaction vectors (optional)
+    combined_vectors: torch.Tensor = None  # [N, 3] combined inter+intra vectors (optional)
 
 
 class GPUSpatialHash:
@@ -1007,12 +1009,16 @@ class GPUAcceleratedInteractionCalculator:
                     indices, chunk_distances
                 )
                 
+                # Get coordinates for interaction pairs
+                p_coords = protein_coords[indices[:, 0]]
+                l_coords = ligand_coords[indices[:, 1]]
+                
+                # Calculate vectors
+                inter_vectors = l_coords - p_coords
+                
                 # Calculate combined vectors if intra-protein forces available
                 combined_vectors = None
                 if self.intra_protein_vectors_gpu is not None:
-                    # Get coordinates for interaction pairs
-                    p_coords = protein_coords[indices[:, 0]]
-                    l_coords = ligand_coords[indices[:, 1]]
                     _, combined_vectors = self._calculate_combined_vectors(
                         indices[:, 0], l_coords, p_coords
                     )
@@ -1029,7 +1035,9 @@ class GPUAcceleratedInteractionCalculator:
                     distances=chunk_distances,
                     types=interaction_types,
                     energies=energies,
-                    residue_ids=residue_ids
+                    residue_ids=residue_ids,
+                    vectors=inter_vectors,
+                    combined_vectors=combined_vectors if combined_vectors is not None else inter_vectors
                 ))
         
         # Combine results
@@ -1102,7 +1110,9 @@ class GPUAcceleratedInteractionCalculator:
             distances=torch.zeros(0, device=self.device),
             types=torch.zeros(0, device=self.device, dtype=torch.int8),
             energies=torch.zeros(0, device=self.device),
-            residue_ids=torch.zeros(0, device=self.device, dtype=torch.long)
+            residue_ids=torch.zeros(0, device=self.device, dtype=torch.long),
+            vectors=torch.zeros((0, 3), device=self.device),
+            combined_vectors=torch.zeros((0, 3), device=self.device)
         )
     
     def _detect_interaction_types_gpu(self,
@@ -1348,12 +1358,18 @@ class GPUAcceleratedInteractionCalculator:
     
     def _combine_results(self, results: List[InteractionResult]) -> InteractionResult:
         """Combine multiple interaction results"""
+        # Handle cases where vectors might be None
+        all_vectors = [r.vectors for r in results if r.vectors is not None]
+        all_combined_vectors = [r.combined_vectors for r in results if r.combined_vectors is not None]
+        
         return InteractionResult(
             indices=torch.cat([r.indices for r in results], dim=0),
             distances=torch.cat([r.distances for r in results]),
             types=torch.cat([r.types for r in results]),
             energies=torch.cat([r.energies for r in results]),
-            residue_ids=torch.cat([r.residue_ids for r in results])
+            residue_ids=torch.cat([r.residue_ids for r in results]),
+            vectors=torch.cat(all_vectors, dim=0) if all_vectors else None,
+            combined_vectors=torch.cat(all_combined_vectors, dim=0) if all_combined_vectors else None
         )
     
     def process_trajectory_batch_gpu(self,
@@ -1664,36 +1680,114 @@ class GPUFluxCalculator:
                                  trajectory_results: List[Dict],
                                  n_residues: int) -> torch.Tensor:
         """
-        Convert trajectory interaction results to flux values
+        Optimized flux calculation using scatter operations.
+        Processes trajectory results directly from InteractionResult objects.
         """
-        # Accumulate energy vectors by residue
-        residue_energy_accumulator = {i: [] for i in range(n_residues)}
+        # Pre-allocate tensors for scatter operations
+        flux_accumulator = torch.zeros(n_residues, device=self.device)
+        magnitude_sum = torch.zeros(n_residues, device=self.device)
+        vector_sum = torch.zeros((n_residues, 3), device=self.device)
+        count = torch.zeros(n_residues, device=self.device)
         
-        for frame_result in trajectory_results:
-            if 'best_interactions' in frame_result:
-                interactions = frame_result['best_interactions']
+        # Process all frames
+        for frame_idx, frame_result in enumerate(trajectory_results):
+            if 'best_interactions' not in frame_result:
+                continue
                 
-                # Group by residue
-                for i in range(len(interactions.indices)):
-                    residue_id = interactions.residue_ids[i].item()
-                    energy = interactions.energies[i].item()
-                    
-                    # Create energy vector (simplified - could use actual vectors)
-                    energy_vector = torch.tensor([energy, 0, 0], device=self.device)
-                    
-                    if residue_id in residue_energy_accumulator:
-                        residue_energy_accumulator[residue_id].append(energy_vector)
+            interactions = frame_result['best_interactions']
+            
+            if len(interactions.residue_ids) == 0:
+                continue
+            
+            # Get vectors - use combined vectors if available, otherwise use basic vectors
+            if interactions.combined_vectors is not None:
+                vectors = interactions.combined_vectors
+            elif interactions.vectors is not None:
+                vectors = interactions.vectors
+            else:
+                # Fallback: create vectors from energies
+                vectors = torch.stack([
+                    interactions.energies,
+                    torch.zeros_like(interactions.energies),
+                    torch.zeros_like(interactions.energies)
+                ], dim=1)
+            
+            # Calculate magnitudes
+            magnitudes = torch.norm(vectors, dim=1)
+            
+            # Use scatter_add for efficient accumulation
+            residue_indices = interactions.residue_ids
+            
+            # Accumulate magnitudes
+            magnitude_sum.scatter_add_(0, residue_indices, magnitudes)
+            
+            # Accumulate vectors
+            vector_sum.scatter_add_(0, residue_indices.unsqueeze(1).expand(-1, 3), vectors)
+            
+            # Count interactions per residue
+            ones = torch.ones_like(residue_indices, dtype=torch.float32)
+            count.scatter_add_(0, residue_indices, ones)
         
-        # Convert to tensors
-        residue_energy_tensors = {}
-        for res_id, vectors in residue_energy_accumulator.items():
-            if vectors:
-                residue_energy_tensors[res_id] = torch.stack(vectors)
+        # Calculate flux for residues with interactions
+        mask = count > 0
         
-        # Calculate flux
-        flux_tensor = self.calculate_flux_tensor_gpu(residue_energy_tensors, n_residues)
+        if mask.any():
+            # Mean magnitude
+            mean_magnitude = torch.zeros_like(magnitude_sum)
+            mean_magnitude[mask] = magnitude_sum[mask] / count[mask]
+            
+            # Directional consistency
+            mean_vectors = torch.zeros_like(vector_sum)
+            mean_vectors[mask] = vector_sum[mask] / count[mask].unsqueeze(1)
+            
+            # Calculate directional consistency
+            mean_vector_norms = torch.norm(mean_vectors, dim=1)
+            directional_consistency = torch.ones_like(mean_magnitude) * 0.5
+            
+            # For non-zero vectors
+            nonzero_mask = mean_vector_norms > 1e-10
+            if nonzero_mask.any():
+                # Normalize mean vectors
+                normalized_mean = mean_vectors[nonzero_mask] / mean_vector_norms[nonzero_mask].unsqueeze(1)
+                
+                # Calculate consistency (simplified - could track individual vectors)
+                # Here we use magnitude of mean as proxy for consistency
+                consistency_values = mean_vector_norms[nonzero_mask] / (magnitude_sum[nonzero_mask] / count[nonzero_mask] + 1e-10)
+                directional_consistency[nonzero_mask] = (consistency_values + 1) / 2
+            
+            # Simple flux calculation (can be enhanced)
+            flux_accumulator = mean_magnitude * directional_consistency
         
         # Apply smoothing
-        flux_smoothed = self.smooth_flux_gpu(flux_tensor)
+        flux_smoothed = self.smooth_flux_gpu(flux_accumulator)
         
         return flux_smoothed
+    
+    def trajectory_results_to_flux_data(self,
+                                      trajectory_results: List[Dict],
+                                      n_residues: int,
+                                      residue_indices: np.ndarray) -> Dict:
+        """
+        Convert GPU trajectory results directly to flux data format.
+        Returns data compatible with flux_analyzer.py visualization.
+        """
+        # Calculate flux using optimized method
+        flux_tensor = self.process_trajectory_to_flux(trajectory_results, n_residues)
+        
+        # Convert to numpy for compatibility
+        flux_values = flux_tensor.cpu().numpy()
+        
+        # Create flux data dictionary
+        flux_data = {
+            'residue_indices': residue_indices,
+            'flux_values': flux_values,
+            'n_residues': n_residues
+        }
+        
+        # Calculate statistics
+        flux_data['mean_flux'] = np.mean(flux_values)
+        flux_data['std_flux'] = np.std(flux_values)
+        flux_data['max_flux'] = np.max(flux_values)
+        flux_data['min_flux'] = np.min(flux_values)
+        
+        return flux_data

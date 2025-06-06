@@ -685,17 +685,36 @@ def run_complete_workflow():
     flux_analyzer.physiological_pH = physiological_pH  # Pass pH information
     
     try:
-        # Process flux differentials
-        flux_data = flux_analyzer.process_trajectory_iterations(output_dir, protein_file)
-        
-        # Create visualizations
-        flux_analyzer.visualize_trajectory_flux(flux_data, protein_name, output_dir)
-        
-        # Generate report
-        flux_analyzer.generate_summary_report(flux_data, protein_name, output_dir)
-        
-        # Save processed data
-        flux_analyzer.save_processed_data(flux_data, output_dir)
+        # Check if we can use integrated GPU pipeline
+        if use_gpu and hasattr(trajectory_analyzer, 'gpu_trajectory_results') and trajectory_analyzer.gpu_trajectory_results is not None:
+            print("\n🚀 Using integrated GPU flux pipeline (bypassing CSV parsing)...")
+            # Use integrated GPU pipeline for maximum efficiency
+            flux_data = flux_analyzer.create_integrated_flux_pipeline(
+                protein_file, 
+                trajectory_analyzer.gpu_trajectory_results, 
+                output_dir
+            )
+            
+            # Create visualizations
+            flux_analyzer.visualize_trajectory_flux(flux_data, protein_name, output_dir)
+            
+            # Generate report
+            flux_analyzer.generate_summary_report(flux_data, protein_name, output_dir)
+            
+            # Save processed data
+            flux_analyzer.save_processed_data(flux_data, output_dir)
+        else:
+            # Traditional CSV-based processing
+            flux_data = flux_analyzer.process_trajectory_iterations(output_dir, protein_file)
+            
+            # Create visualizations
+            flux_analyzer.visualize_trajectory_flux(flux_data, protein_name, output_dir)
+            
+            # Generate report
+            flux_analyzer.generate_summary_report(flux_data, protein_name, output_dir)
+            
+            # Save processed data
+            flux_analyzer.save_processed_data(flux_data, output_dir)
         
         print("\n✓ Flux analysis complete!")
         

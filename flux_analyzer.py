@@ -27,6 +27,7 @@ class TrajectoryFluxAnalyzer:
         self.atom_to_residue_map = None
         self.residue_to_atom_map = None
         self.bootstrap_validator = BootstrapFluxValidator()
+        self.gpu_results = None  # Store GPU trajectory results if available
         
     def create_atom_to_residue_mapping(self, structure):
         """Create accurate atom-to-residue mapping from PDB structure"""
@@ -350,6 +351,54 @@ class TrajectoryFluxAnalyzer:
         
         return filtered_tensors
     
+    def process_gpu_trajectory_results(self, gpu_trajectory_results, residue_indices):
+        """
+        Process GPU trajectory results directly without CSV parsing.
+        Converts InteractionResult objects to residue energy tensors.
+        """
+        residue_energy_tensors = {}
+        
+        print(f"\n   Processing {len(gpu_trajectory_results)} GPU trajectory frames...")
+        
+        for frame_idx, frame_result in enumerate(gpu_trajectory_results):
+            if 'best_interactions' not in frame_result:
+                continue
+                
+            interactions = frame_result['best_interactions']
+            
+            # Get vectors - prefer combined vectors if available
+            if hasattr(interactions, 'combined_vectors') and interactions.combined_vectors is not None:
+                vectors = interactions.combined_vectors.cpu().numpy()
+            elif hasattr(interactions, 'vectors') and interactions.vectors is not None:
+                vectors = interactions.vectors.cpu().numpy()
+            else:
+                # Fallback: create vectors from energies
+                energies = interactions.energies.cpu().numpy()
+                vectors = np.column_stack([energies, np.zeros_like(energies), np.zeros_like(energies)])
+            
+            # Get residue IDs
+            residue_ids = interactions.residue_ids.cpu().numpy()
+            
+            # Accumulate vectors by residue
+            for i, res_id in enumerate(residue_ids):
+                if res_id not in residue_energy_tensors:
+                    residue_energy_tensors[res_id] = []
+                residue_energy_tensors[res_id].append(vectors[i])
+        
+        # Convert to numpy arrays and filter
+        filtered_tensors = {}
+        for res_id in residue_energy_tensors:
+            tensor = np.array(residue_energy_tensors[res_id])
+            if len(tensor) >= 5:  # Minimum data points for analysis
+                filtered_tensors[res_id] = tensor
+        
+        print(f"   ✓ Processed {len(filtered_tensors)} residues with sufficient GPU data")
+        
+        # Store GPU results for later use
+        self.gpu_results = gpu_trajectory_results
+        
+        return filtered_tensors
+    
     def calculate_tensor_flux_differentials(self, residue_tensors, ca_coords, residue_indices):
         """Calculate flux differentials using tensor analysis with proper mapping"""
         n_residues = len(residue_indices)
@@ -499,8 +548,11 @@ class TrajectoryFluxAnalyzer:
         ax.yaxis.pane.set_edgecolor('gray')
         ax.zaxis.pane.set_edgecolor('gray')
     
-    def process_trajectory_iterations(self, results_dir, protein_pdb):
-        """Process trajectory iteration data for flux analysis with validation"""
+    def process_trajectory_iterations(self, results_dir, protein_pdb, gpu_trajectory_results=None):
+        """
+        Process trajectory iteration data for flux analysis with validation.
+        Can handle both CSV files and direct GPU trajectory results.
+        """
         print("\n" + "="*80)
         print("TRAJECTORY FLUX DIFFERENTIAL ANALYSIS")
         print("="*80)
@@ -511,25 +563,54 @@ class TrajectoryFluxAnalyzer:
         print(f"   ✓ Loaded {len(ca_coords)} residues")
         print(f"   ✓ Created proper atom-to-residue mapping")
         
-        # Find all iteration directories
-        iter_dirs = sorted(glob.glob(os.path.join(results_dir, "iteration_*")))
-        print(f"\n2. Found {len(iter_dirs)} iterations to process")
+        # Check if we have GPU results
+        if gpu_trajectory_results is not None:
+            print(f"\n2. Using GPU trajectory results directly (bypassing CSV parsing)")
+            print(f"   Found {len(gpu_trajectory_results)} trajectory frames")
+            
+            # Process GPU results into flux data
+            all_flux_data = []
+            all_derivatives = []
+            
+            # Group GPU results by iteration (if structured that way)
+            # Otherwise treat as single iteration
+            if isinstance(gpu_trajectory_results, list) and len(gpu_trajectory_results) > 0:
+                # Process as single iteration for now
+                residue_tensors = self.process_gpu_trajectory_results(gpu_trajectory_results, res_indices)
+                
+                # Calculate flux differentials
+                flux, derivatives = self.calculate_tensor_flux_differentials(
+                    residue_tensors, ca_coords, res_indices)
+                
+                all_flux_data.append(flux)
+                all_derivatives.append(derivatives)
+            
+        else:
+            # Original CSV-based processing
+            # Find all iteration directories
+            iter_dirs = sorted(glob.glob(os.path.join(results_dir, "iteration_*")))
+            print(f"\n2. Found {len(iter_dirs)} iterations to process")
+            
+            if len(iter_dirs) == 0:
+                print("\n   ❌ ERROR: No iteration directories found!")
+                raise ValueError("No iteration data found to process")
+            
+            # Initialize for CSV processing
+            pass  # Will be handled below
         
-        if len(iter_dirs) == 0:
-            print("\n   ❌ ERROR: No iteration directories found!")
-            raise ValueError("No iteration data found to process")
-        
-        # Process each iteration
-        all_flux_data = []
-        all_derivatives = []
-        
-        import time
-        from datetime import datetime, timedelta
-        
-        total_iterations = len(iter_dirs)
-        start_time = time.time()
-        
-        for idx, iter_dir in enumerate(iter_dirs):
+        # Continue with appropriate processing
+        if gpu_trajectory_results is None:
+            # CSV-based processing
+            all_flux_data = []
+            all_derivatives = []
+            
+            import time
+            from datetime import datetime, timedelta
+            
+            total_iterations = len(iter_dirs)
+            start_time = time.time()
+            
+            for idx, iter_dir in enumerate(iter_dirs):
             iter_start = time.time()
             
             # Progress tracking
@@ -1002,6 +1083,51 @@ class TrajectoryFluxAnalyzer:
         all_flux_df.to_csv(all_flux_file, index=False)
         
         return flux_file, all_flux_file
+    
+    def create_integrated_flux_pipeline(self, protein_file, gpu_trajectory_results, output_dir):
+        """
+        Integrated pipeline for GPU trajectory results to final flux analysis.
+        Bypasses CSV parsing for maximum efficiency.
+        """
+        from gpu_accelerated_flux import GPUFluxCalculator
+        
+        print("\n" + "="*80)
+        print("INTEGRATED GPU FLUX ANALYSIS PIPELINE")
+        print("="*80)
+        
+        # Parse protein structure
+        print("\n1. Loading protein structure...")
+        ca_atoms, ca_coords, res_indices, res_names = self.parse_pdb_for_ribbon(protein_file)
+        n_residues = len(res_indices)
+        
+        # Create GPU flux calculator
+        gpu_calculator = GPUFluxCalculator()
+        
+        # Process trajectory to flux directly
+        print("\n2. Computing flux from GPU trajectory results...")
+        flux_tensor = gpu_calculator.process_trajectory_to_flux(gpu_trajectory_results, n_residues)
+        
+        # Convert to numpy
+        flux_values = flux_tensor.cpu().numpy()
+        
+        # Create flux data structure compatible with visualization
+        flux_data = {
+            'ca_coords': ca_coords,
+            'res_indices': res_indices,
+            'res_names': res_names,
+            'avg_flux': flux_values,
+            'std_flux': np.zeros_like(flux_values),  # Can be computed if multiple iterations
+            'avg_derivatives': np.zeros_like(flux_values),
+            'all_flux': [flux_values],  # Single iteration for now
+            'all_derivatives': [np.zeros_like(flux_values)],
+            'bootstrap_stats': {}  # Can add bootstrap if needed
+        }
+        
+        print(f"\n3. Flux computation complete!")
+        print(f"   Flux range: {flux_values.min():.3f} - {flux_values.max():.3f}")
+        print(f"   Mean flux: {flux_values.mean():.3f}")
+        
+        return flux_data
 
 
 class BootstrapFluxValidator:
