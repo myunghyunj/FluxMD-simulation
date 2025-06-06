@@ -6,3 +6,4 @@ __pycache__/intra_protein_interactions.cpython-312.pyc
 __pycache__/protonation_aware_interactions.cpython-312.pyc
 __pycache__/trajectory_generator.cpython-312.pyc
 __pycache__/visualize_multiflux.cpython-312.pyc
+__pycache__/dna_to_pdb.cpython-312.pyc

@@ -114,7 +114,7 @@ python fluxmd.py
 
 - **`fluxmd.py`** - Main entry point and workflow (user interface)
   - Interactive command-line interface
-  - File format conversions (CIF→PDB, SMILES→PDBQT)
+  - File format conversions (CIF→PDB, SMILES→PDBQT, DNA→PDB)
   - Parameter configuration and validation
   - Coordinates the complete analysis pipeline
 
@@ -156,6 +156,13 @@ python fluxmd.py
   - Handles ASP, GLU, HIS, LYS, ARG, CYS, TYR protonation states
   - Critical for accurate H-bond and salt bridge detection
 
+- **`dna_to_pdb.py`** - DNA sequence to structure converter
+  - Generates B-DNA double helix from sequence
+  - Pure Python implementation with numpy
+  - Watson-Crick base pairing (A-T, G-C)
+  - Full atomic detail or minimal backbone options
+  - Enables protein-DNA binding site analysis
+
 ### Key Features by Module
 
 | Module | Primary Function | Key Features |
@@ -166,6 +173,7 @@ python fluxmd.py
 | flux_analyzer.py | Results analysis | Statistical validation, visualization, pH tracking |
 | intra_protein_interactions.py | Internal forces | Complete n×n residue matrix, pH-aware interactions |
 | protonation_aware_interactions.py | pH-dependent states | Henderson-Hasselbalch, donor/acceptor assignment |
+| dna_to_pdb.py | DNA structure generation | B-DNA helix, Watson-Crick pairing, command-line tool |
 
 ## Usage
 
@@ -177,6 +185,16 @@ python test_cactus_benzene.py
 # Or use the main program
 python fluxmd.py
 # Choose option 2, enter "c1ccccc1" for benzene
+```
+
+### Generate DNA Structure
+```bash
+# From command line
+python dna_to_pdb.py ATCGATCG -o my_dna.pdb
+
+# Or through main menu
+python fluxmd.py
+# Choose option 3, enter DNA sequence
 ```
 
 ### Run Complete Workflow
@@ -196,7 +214,7 @@ python flux_analyzer.py
 
 Input files:
 - Protein: PDB, CIF, or mmCIF
-- Ligand: PDB, PDBQT, or SMILES
+- Ligand: PDB, PDBQT, SMILES, or DNA sequence
 
 SMILES conversion:
 - Primary: NCI CACTUS web service (preserves aromaticity, generates proper 3D coordinates)
@@ -204,6 +222,14 @@ SMILES conversion:
   - Correctly handles aromatic systems with planar geometry
   - For benzene: generates all 12 atoms (6C + 6H) in hexagonal arrangement
 - Fallback: OpenBabel (simplified local method, may have aromatic issues)
+
+DNA sequence conversion:
+- Direct generation of B-DNA double helix from sequence (e.g., ATCGATCG)
+- Pure Python implementation with proper Watson-Crick base pairing
+- Canonical B-DNA parameters: 3.32 Å rise, 36° twist, 10 Å radius
+- Creates full atomic structure with bases, sugars, and phosphates
+- Option for minimal backbone-only structure for faster testing
+- Use as "ligand" input for protein-DNA binding site analysis
 
 The program guides you through parameter selection, including:
 - pH for protonation state calculations (default 7.4)
