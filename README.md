@@ -159,8 +159,11 @@ python fluxmd.py
 - **`dna_to_pdb.py`** - DNA sequence to structure converter
   - Generates B-DNA double helix from sequence
   - Pure Python implementation with numpy
+  - Automatic complementary strand generation
   - Watson-Crick base pairing (A-T, G-C)
-  - Full atomic detail or minimal backbone options
+  - Full atomic detail with proper sugar-phosphate backbone
+  - Proper intertwined double helix geometry
+  - Command-line tool for easy use
   - Enables protein-DNA binding site analysis
 
 ### Key Features by Module
@@ -173,7 +176,7 @@ python fluxmd.py
 | flux_analyzer.py | Results analysis | Statistical validation, visualization, pH tracking |
 | intra_protein_interactions.py | Internal forces | Complete n×n residue matrix, pH-aware interactions |
 | protonation_aware_interactions.py | pH-dependent states | Henderson-Hasselbalch, donor/acceptor assignment |
-| dna_to_pdb.py | DNA structure generation | B-DNA helix, Watson-Crick pairing, command-line tool |
+| dna_to_pdb.py | DNA structure generation | B-DNA double helix, automatic complement, full atomic detail |
 
 ## Usage
 
@@ -189,8 +192,12 @@ python fluxmd.py
 
 ### Generate DNA Structure
 ```bash
-# From command line
+# From command line - generates double helix with automatic complement
 python dna_to_pdb.py ATCGATCG -o my_dna.pdb
+
+# Example: input ATCG generates:
+# Strand 1 (5'→3'): ATCG
+# Strand 2 (3'→5'): CGAT (automatic complement)
 
 # Or through main menu
 python fluxmd.py
@@ -225,10 +232,12 @@ SMILES conversion:
 
 DNA sequence conversion:
 - Direct generation of B-DNA double helix from sequence (e.g., ATCGATCG)
+- Automatic complementary strand generation (A↔T, G↔C)
 - Pure Python implementation with proper Watson-Crick base pairing
-- Canonical B-DNA parameters: 3.32 Å rise, 36° twist, 10 Å radius
+- Canonical B-DNA parameters: 3.38 Å rise, 34.3° twist per base
 - Creates full atomic structure with bases, sugars, and phosphates
-- Option for minimal backbone-only structure for faster testing
+- Proper intertwined double helix with antiparallel strands
+- CONECT records for backbone connectivity
 - Use as "ligand" input for protein-DNA binding site analysis
 
 The program guides you through parameter selection, including:
