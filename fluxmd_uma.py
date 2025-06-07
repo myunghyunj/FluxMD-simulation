@@ -314,38 +314,11 @@ def main():
     print("\nInitializing FluxMD analyzer...")
     analyzer = ProteinLigandFluxAnalyzer(physiological_pH=args.ph)
     
-    # Store original methods before monkey-patching
-    original_run_single = analyzer.run_single_iteration if hasattr(analyzer, 'run_single_iteration') else None
-    
-    # Enhanced run_single_iteration that optionally saves trajectories
-    def enhanced_run_single_iteration_uma(self, *args, **kwargs):
-        # Get save_trajectories flag from kwargs or use args value
-        save_trajectories = kwargs.pop('save_trajectories', args.save_trajectories)
-        
-        # Call the original UMA method
-        iteration_results = run_single_iteration_uma(self, *args, **kwargs)
-        
-        # If requested, generate trajectory visualizations
-        if save_trajectories and len(args) >= 8:  # Check we have enough args
-            iteration_num = args[0]
-            protein_atoms_df = args[1]
-            output_dir = args[7]
-            
-            # Generate trajectory images for this iteration
-            print(f"\n  📸 Generating trajectory visualizations for iteration {iteration_num + 1}...")
-            
-            # Import visualization method
-            if hasattr(self, 'visualize_trajectory_cocoon'):
-                # Create a sample trajectory for visualization
-                # (In real implementation, we'd store trajectories during generation)
-                print(f"     Note: Trajectory visualizations will be saved to {output_dir}")
-        
-        return iteration_results
-    
-    # Monkey-patch the UMA methods
-    analyzer.run_single_iteration_uma = lambda *args, **kwargs: enhanced_run_single_iteration_uma(analyzer, *args, **kwargs)
-    analyzer.run_complete_analysis_uma = lambda *args, **kwargs: run_complete_analysis_uma(analyzer, *args, **kwargs)
-    analyzer._save_parameters_uma = lambda *args, **kwargs: _save_parameters_uma(analyzer, *args, **kwargs)
+    # Monkey-patch the UMA methods using proper method binding
+    import types
+    analyzer.run_single_iteration_uma = types.MethodType(run_single_iteration_uma, analyzer)
+    analyzer.run_complete_analysis_uma = types.MethodType(run_complete_analysis_uma, analyzer)
+    analyzer._save_parameters_uma = types.MethodType(_save_parameters_uma, analyzer)
     
     try:
         # Run UMA-optimized analysis

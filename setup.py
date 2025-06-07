@@ -42,7 +42,7 @@ setup(
         "console_scripts": [
             "fluxmd=fluxmd.cli:main",
             "fluxmd-uma=fluxmd.cli:main_uma",
-            "fluxmd-dna=fluxmd.utils.dna_to_pdb:main",
+            "fluxmd-dna=fluxmd.utils.dna_to_pdb_v2:main",
         ],
     },
     include_package_data=True,

@@ -329,11 +329,42 @@ class TrajectoryFluxAnalyzer:
         plt.title('Flux Values Across All Iterations')
         
         plt.tight_layout()
-        output_file = os.path.join(output_dir, f'{protein_name}_flux_analysis.png')
+        output_file = os.path.join(output_dir, f'{protein_name}_trajectory_flux_analysis.png')
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
         plt.close()
         
         print(f"   Saved visualization to: {output_file}")
+        
+        # Also create a summary plot like CPU version
+        self.create_summary_plot(flux_data, protein_name, output_dir)
+    
+    def create_summary_plot(self, flux_data: Dict, protein_name: str, output_dir: str):
+        """Create a summary visualization similar to CPU version."""
+        plt.figure(figsize=(12, 6))
+        
+        residue_indices = flux_data['res_indices']
+        avg_flux = flux_data['avg_flux']
+        
+        # Simple bar plot of top residues
+        sorted_idx = np.argsort(avg_flux)[::-1][:20]  # Top 20
+        top_indices = [residue_indices[i] for i in sorted_idx if avg_flux[i] > 0]
+        top_values = [avg_flux[i] for i in sorted_idx if avg_flux[i] > 0]
+        top_names = [flux_data['res_names'][i] for i in sorted_idx if avg_flux[i] > 0]
+        
+        plt.bar(range(len(top_indices)), top_values, color='steelblue')
+        plt.xlabel('Residue')
+        plt.ylabel('Normalized Flux')
+        plt.title(f'{protein_name} - Top Binding Sites by Flux')
+        plt.xticks(range(len(top_indices)), 
+                   [f"{idx}\n{name}" for idx, name in zip(top_indices, top_names)], 
+                   rotation=45, ha='right')
+        plt.tight_layout()
+        
+        summary_file = os.path.join(output_dir, f'{protein_name}_flux_summary.png')
+        plt.savefig(summary_file, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"   Saved summary plot to: {summary_file}")
 
     def generate_summary_report(self, flux_data: Dict, protein_name: str, output_dir: str):
         """Generate a text summary of the flux analysis."""
@@ -388,17 +419,49 @@ class TrajectoryFluxAnalyzer:
         print(f"   Saved report to: {report_file}")
 
     def save_processed_data(self, flux_data: Dict, output_dir: str):
-        """Save the final processed flux data to CSV."""
+        """Save the final processed flux data to CSV matching CPU version format."""
         os.makedirs(output_dir, exist_ok=True)
+        
+        # Calculate additional statistics to match CPU version
+        all_flux = flux_data['all_flux']  # Shape: [n_iterations, n_residues]
+        
+        # Per-residue statistics across iterations
+        median_flux = np.median(all_flux, axis=0)
+        min_flux = np.min(all_flux, axis=0)
+        max_flux = np.max(all_flux, axis=0)
+        n_observations = all_flux.shape[0]  # Number of iterations
+        
+        # Identify aromatic residues
+        aromatic_residues = {'PHE', 'TYR', 'TRP', 'HIS'}
+        is_aromatic = [1 if res_name in aromatic_residues else 0 
+                      for res_name in flux_data['res_names']]
+        
+        # Calculate p-values (simplified - in real implementation would use proper statistical test)
+        # Using a simple test against zero flux
+        from scipy import stats
+        p_values = []
+        for i in range(len(flux_data['res_indices'])):
+            residue_flux_values = all_flux[:, i]
+            if np.std(residue_flux_values) > 0:
+                # One-sample t-test against zero
+                t_stat, p_val = stats.ttest_1samp(residue_flux_values, 0)
+                p_values.append(p_val)
+            else:
+                p_values.append(1.0)
         
         df_data = {
             'residue_index': flux_data['res_indices'],
             'residue_name': flux_data['res_names'],
             'average_flux': flux_data['avg_flux'],
             'std_flux': flux_data['std_flux'],
-            'ci_lower_95': flux_data['ci_lower'],
-            'ci_upper_95': flux_data['ci_upper'],
-            'smoothed_flux': flux_data['smoothed_flux']
+            'median_flux': median_flux,
+            'min_flux': min_flux,
+            'max_flux': max_flux,
+            'n_observations': [n_observations] * len(flux_data['res_indices']),
+            'is_aromatic': is_aromatic,
+            'ci_lower': flux_data['ci_lower'],
+            'ci_upper': flux_data['ci_upper'],
+            'p_value': p_values
         }
         
         df = pd.DataFrame(df_data)
@@ -406,6 +469,24 @@ class TrajectoryFluxAnalyzer:
         df.to_csv(output_file, index=False, float_format='%.6f')
         
         print(f"\n4. Saved final processed flux data to: {output_file}")
+        
+        # Also save all iterations data for compatibility
+        all_iterations_data = []
+        for iter_idx in range(all_flux.shape[0]):
+            iter_data = {
+                'iteration': iter_idx + 1,
+                'residue_index': flux_data['res_indices'],
+                'residue_name': flux_data['res_names'],
+                'flux_value': all_flux[iter_idx, :]
+            }
+            iter_df = pd.DataFrame(iter_data)
+            all_iterations_data.append(iter_df)
+        
+        # Concatenate all iterations
+        all_iterations_df = pd.concat(all_iterations_data, ignore_index=True)
+        all_iterations_file = os.path.join(output_dir, 'all_iterations_flux.csv')
+        all_iterations_df.to_csv(all_iterations_file, index=False, float_format='%.6f')
+        print(f"   Saved all iterations data to: {all_iterations_file}")
 
     def run_analysis_pipeline(self, 
                             all_iteration_results: List[List[InteractionResult]],
