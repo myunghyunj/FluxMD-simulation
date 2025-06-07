@@ -240,11 +240,34 @@ def main():
         for key, value in loaded_params.items():
             print(f"  {key}: {value}")
         
-        # Set values from loaded parameters
-        if 'protein_file' in loaded_params and not args.protein:
-            args.protein = loaded_params['protein_file']
-        if 'ligand_file' in loaded_params and not args.ligand:
-            args.ligand = loaded_params['ligand_file']
+        # Ask if user wants to use the same protein and ligand files
+        if 'protein_file' in loaded_params and 'ligand_file' in loaded_params:
+            print(f"\nLoaded protein: {loaded_params['protein_file']}")
+            print(f"Loaded ligand: {loaded_params['ligand_file']}")
+            use_same = input("\nUse the same protein and ligand files? (y/n): ").strip().lower()
+            
+            if use_same == 'y':
+                # Use the loaded files
+                if not args.protein:
+                    args.protein = loaded_params['protein_file']
+                if not args.ligand:
+                    args.ligand = loaded_params['ligand_file']
+            else:
+                # Ask for new files
+                if not args.protein:
+                    new_protein = input("Enter path to protein PDB file: ").strip()
+                    if new_protein:
+                        args.protein = new_protein
+                if not args.ligand:
+                    new_ligand = input("Enter path to ligand PDB file: ").strip()
+                    if new_ligand:
+                        args.ligand = new_ligand
+        else:
+            # If files weren't in the loaded params, use them if available
+            if 'protein_file' in loaded_params and not args.protein:
+                args.protein = loaded_params['protein_file']
+            if 'ligand_file' in loaded_params and not args.ligand:
+                args.ligand = loaded_params['ligand_file']
         if 'n_steps' in loaded_params:
             args.steps = loaded_params['n_steps']
         if 'n_iterations' in loaded_params:
