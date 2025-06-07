@@ -34,6 +34,20 @@ class InteractionResult:
     residue_ids: torch.Tensor
     inter_vectors: torch.Tensor
     energies: torch.Tensor
+    interaction_types: torch.Tensor  # New field for tracking interaction types
+    
+    # Interaction type constants
+    HBOND = 0
+    SALT_BRIDGE = 1
+    PI_PI = 2
+    PI_CATION = 3
+    VDW = 4
+    
+    @staticmethod
+    def get_interaction_name(itype: int) -> str:
+        """Get human-readable name for interaction type."""
+        names = {0: "H-bond", 1: "Salt bridge", 2: "Pi-pi", 3: "Pi-cation", 4: "VDW"}
+        return names.get(itype, "Unknown")
 
 class GPUAcceleratedInteractionCalculator:
     """Calculates non-covalent interactions for a given state on the GPU."""
@@ -182,17 +196,21 @@ class GPUAcceleratedInteractionCalculator:
         l_neg = ligand_properties['is_charged_neg'][l_idx]
         l_aromatic = ligand_properties['is_aromatic'][l_idx]
 
-        # Detect interaction types
+        # Detect interaction types and initialize type tracking
         hbond_mask = ((p_donor & l_acceptor) | (p_acceptor & l_donor)) & (distances <= self.cutoffs['hbond'])
         salt_mask = ((p_pos & l_neg) | (p_neg & l_pos)) & (distances <= self.cutoffs['salt_bridge'])
         pi_pi_mask = (p_aromatic & l_aromatic) & (distances <= self.cutoffs['pi_pi'])
         pi_cation_mask = ((p_aromatic & l_pos) | (p_pos & l_aromatic)) & (distances <= self.cutoffs['pi_cation'])
+        
+        # Initialize interaction type tensor
+        interaction_types = torch.full_like(distances, -1, dtype=torch.int8)  # -1 for no interaction
         
         # Calculate energies
         energies = torch.zeros_like(distances)
         
         # H-bonds
         if hbond_mask.any():
+            interaction_types[hbond_mask] = InteractionResult.HBOND
             d0 = 2.8
             r = distances[hbond_mask]
             energies[hbond_mask] = -5.0 * (5*(d0/r)**12 - 6*(d0/r)**10)
@@ -200,23 +218,27 @@ class GPUAcceleratedInteractionCalculator:
         
         # Salt bridges
         if salt_mask.any():
+            interaction_types[salt_mask] = InteractionResult.SALT_BRIDGE
             r = distances[salt_mask]
             energies[salt_mask] = -332.0 / (4.0 * r * r)
             energies[salt_mask] = torch.clamp(energies[salt_mask], -10.0, -1.0)
         
         # Pi-pi stacking
         if pi_pi_mask.any():
+            interaction_types[pi_pi_mask] = InteractionResult.PI_PI
             r = distances[pi_pi_mask]
             energies[pi_pi_mask] = -4.0 * torch.exp(-((r - 3.8) / 1.5)**2)
         
         # Pi-cation
         if pi_cation_mask.any():
+            interaction_types[pi_cation_mask] = InteractionResult.PI_CATION
             r = distances[pi_cation_mask]
             energies[pi_cation_mask] = -3.0 * torch.exp(-((r - 3.5) / 1.5)**2)
         
         # VDW for remaining close contacts
         vdw_mask = (distances <= self.cutoffs['vdw']) & (energies == 0)
         if vdw_mask.any():
+            interaction_types[vdw_mask] = InteractionResult.VDW
             sigma = 3.4
             epsilon = 0.238
             r = distances[vdw_mask]
@@ -236,7 +258,8 @@ class GPUAcceleratedInteractionCalculator:
             protein_indices=p_idx[active_mask],
             residue_ids=self.protein_properties['residue_ids'][p_idx[active_mask]],
             inter_vectors=inter_vectors,
-            energies=energies[active_mask]
+            energies=energies[active_mask],
+            interaction_types=interaction_types[active_mask]
         )
 
     def process_trajectory_batch(self, trajectory: np.ndarray, ligand_base_coords: np.ndarray,

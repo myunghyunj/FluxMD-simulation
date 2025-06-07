@@ -808,28 +808,68 @@ def main():
         
         # Ask about simulation parameters
         print("\nSIMULATION PARAMETERS")
-        print("Press Enter to use defaults, or enter custom values:\n")
         
-        n_steps = input("Steps per trajectory (default 200): ").strip()
-        n_steps = int(n_steps) if n_steps else 200
+        # Ask if user wants to use existing parameters
+        use_existing = input("\nLoad parameters from existing simulation? (y/n): ").strip().lower()
         
-        n_iterations = input("Number of iterations (default 10): ").strip()
-        n_iterations = int(n_iterations) if n_iterations else 10
+        if use_existing == 'y':
+            params_file = input("Enter path to simulation_parameters.txt: ").strip()
+            if os.path.exists(params_file):
+                loaded_params = parse_simulation_parameters(params_file)
+                if loaded_params:
+                    print("\nLoaded parameters from file:")
+                    for key, value in loaded_params.items():
+                        print(f"  {key}: {value}")
+                    
+                    confirm = input("\nUse these parameters? (y/n): ").strip().lower()
+                    if confirm == 'y':
+                        # Use loaded parameters
+                        n_steps = loaded_params.get('n_steps', 200)
+                        n_iterations = loaded_params.get('n_iterations', 10)
+                        n_approaches = loaded_params.get('n_approaches', 10)
+                        approach_distance = loaded_params.get('approach_distance', 2.5)
+                        starting_distance = loaded_params.get('starting_distance', 20.0)
+                        n_rotations = loaded_params.get('n_rotations', 36)
+                        physiological_pH = loaded_params.get('physiological_pH', 7.4)
+                    else:
+                        use_existing = 'n'  # Fall back to manual entry
+                else:
+                    print("Failed to parse parameters file.")
+                    use_existing = 'n'
+            else:
+                print(f"File not found: {params_file}")
+                use_existing = 'n'
         
-        n_approaches = input("Number of approach angles (default 10): ").strip()
-        n_approaches = int(n_approaches) if n_approaches else 10
+        if use_existing != 'y':
+            # Manual parameter entry
+            print("\nEnter parameters manually (press Enter for defaults):\n")
+            
+            n_steps = input("Steps per trajectory (default 200): ").strip()
+            n_steps = int(n_steps) if n_steps else 200
+            
+            n_iterations = input("Number of iterations (default 10): ").strip()
+            n_iterations = int(n_iterations) if n_iterations else 10
+            
+            n_approaches = input("Number of approach angles (default 10): ").strip()
+            n_approaches = int(n_approaches) if n_approaches else 10
+            
+            starting_distance = input("Starting distance in Angstroms (default 20.0): ").strip()
+            starting_distance = float(starting_distance) if starting_distance else 20.0
+            
+            approach_distance = input("Distance step between approaches in Angstroms (default 2.5): ").strip()
+            approach_distance = float(approach_distance) if approach_distance else 2.5
+            
+            n_rotations = input("Rotations per position (default 36): ").strip()
+            n_rotations = int(n_rotations) if n_rotations else 36
+            
+            physiological_pH = input("pH for protonation states (default 7.4): ").strip()
+            physiological_pH = float(physiological_pH) if physiological_pH else 7.4
         
-        starting_distance = input("Starting distance in Angstroms (default 20.0): ").strip()
-        starting_distance = float(starting_distance) if starting_distance else 20.0
+        # Ask about saving trajectories
+        save_trajectories = input("\nSave trajectory files? (y/n): ").strip().lower() == 'y'
         
-        approach_distance = input("Distance step between approaches in Angstroms (default 2.5): ").strip()
-        approach_distance = float(approach_distance) if approach_distance else 2.5
-        
-        n_rotations = input("Rotations per position (default 36): ").strip()
-        n_rotations = int(n_rotations) if n_rotations else 36
-        
-        physiological_pH = input("pH for protonation states (default 7.4): ").strip()
-        physiological_pH = float(physiological_pH) if physiological_pH else 7.4
+        # Ask about showing detailed interaction breakdown
+        show_interactions = input("Show detailed interaction breakdown? (y/n): ").strip().lower() == 'y'
         
         # Show summary
         print("\nUMA ANALYSIS CONFIGURATION:")
@@ -843,6 +883,8 @@ def main():
         print(f"  Approach distance: {approach_distance} Å")
         print(f"  Rotations: {n_rotations}")
         print(f"  pH: {physiological_pH}")
+        print(f"  Save trajectories: {'Yes' if save_trajectories else 'No'}")
+        print(f"  Show interaction details: {'Yes' if show_interactions else 'No'}")
         
         # Calculate total operations
         total_frames = n_steps * n_approaches * n_iterations
@@ -867,6 +909,15 @@ def main():
             "-r", str(n_rotations),
             "--ph", str(physiological_pH)
         ]
+        
+        # Add save trajectories flag if requested
+        if save_trajectories:
+            cmd.append("--save-trajectories")
+        
+        # Add interaction details flag if requested
+        if show_interactions:
+            cmd.append("--interaction-details")
+        
         subprocess.run(cmd)
     elif choice == "3":
         print_banner("SMILES TO PDB CONVERTER")

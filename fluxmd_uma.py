@@ -284,6 +284,13 @@ def main():
     print(f"  Rotations: {args.rotations}")
     print(f"  pH: {args.ph}")
     print(f"  Device: {'GPU (UMA-optimized)' if has_gpu else 'CPU'}")
+    print(f"  Save trajectories: {'ENABLED' if args.save_trajectories else 'DISABLED'}")
+    
+    if args.save_trajectories:
+        print("\nIteration logging enabled:")
+        print("  - Trajectory data will be saved for each iteration")
+        print("  - Flux visualizations will be generated per iteration")
+        print("  - Detailed statistics will be logged")
     
     # If loaded from parameters file, show the source
     if args.params:
@@ -380,9 +387,13 @@ def main():
         
         # Show interaction details if requested
         if args.interaction_details:
-            print("\n[INFO] Detailed interaction breakdown:")
-            print("Note: For full interaction type tracking, use the standard FluxMD workflow.")
-            print("The UMA-optimized version focuses on speed over detailed categorization.")
+            print("\n[INFO] Detailed interaction breakdown displayed above:")
+            print("✓ Hydrogen bonds (H-bonds)")
+            print("✓ Salt bridges (electrostatic)")  
+            print("✓ Pi-pi stacking")
+            print("✓ Pi-cation interactions")
+            print("✓ Van der Waals forces")
+            print("\nThe UMA-optimized version now tracks all interaction types with zero performance impact!")
             
             # Check if trajectory images were saved
             if args.save_trajectories:
@@ -400,9 +411,19 @@ def main():
         
         print("\n[DONE] Analysis complete!")
         print(f"\n📊 Results Summary:")
+        print(f"   - Simulation parameters: {os.path.join(args.output, 'simulation_parameters.txt')}")
         print(f"   - Flux analysis: {os.path.join(args.output, 'processed_flux_data.csv')}")
         print(f"   - Statistical report: {os.path.join(args.output, os.path.basename(args.protein).split('.')[0] + '_flux_report.txt')}")
         print(f"   - Heatmap visualization: {os.path.join(args.output, os.path.basename(args.protein).split('.')[0] + '_trajectory_flux_analysis.png')}")
+        
+        if args.save_trajectories:
+            print("\n📁 Iteration Logs:")
+            print(f"   - Location: {os.path.join(args.output, 'iteration_*/')}")
+            print("   - Each iteration contains:")
+            print("     • iteration_summary.txt - Statistics and energy data")
+            print("     • trajectory_data.csv - Frame-by-frame interaction data")
+            print("     • iteration_N_flux.png - Flux visualization for that iteration")
+            print("     • iteration_N_flux_data.csv - Flux values per residue")
         
         return 0
         

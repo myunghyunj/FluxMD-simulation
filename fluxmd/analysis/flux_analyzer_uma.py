@@ -143,16 +143,19 @@ class TrajectoryFluxAnalyzer:
 
         print("   ✓ Statistical analysis complete")
 
+        # Extract only values for actual residues
+        residue_mask = torch.tensor(self.residue_indices, device=self.device, dtype=torch.long)
+        
         # Return data (convert to CPU for compatibility)
         return {
             'res_indices': self.residue_indices,
             'res_names': self.residue_names,
-            'avg_flux': normalized_flux_gpu.cpu().numpy(),
-            'std_flux': std_flux_gpu.cpu().numpy(),
-            'ci_lower': ci_lower.cpu().numpy(),
-            'ci_upper': ci_upper.cpu().numpy(),
-            'smoothed_flux': smoothed_flux_gpu.cpu().numpy(),
-            'all_flux': stacked_flux.cpu().numpy()  # For additional analysis
+            'avg_flux': normalized_flux_gpu[residue_mask].cpu().numpy(),
+            'std_flux': std_flux_gpu[residue_mask].cpu().numpy(),
+            'ci_lower': ci_lower[residue_mask].cpu().numpy(),
+            'ci_upper': ci_upper[residue_mask].cpu().numpy(),
+            'smoothed_flux': smoothed_flux_gpu[residue_mask].cpu().numpy(),
+            'all_flux': stacked_flux[:, residue_mask].cpu().numpy()  # For additional analysis
         }
 
     def _calculate_flux_gpu_optimized(self, 

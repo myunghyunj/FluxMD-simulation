@@ -99,6 +99,94 @@ def run_single_iteration_uma(self, iteration_num, protein_atoms_df, ligand_atoms
         print(f"   - Total interactions detected: {total_interactions}")
         if total_frames > 0:
             print(f"   - Average interactions per frame: {total_interactions / total_frames:.1f}")
+        
+        # Save iteration data log
+        iter_dir = os.path.join(output_dir, f'iteration_{iteration_num}')
+        os.makedirs(iter_dir, exist_ok=True)
+        
+        # Save iteration summary
+        summary_file = os.path.join(iter_dir, 'iteration_summary.txt')
+        with open(summary_file, 'w') as f:
+            f.write(f"ITERATION {iteration_num + 1} SUMMARY\n")
+            f.write("="*50 + "\n")
+            f.write(f"Frames with interactions: {total_frames}\n")
+            f.write(f"Total interactions detected: {total_interactions}\n")
+            if total_frames > 0:
+                f.write(f"Average interactions per frame: {total_interactions / total_frames:.1f}\n")
+            f.write("\n")
+            
+            # Energy statistics
+            all_energies = []
+            for result in iteration_results:
+                if result is not None and len(result.energies) > 0:
+                    all_energies.extend(result.energies.cpu().numpy())
+            
+            if all_energies:
+                import numpy as np
+                energies_array = np.array(all_energies)
+                f.write("ENERGY STATISTICS:\n")
+                f.write(f"  Mean: {np.mean(energies_array):.2f} kcal/mol\n")
+                f.write(f"  Std: {np.std(energies_array):.2f} kcal/mol\n")
+                f.write(f"  Min: {np.min(energies_array):.2f} kcal/mol\n")
+                f.write(f"  Max: {np.max(energies_array):.2f} kcal/mol\n")
+                
+                
+                # Calculate and save interaction type breakdown
+                interaction_type_counts_file = {
+                    InteractionResult.HBOND: 0,
+                    InteractionResult.SALT_BRIDGE: 0,
+                    InteractionResult.PI_PI: 0,
+                    InteractionResult.PI_CATION: 0,
+                    InteractionResult.VDW: 0
+                }
+                
+                for result in iteration_results:
+                    if result is not None and hasattr(result, 'interaction_types') and len(result.interaction_types) > 0:
+                        types = result.interaction_types.cpu().numpy()
+                        for itype in range(5):
+                            interaction_type_counts_file[itype] += (types == itype).sum()
+                
+                total_typed_file = sum(interaction_type_counts_file.values())
+                if total_typed_file > 0:
+                    f.write("\nINTERACTION TYPE BREAKDOWN:\n")
+                    for itype, count in interaction_type_counts_file.items():
+                        percentage = (count / total_typed_file * 100)
+                        f.write(f"  {InteractionResult.get_interaction_name(itype)}: {count} ({percentage:.1f}%)\n")
+        
+        # Save trajectory data as CSV for this iteration
+        trajectory_data_file = os.path.join(iter_dir, 'trajectory_data.csv')
+        trajectory_data = []
+        for frame_idx, result in enumerate(iteration_results):
+            if result is not None and len(result.energies) > 0:
+                residue_ids = result.residue_ids.cpu().numpy()
+                energies = result.energies.cpu().numpy()
+                
+                # Check if interaction types are available
+                if hasattr(result, 'interaction_types') and len(result.interaction_types) > 0:
+                    interaction_types = result.interaction_types.cpu().numpy()
+                    for res_id, energy, itype in zip(residue_ids, energies, interaction_types):
+                        trajectory_data.append({
+                            'frame': frame_idx,
+                            'residue_id': res_id,
+                            'energy': energy,
+                            'interaction_type': InteractionResult.get_interaction_name(itype)
+                        })
+                else:
+                    # Fallback for backward compatibility
+                    for res_id, energy in zip(residue_ids, energies):
+                        trajectory_data.append({
+                            'frame': frame_idx,
+                            'residue_id': res_id,
+                            'energy': energy
+                        })
+        
+        if trajectory_data:
+            import pandas as pd
+            df = pd.DataFrame(trajectory_data)
+            df.to_csv(trajectory_data_file, index=False)
+            print(f"   💾 Saved trajectory data: {trajectory_data_file}")
+        
+        print(f"   📄 Saved iteration summary: {summary_file}")
     
     return iteration_results
 
@@ -217,12 +305,92 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
                 print(f"    - Std: {np.std(energies_array):.2f} kcal/mol")
                 print(f"    - Min: {np.min(energies_array):.2f} kcal/mol")
                 print(f"    - Max: {np.max(energies_array):.2f} kcal/mol")
+                
+            # Add detailed interaction type analysis
+            if iteration_results and total_interactions > 0:
+                # Collect interaction types
+                interaction_type_counts = {
+                    InteractionResult.HBOND: 0,
+                    InteractionResult.SALT_BRIDGE: 0,
+                    InteractionResult.PI_PI: 0,
+                    InteractionResult.PI_CATION: 0,
+                    InteractionResult.VDW: 0
+                }
+                
+                for result in iteration_results:
+                    if result is not None and hasattr(result, 'interaction_types') and len(result.interaction_types) > 0:
+                        types = result.interaction_types.cpu().numpy()
+                        for itype in range(5):  # 5 interaction types
+                            interaction_type_counts[itype] += (types == itype).sum()
+                
+                print(f"  Interaction type breakdown:")
+                total_typed = sum(interaction_type_counts.values())
+                if total_typed > 0:
+                    for itype, count in interaction_type_counts.items():
+                        percentage = (count / total_typed * 100)
+                        print(f"    - {InteractionResult.get_interaction_name(itype)}: {count} ({percentage:.1f}%)")
+                
+            # Generate per-iteration flux visualization
+            if save_trajectories:
+                print(f"  📊 Generating iteration {i+1} flux visualization...")
+                iter_dir = os.path.join(output_dir, f'iteration_{i}')
+                
+                # Calculate flux for this iteration only
+                # TrajectoryFluxAnalyzer is already imported at the top
+                iter_flux_analyzer = TrajectoryFluxAnalyzer(device=device)
+                
+                # Process single iteration data
+                single_iter_results = [iteration_results]
+                
+                # Run simplified flux calculation for this iteration
+                try:
+                    iter_flux_analyzer.parse_protein_for_analysis(protein_file)
+                    iter_flux_data = iter_flux_analyzer.process_iterations_and_calculate_flux(
+                        single_iter_results,
+                        gpu_calc.intra_protein_vectors_gpu
+                    )
+                    
+                    # Generate flux heatmap for this iteration
+                    import matplotlib.pyplot as plt
+                    plt.figure(figsize=(12, 6))
+                    
+                    residue_indices = iter_flux_data['res_indices']
+                    avg_flux = iter_flux_data['avg_flux']
+                    
+                    plt.bar(residue_indices, avg_flux, color='steelblue', alpha=0.8)
+                    plt.xlabel('Residue Index')
+                    plt.ylabel('Flux (normalized)')
+                    plt.title(f'Flux Analysis - Iteration {i+1}')
+                    plt.grid(True, alpha=0.3)
+                    
+                    # Save figure
+                    flux_fig_path = os.path.join(iter_dir, f'iteration_{i+1}_flux.png')
+                    plt.savefig(flux_fig_path, dpi=150, bbox_inches='tight')
+                    plt.close()
+                    
+                    print(f"  📸 Saved flux visualization: {flux_fig_path}")
+                    
+                    # Save flux data for this iteration
+                    flux_csv_path = os.path.join(iter_dir, f'iteration_{i+1}_flux_data.csv')
+                    flux_df = pd.DataFrame({
+                        'residue_index': residue_indices,
+                        'residue_name': iter_flux_data['res_names'],
+                        'avg_flux': avg_flux,
+                        'std_flux': iter_flux_data['std_flux']
+                    })
+                    flux_df.to_csv(flux_csv_path, index=False)
+                    print(f"  💾 Saved flux data: {flux_csv_path}")
+                    
+                except Exception as e:
+                    print(f"  ⚠️  Could not generate iteration flux visualization: {e}")
     
     # Run flux analysis directly on GPU results
     print("\n" + "="*80)
     print("FLUX ANALYSIS - ZERO-COPY GPU PROCESSING")
     print("="*80)
     
+    # Import here to ensure it is available in the monkey-patched context
+    from ..analysis.flux_analyzer_uma import TrajectoryFluxAnalyzer
     flux_analyzer = TrajectoryFluxAnalyzer(device=device)
     
     # Extract protein name from filename
@@ -273,6 +441,62 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
     for category, count in interaction_categories.items():
         percentage = (count / total_interactions * 100) if total_interactions > 0 else 0
         print(f"  - {category}: {count} ({percentage:.1f}%)")
+    
+    # Add detailed interaction type analysis for all iterations
+    print("\nDetailed interaction type breakdown:")
+    overall_interaction_types = {
+        InteractionResult.HBOND: 0,
+        InteractionResult.SALT_BRIDGE: 0,
+        InteractionResult.PI_PI: 0,
+        InteractionResult.PI_CATION: 0,
+        InteractionResult.VDW: 0
+    }
+    
+    # Collect per-residue interaction data
+    residue_interaction_types = {}  # residue_id -> {type: count}
+    
+    for iter_results in all_iteration_results:
+        for result in iter_results:
+            if result is not None and hasattr(result, 'interaction_types') and len(result.interaction_types) > 0:
+                types = result.interaction_types.cpu().numpy()
+                residue_ids = result.residue_ids.cpu().numpy()
+                
+                # Count overall types
+                for itype in range(5):
+                    overall_interaction_types[itype] += (types == itype).sum()
+                
+                # Track per-residue types
+                for res_id, itype in zip(residue_ids, types):
+                    if res_id not in residue_interaction_types:
+                        residue_interaction_types[res_id] = {i: 0 for i in range(5)}
+                    residue_interaction_types[res_id][itype] += 1
+    
+    # Display overall interaction types
+    total_typed = sum(overall_interaction_types.values())
+    if total_typed > 0:
+        for itype, count in overall_interaction_types.items():
+            percentage = (count / total_typed * 100)
+            print(f"  - {InteractionResult.get_interaction_name(itype)}: {count} ({percentage:.1f}%)")
+    
+    # Find top residues by interaction type
+    print("\nTop residues by interaction type:")
+    
+    # For each interaction type, find top 3 residues
+    for itype in range(5):
+        type_name = InteractionResult.get_interaction_name(itype)
+        print(f"\n  {type_name}:")
+        
+        # Get residues with this interaction type
+        residue_counts = [(res_id, counts[itype]) 
+                         for res_id, counts in residue_interaction_types.items() 
+                         if counts[itype] > 0]
+        residue_counts.sort(key=lambda x: x[1], reverse=True)
+        
+        if residue_counts:
+            for i, (res_id, count) in enumerate(residue_counts[:3]):
+                print(f"    {i+1}. Residue {res_id}: {count} interactions")
+        else:
+            print(f"    No {type_name} interactions detected")
     
     # Run analysis pipeline with GPU data
     flux_data = flux_analyzer.run_analysis_pipeline(
