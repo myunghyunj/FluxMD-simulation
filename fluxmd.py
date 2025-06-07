@@ -883,15 +883,121 @@ def main():
         # Get input files if not loaded from parameters
         if not protein_file:
             protein_file = input("\nEnter protein PDB file: ").strip()
+        
+        # Check if protein file exists, if not, handle missing files
         if not os.path.exists(protein_file):
             print(f"Error: {protein_file} not found!")
-            return
+            
+            # Check if it's a path issue from loaded parameters
+            if loaded_params and 'protein_file' in loaded_params:
+                print("\nThe protein file path from the parameters file doesn't exist.")
+                print("This might be because the files were moved or you're on a different machine.")
+                
+                # Try to find the file in current directory
+                protein_basename = os.path.basename(protein_file)
+                if os.path.exists(protein_basename):
+                    print(f"\nFound '{protein_basename}' in current directory.")
+                    use_current = input("Use this file? (y/n): ").strip().lower()
+                    if use_current == 'y':
+                        protein_file = protein_basename
+                    else:
+                        protein_file = input("Enter correct path to protein PDB file: ").strip()
+                else:
+                    # Ask for directory containing the files
+                    print("\nPlease provide the directory containing your protein and ligand files.")
+                    new_dir = input("Enter directory path (or press Enter to manually input file paths): ").strip()
+                    
+                    if new_dir:
+                        # Check if user entered a file path instead of directory
+                        if os.path.isfile(new_dir):
+                            print(f"\nYou entered a file path. Using: {new_dir}")
+                            protein_file = new_dir
+                        elif os.path.isdir(new_dir):
+                            # Try to find the protein file in the new directory
+                            potential_protein = os.path.join(new_dir, protein_basename)
+                            if os.path.exists(potential_protein):
+                                print(f"Found protein file: {potential_protein}")
+                                protein_file = potential_protein
+                            else:
+                                # List PDB files in the directory
+                                pdb_files = [f for f in os.listdir(new_dir) if f.endswith('.pdb')]
+                                if pdb_files:
+                                    print(f"\nFound {len(pdb_files)} PDB files in {new_dir}:")
+                                    for i, f in enumerate(pdb_files):
+                                        print(f"  {i+1}. {f}")
+                                    choice = input("\nSelect protein file by number (or press Enter to input manually): ").strip()
+                                    if choice.isdigit() and 1 <= int(choice) <= len(pdb_files):
+                                        protein_file = os.path.join(new_dir, pdb_files[int(choice)-1])
+                                    else:
+                                        protein_file = input("Enter full path to protein PDB file: ").strip()
+                                else:
+                                    protein_file = input("Enter full path to protein PDB file: ").strip()
+                            
+                            # Update ligand file path if it's also from loaded parameters
+                            if loaded_params and 'ligand_file' in loaded_params and ligand_file:
+                                ligand_basename = os.path.basename(ligand_file)
+                                potential_ligand = os.path.join(new_dir, ligand_basename)
+                                if os.path.exists(potential_ligand):
+                                    print(f"Found ligand file: {potential_ligand}")
+                                    ligand_file = potential_ligand
+                        else:
+                            print(f"\nPath not found: {new_dir}")
+                            protein_file = input("Enter full path to protein PDB file: ").strip()
+                    else:
+                        protein_file = input("Enter full path to protein PDB file: ").strip()
+            else:
+                protein_file = input("Enter correct path to protein PDB file: ").strip()
+            
+            # Final check
+            if not os.path.exists(protein_file):
+                print(f"Error: Still cannot find {protein_file}")
+                return
         
         if not ligand_file:
             ligand_file = input("Enter ligand PDB file: ").strip()
+        
+        # Similar handling for ligand file
         if not os.path.exists(ligand_file):
             print(f"Error: {ligand_file} not found!")
-            return
+            
+            if loaded_params and 'ligand_file' in loaded_params:
+                # Try to use the directory from protein file if it was updated
+                protein_dir = os.path.dirname(protein_file)
+                ligand_basename = os.path.basename(ligand_file)
+                potential_ligand = os.path.join(protein_dir, ligand_basename)
+                
+                if os.path.exists(potential_ligand):
+                    print(f"\nFound '{ligand_basename}' in the same directory as protein.")
+                    use_this = input("Use this file? (y/n): ").strip().lower()
+                    if use_this == 'y':
+                        ligand_file = potential_ligand
+                    else:
+                        ligand_file = input("Enter correct path to ligand file: ").strip()
+                else:
+                    # List potential ligand files
+                    ligand_extensions = ['.pdb', '.pdbqt', '.mol2', '.sdf']
+                    ligand_files = [f for f in os.listdir(protein_dir) 
+                                  if any(f.endswith(ext) for ext in ligand_extensions) 
+                                  and f != os.path.basename(protein_file)]
+                    
+                    if ligand_files:
+                        print(f"\nFound {len(ligand_files)} potential ligand files:")
+                        for i, f in enumerate(ligand_files):
+                            print(f"  {i+1}. {f}")
+                        choice = input("\nSelect ligand file by number (or press Enter to input manually): ").strip()
+                        if choice.isdigit() and 1 <= int(choice) <= len(ligand_files):
+                            ligand_file = os.path.join(protein_dir, ligand_files[int(choice)-1])
+                        else:
+                            ligand_file = input("Enter full path to ligand file: ").strip()
+                    else:
+                        ligand_file = input("Enter full path to ligand file: ").strip()
+            else:
+                ligand_file = input("Enter correct path to ligand file: ").strip()
+            
+            # Final check
+            if not os.path.exists(ligand_file):
+                print(f"Error: Still cannot find {ligand_file}")
+                return
         
         output_dir = input("Output directory (default 'flux_analysis_uma'): ").strip() or "flux_analysis_uma"
         
