@@ -871,11 +871,25 @@ def main():
                     for key, value in loaded_params.items():
                         print(f"  {key}: {value}")
                     
-                    # Check if protein/ligand files are in parameters
-                    if 'protein_file' in loaded_params:
-                        protein_file = loaded_params['protein_file']
-                    if 'ligand_file' in loaded_params:
-                        ligand_file = loaded_params['ligand_file']
+                    # Ask about protein and ligand files
+                    if 'protein_file' in loaded_params and 'ligand_file' in loaded_params:
+                        print(f"\nLoaded protein: {loaded_params['protein_file']}")
+                        print(f"Loaded ligand: {loaded_params['ligand_file']}")
+                        use_same = input("\nUse the same protein and ligand files? (y/n): ").strip().lower()
+                        
+                        if use_same == 'y':
+                            protein_file = loaded_params['protein_file']
+                            ligand_file = loaded_params['ligand_file']
+                        else:
+                            # Will ask for new files below
+                            protein_file = None
+                            ligand_file = None
+                    else:
+                        # If files weren't in the loaded params, use them if available
+                        if 'protein_file' in loaded_params:
+                            protein_file = loaded_params['protein_file']
+                        if 'ligand_file' in loaded_params:
+                            ligand_file = loaded_params['ligand_file']
             else:
                 print(f"File not found: {params_file}")
                 use_existing = 'n'
