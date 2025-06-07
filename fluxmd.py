@@ -822,6 +822,9 @@ def main():
         starting_distance = input("Starting distance in Angstroms (default 20.0): ").strip()
         starting_distance = float(starting_distance) if starting_distance else 20.0
         
+        approach_distance = input("Distance step between approaches in Angstroms (default 2.5): ").strip()
+        approach_distance = float(approach_distance) if approach_distance else 2.5
+        
         n_rotations = input("Rotations per position (default 36): ").strip()
         n_rotations = int(n_rotations) if n_rotations else 36
         
@@ -836,7 +839,8 @@ def main():
         print(f"  Steps: {n_steps}")
         print(f"  Iterations: {n_iterations}")
         print(f"  Approaches: {n_approaches}")
-        print(f"  Distance: {starting_distance} Å")
+        print(f"  Starting distance: {starting_distance} Å")
+        print(f"  Approach distance: {approach_distance} Å")
         print(f"  Rotations: {n_rotations}")
         print(f"  pH: {physiological_pH}")
         
@@ -859,6 +863,7 @@ def main():
             "-i", str(n_iterations),
             "-a", str(n_approaches),
             "-d", str(starting_distance),
+            "--approach-distance", str(approach_distance),
             "-r", str(n_rotations),
             "--ph", str(physiological_pH)
         ]

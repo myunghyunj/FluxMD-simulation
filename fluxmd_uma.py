@@ -193,6 +193,8 @@ def main():
                        help='Starting distance in Angstroms (default: 20.0)')
     parser.add_argument('-r', '--rotations', type=int, default=36,
                        help='Number of rotations per position (default: 36)')
+    parser.add_argument('--approach-distance', type=float, default=2.5,
+                       help='Distance step between approaches in Angstroms (default: 2.5)')
     parser.add_argument('--ph', type=float, default=7.4,
                        help='Physiological pH (default: 7.4)')
     parser.add_argument('--cpu', action='store_true',
@@ -239,6 +241,8 @@ def main():
             args.distance = loaded_params['starting_distance']
         if 'n_rotations' in loaded_params:
             args.rotations = loaded_params['n_rotations']
+        if 'approach_distance' in loaded_params:
+            args.approach_distance = loaded_params['approach_distance']
         if 'physiological_pH' in loaded_params:
             args.ph = loaded_params['physiological_pH']
         
@@ -275,7 +279,8 @@ def main():
     print(f"  Steps: {args.steps}")
     print(f"  Iterations: {args.iterations}")
     print(f"  Approaches: {args.approaches}")
-    print(f"  Distance: {args.distance} Angstroms")
+    print(f"  Starting distance: {args.distance} Angstroms")
+    print(f"  Approach distance: {args.approach_distance} Angstroms")
     print(f"  Rotations: {args.rotations}")
     print(f"  pH: {args.ph}")
     print(f"  Device: {'GPU (UMA-optimized)' if has_gpu else 'CPU'}")
@@ -353,6 +358,7 @@ def main():
             n_iterations=args.iterations,
             n_approaches=args.approaches,
             starting_distance=args.distance,
+            approach_distance=args.approach_distance,
             n_rotations=args.rotations,
             use_gpu=has_gpu,
             physiological_pH=args.ph,
