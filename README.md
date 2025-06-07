@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 ## TL;DR 
-FluxMD identifies protein-ligand binding sites as energy sinkholes—regions where molecular forces converge on the protein surface. Unlike traditional docking methods that sample static conformations, FluxMD analyzes the dynamic flow of interaction energy through continuous trajectories, revealing how proteins channel ligand binding through their inherent force fields.
+FluxMD postulates protein-ligand binding sites as energy sinkholes—regions where molecular forces converge on the protein surface. Unlike traditional docking methods that sample static conformations or giving local residue freedom (scope subject to heuristic designation), FluxMD analyzes the overall dynamic flow of interaction energy through continuous trajectories, revealing how proteins channel ligand binding through their inherent force fields.
 
 Mind that uma versions indicate FluxMD for unified memory architecture (UMA) hardwares—i.e. Apple Silicon. FluxMD recognizes and leverages to facilitate heavy simulations.
 
@@ -14,7 +14,7 @@ Imagine a protein surface as a dynamic energy landscape, shaped by countless ato
 
 **FluxMD** reveals these hidden binding sites by following the flow of energy itself. Rather than searching for static pockets or sampling discrete conformations, FluxMD traces how interaction forces propagate across the protein surface, identifying regions where energy flux converges—much like finding whirlpools by watching the flow of water.
 
-### A New Paradigm in Binding Site Discovery
+### A Cartography for Binding Site Discovery
 
 Traditional docking methods ask: *"Where does the ligand fit?"*  
 FluxMD asks: *"Where does the energy flow?"*
