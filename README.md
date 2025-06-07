@@ -480,7 +480,7 @@ FluxMD calculates energy flux differential Φᵢ for each residue using combined
 **Φᵢ = ⟨|E̅ᵢ|⟩ · Cᵢ · (1 + τᵢ)**
 
 where:
-- **E̅ᵢ = E_inter + E_intra** (합벡터 - combined force vector)
+- **E̅ᵢ = E_inter + E_intra** (combined force vector)
 - **⟨|E̅ᵢ|⟩** = mean magnitude of combined energy vectors
 - **Cᵢ** = directional consistency (0-1)
 - **τᵢ** = temporal fluctuation rate
