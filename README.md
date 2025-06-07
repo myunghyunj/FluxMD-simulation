@@ -5,7 +5,7 @@
 ## TL;DR 
 FluxMD identifies protein-ligand binding sites as energy sinkholes—regions where molecular forces converge on the protein surface. Unlike traditional docking methods that sample static conformations, FluxMD analyzes the dynamic flow of interaction energy through continuous trajectories, revealing how proteins channel ligand binding through their inherent force fields.
 
-Mind that uma versions indicate unified memory architectures (UMA)—i.e. Apple Silicon. FluxMD recognizes and leverages to facilitate heavy simulations.
+Mind that uma versions indicate FluxMD for unified memory architecture (UMA) hardwares—i.e. Apple Silicon. FluxMD recognizes and leverages to facilitate heavy simulations.
 
 
 ## The Physics of Molecular Recognition
