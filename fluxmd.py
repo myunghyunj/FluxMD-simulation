@@ -259,14 +259,34 @@ def parse_simulation_parameters(params_file):
                     params['n_iterations'] = int(value)
                 elif key == "Number of approaches":
                     params['n_approaches'] = int(value)
-                elif key == "Approach distance":
-                    params['approach_distance'] = float(value.replace(' Angstroms', ''))
+                elif key == "Approach distance" or key == "Initial approach distance":
+                    # Handle various formats: "2.5", "2.5 Angstroms", "2.5 Å"
+                    clean_value = value.replace(' Angstroms', '').replace(' Å', '').strip()
+                    params['approach_distance'] = float(clean_value)
                 elif key == "Starting distance":
-                    params['starting_distance'] = float(value.replace(' Angstroms', ''))
+                    # Handle various formats
+                    clean_value = value.replace(' Angstroms', '').replace(' Å', '').strip()
+                    params['starting_distance'] = float(clean_value)
                 elif key == "Rotations per position":
                     params['n_rotations'] = int(value)
                 elif key == "pH":
                     params['physiological_pH'] = float(value)
+                elif key == "Protein":
+                    params['protein_file'] = value
+                elif key == "Ligand":
+                    params['ligand_file'] = value
+                elif key == "Protein name":
+                    params['protein_name'] = value
+                elif key == "Final distance":
+                    # Handle final distance if present
+                    clean_value = value.replace(' Angstroms', '').replace(' Å', '').replace('~', '').strip()
+                    try:
+                        params['final_distance'] = float(clean_value)
+                    except:
+                        pass  # Skip if can't parse
+                elif key == "Mode":
+                    # Store trajectory mode for reference
+                    params['mode'] = value
         
         return params
     
@@ -793,24 +813,13 @@ def main():
         print("This uses zero-copy GPU processing for maximum performance.")
         print("Best for Apple Silicon Macs and systems with unified memory.\n")
         
-        # Get input files
-        protein_file = input("Enter protein PDB file: ").strip()
-        if not os.path.exists(protein_file):
-            print(f"Error: {protein_file} not found!")
-            return
+        # Initialize variables
+        protein_file = None
+        ligand_file = None
+        loaded_params = None
         
-        ligand_file = input("Enter ligand PDB file: ").strip()
-        if not os.path.exists(ligand_file):
-            print(f"Error: {ligand_file} not found!")
-            return
-        
-        output_dir = input("Output directory (default 'flux_analysis_uma'): ").strip() or "flux_analysis_uma"
-        
-        # Ask about simulation parameters
-        print("\nSIMULATION PARAMETERS")
-        
-        # Ask if user wants to use existing parameters
-        use_existing = input("\nLoad parameters from existing simulation? (y/n): ").strip().lower()
+        # Ask if user wants to use existing parameters first
+        use_existing = input("Load parameters from existing simulation? (y/n): ").strip().lower()
         
         if use_existing == 'y':
             params_file = input("Enter path to simulation_parameters.txt: ").strip()
@@ -821,24 +830,50 @@ def main():
                     for key, value in loaded_params.items():
                         print(f"  {key}: {value}")
                     
-                    confirm = input("\nUse these parameters? (y/n): ").strip().lower()
-                    if confirm == 'y':
-                        # Use loaded parameters
-                        n_steps = loaded_params.get('n_steps', 200)
-                        n_iterations = loaded_params.get('n_iterations', 10)
-                        n_approaches = loaded_params.get('n_approaches', 10)
-                        approach_distance = loaded_params.get('approach_distance', 2.5)
-                        starting_distance = loaded_params.get('starting_distance', 20.0)
-                        n_rotations = loaded_params.get('n_rotations', 36)
-                        physiological_pH = loaded_params.get('physiological_pH', 7.4)
-                    else:
-                        use_existing = 'n'  # Fall back to manual entry
-                else:
-                    print("Failed to parse parameters file.")
-                    use_existing = 'n'
+                    # Check if protein/ligand files are in parameters
+                    if 'protein_file' in loaded_params:
+                        protein_file = loaded_params['protein_file']
+                    if 'ligand_file' in loaded_params:
+                        ligand_file = loaded_params['ligand_file']
             else:
                 print(f"File not found: {params_file}")
                 use_existing = 'n'
+        
+        # Get input files if not loaded from parameters
+        if not protein_file:
+            protein_file = input("\nEnter protein PDB file: ").strip()
+        if not os.path.exists(protein_file):
+            print(f"Error: {protein_file} not found!")
+            return
+        
+        if not ligand_file:
+            ligand_file = input("Enter ligand PDB file: ").strip()
+        if not os.path.exists(ligand_file):
+            print(f"Error: {ligand_file} not found!")
+            return
+        
+        output_dir = input("Output directory (default 'flux_analysis_uma'): ").strip() or "flux_analysis_uma"
+        
+        # Continue with parameter confirmation if loaded
+        print("\nSIMULATION PARAMETERS")
+        
+        if use_existing == 'y' and loaded_params:
+            confirm = input("\nUse these parameters? (y/n): ").strip().lower()
+            if confirm == 'y':
+                # Use loaded parameters
+                n_steps = loaded_params.get('n_steps', 200)
+                n_iterations = loaded_params.get('n_iterations', 10)
+                n_approaches = loaded_params.get('n_approaches', 10)
+                approach_distance = loaded_params.get('approach_distance', 2.5)
+                starting_distance = loaded_params.get('starting_distance', 20.0)
+                n_rotations = loaded_params.get('n_rotations', 36)
+                physiological_pH = loaded_params.get('physiological_pH', 7.4)
+            else:
+                use_existing = 'n'  # Fall back to manual entry
+        else:
+            if use_existing == 'y':
+                print("Failed to parse parameters file.")
+            use_existing = 'n'
         
         if use_existing != 'y':
             # Manual parameter entry

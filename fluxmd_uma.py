@@ -47,10 +47,14 @@ def parse_simulation_parameters(params_file):
                     params['n_iterations'] = int(value)
                 elif key == "Number of approaches":
                     params['n_approaches'] = int(value)
-                elif key == "Approach distance":
-                    params['approach_distance'] = float(value.replace(' Angstroms', '').replace(' Å', ''))
+                elif key == "Approach distance" or key == "Initial approach distance":
+                    # Handle various formats: "2.5", "2.5 Angstroms", "2.5 Å"
+                    clean_value = value.replace(' Angstroms', '').replace(' Å', '').strip()
+                    params['approach_distance'] = float(clean_value)
                 elif key == "Starting distance":
-                    params['starting_distance'] = float(value.replace(' Angstroms', '').replace(' Å', ''))
+                    # Handle various formats
+                    clean_value = value.replace(' Angstroms', '').replace(' Å', '').strip()
+                    params['starting_distance'] = float(clean_value)
                 elif key == "Rotations per position":
                     params['n_rotations'] = int(value)
                 elif key == "pH":
@@ -61,6 +65,16 @@ def parse_simulation_parameters(params_file):
                     params['ligand_file'] = value
                 elif key == "Protein name":
                     params['protein_name'] = value
+                elif key == "Final distance":
+                    # Handle final distance if present
+                    clean_value = value.replace(' Angstroms', '').replace(' Å', '').replace('~', '').strip()
+                    try:
+                        params['final_distance'] = float(clean_value)
+                    except:
+                        pass  # Skip if can't parse
+                elif key == "Mode":
+                    # Store trajectory mode for reference
+                    params['mode'] = value
                 elif key == "Output directory" or "OUTPUT DIRECTORY" in key:
                     # Skip the header line
                     continue
