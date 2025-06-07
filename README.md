@@ -27,7 +27,7 @@ FluxMD's breakthrough lies in treating proteins as pre-stressed mechanical syste
 
 - **Static intra-protein forces** that maintain native conformation
 - **Dynamic protein-ligand interactions** sampled through winding trajectories
-- **Unified vector analysis** (합벡터) that reveals how these forces converge
+- **Unified vector analysis** that reveals how these forces converge
 
 This unified approach captures phenomena invisible to conventional methods—allosteric sites, cryptic pockets, and conformational selection mechanisms emerge naturally from the physics of force propagation.
 
