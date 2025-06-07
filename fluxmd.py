@@ -497,6 +497,47 @@ def run_complete_workflow():
         n_protein_atoms = 5000  # Default estimates
         n_ligand_atoms = 50
     
+    # Check for input file issues
+    if n_protein_atoms < 50:
+        print(f"\n❌ ERROR: Protein file has only {n_protein_atoms} atoms!")
+        print(f"   This appears to be a small molecule, not a protein structure.")
+        print(f"   Please provide a proper protein PDB file.")
+        print(f"\n   Common issues:")
+        print(f"   - You may have swapped the protein and ligand files")
+        print(f"   - The protein file might be corrupted or incomplete")
+        print(f"   - You might be using a ligand file as the protein input")
+        return
+    
+    # Check if "ligand" is actually another protein
+    is_protein_protein = n_ligand_atoms > 500  # Threshold for protein vs small molecule
+    
+    if is_protein_protein:
+        print(f"\n⚠️  PROTEIN-PROTEIN INTERACTION DETECTED")
+        print(f"   'Ligand' has {n_ligand_atoms:,} atoms - this appears to be another protein.")
+        print(f"   Total system size: {n_protein_atoms + n_ligand_atoms:,} atoms")
+        print(f"\n   RECOMMENDATION: Use UMA-optimized workflow (option 2) for better performance!")
+        print(f"   The standard workflow may be very slow for protein-protein interactions.")
+        
+        uma_choice = input("\n   Switch to UMA workflow now? (recommended) (y/n): ").strip().lower()
+        if uma_choice == 'y':
+            print("\n   Redirecting to UMA workflow...")
+            # Run UMA workflow with current files
+            import subprocess
+            cmd = [
+                sys.executable, "fluxmd_uma.py", 
+                protein_file, ligand_file, 
+                "-o", output_dir,
+                "-s", str(n_steps),
+                "-i", str(n_iterations),
+                "-a", str(n_approaches),
+                "-d", str(starting_distance),
+                "--approach-distance", str(approach_distance),
+                "-r", str(n_rotations),
+                "--ph", str(physiological_pH)
+            ]
+            subprocess.run(cmd)
+            return
+    
     # Calculate total operations
     frames_per_iteration = n_steps * n_approaches
     total_frames = frames_per_iteration * n_iterations
