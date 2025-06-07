@@ -328,12 +328,25 @@ class ProteinLigandFluxAnalyzer:
         
         # Calculate protein's principal axes using PCA
         centered_coords = protein_coords - protein_center
-        cov_matrix = np.cov(centered_coords.T)
-        eigenvalues, eigenvectors = np.linalg.eig(cov_matrix)
         
-        # Sort by eigenvalue to get principal axes
-        idx = eigenvalues.argsort()[::-1]
-        principal_axes = eigenvectors[:, idx]
+        # Check if we have enough atoms for PCA
+        if len(protein_coords) < 3:
+            print(f"  ⚠️  Warning: Only {len(protein_coords)} protein atoms found.")
+            print("      This appears to be a ligand file, not a protein structure.")
+            print("      Please provide a proper protein PDB file with more atoms.")
+            # Use default axes
+            principal_axes = np.eye(3)
+        else:
+            try:
+                cov_matrix = np.cov(centered_coords.T)
+                eigenvalues, eigenvectors = np.linalg.eig(cov_matrix)
+                
+                # Sort by eigenvalue to get principal axes
+                idx = eigenvalues.argsort()[::-1]
+                principal_axes = eigenvectors[:, idx]
+            except np.linalg.LinAlgError:
+                print("  ⚠️  Warning: Cannot compute principal axes. Using default orientation.")
+                principal_axes = np.eye(3)
         
         # Initialize spherical coordinates for winding motion
         # Start at a random position

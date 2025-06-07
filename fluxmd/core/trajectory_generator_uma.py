@@ -221,6 +221,7 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
     import numpy as np
     import torch
     import pandas as pd
+    from ..analysis.flux_analyzer_uma import TrajectoryFluxAnalyzer
     
     # Get device
     device = get_device() if use_gpu else torch.device('cpu')
