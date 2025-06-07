@@ -2,10 +2,40 @@
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-
+## TL;DR 
 FluxMD identifies protein-ligand binding sites as energy sinkholes—regions where molecular forces converge on the protein surface. Unlike traditional docking methods that sample static conformations, FluxMD analyzes the dynamic flow of interaction energy through continuous trajectories, revealing how proteins channel ligand binding through their inherent force fields.
 
-Mind that _uma versions indicate unified memory architectures (UMA)—i.e. Apple Silicon. FluxMD recognizes and leverages to facilitate heavy simulations.
+Mind that uma versions indicate unified memory architectures (UMA)—i.e. Apple Silicon. FluxMD recognizes and leverages to facilitate heavy simulations.
+
+
+## The Physics of Molecular Recognition
+
+Imagine a protein surface as a dynamic energy landscape, shaped by countless atomic forces that create valleys, ridges, and—most importantly—sinkholes where molecular interactions naturally converge. These energy sinkholes are nature's binding sites, sculpted by evolution to capture specific molecular partners with exquisite precision.
+
+**FluxMD** reveals these hidden binding sites by following the flow of energy itself. Rather than searching for static pockets or sampling discrete conformations, FluxMD traces how interaction forces propagate across the protein surface, identifying regions where energy flux converges—much like finding whirlpools by watching the flow of water.
+
+### A New Paradigm in Binding Site Discovery
+
+Traditional docking methods ask: *"Where does the ligand fit?"*  
+FluxMD asks: *"Where does the energy flow?"*
+
+By combining dynamic trajectory exploration with physics-based force calculations, FluxMD captures the true energetic character of protein-ligand recognition. The method tracks how proteins channel interaction forces through their three-dimensional structure, revealing not just where ligands bind, but *why* they bind there—through the convergence of electrostatic attractions, hydrogen bonds, van der Waals forces, and aromatic interactions into focused energy sinkholes.
+
+### Key Innovation: The Unified Force Field
+
+FluxMD's breakthrough lies in treating proteins as pre-stressed mechanical systems. Just as architectural structures distribute loads through tension and compression, proteins maintain an internal force network that guides molecular recognition. FluxMD combines:
+
+- **Static intra-protein forces** that maintain native conformation
+- **Dynamic protein-ligand interactions** sampled through winding trajectories
+- **Unified vector analysis** (합벡터) that reveals how these forces converge
+
+This unified approach captures phenomena invisible to conventional methods—allosteric sites, cryptic pockets, and conformational selection mechanisms emerge naturally from the physics of force propagation.
+
+### Beyond Geometry: Understanding Binding Through Physics
+
+While pocket-based methods rely on shape complementarity, FluxMD operates on fundamental physical principles:
+Φᵢ = ⟨|E̅ᵢ|⟩ · Cᵢ · (1 + τᵢ)
+Where binding sites emerge not from geometric cavities, but from the convergence of force vectors—regions where the protein's internal stress field aligns with favorable ligand interactions to create thermodynamic sinkholes.
 
 ## Method
 
