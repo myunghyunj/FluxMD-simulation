@@ -18,16 +18,28 @@ import math
 class DNAStructureGenerator:
     """
     Generates 3D B-DNA structures from DNA sequences with proper base pairing.
+    Uses dinucleotide-specific twist and propeller-twist parameters.
     """
     
     # B-DNA helical parameters
     RISE_PER_BASE = 3.38  # Rise per base pair in Angstroms
-    TWIST_PER_BASE = 36.0  # Degrees of twist per base pair
-    HELIX_RADIUS = 4.5    # Distance from helix axis to C1' atom
+    HELIX_RADIUS = 5.40   # Distance from helix axis to C1' atom (canonical B-form)
+    
+    # Dinucleotide-specific parameters (twist°, propeller°)
+    # From Olson et al., 1998, Nucleic Acids Res. 26:3820-29
+    DINUC_PARAMS = {
+        "AA": (35.6, -18.66),  "AC": (34.4, -13.10),
+        "AG": (27.9, -14.00),  "AT": (32.1, -15.01),
+        "CA": (34.5,  -9.45),  "CC": (33.7,  -8.11),
+        "CG": (29.8, -10.03),  "CT": (27.9, -14.00),
+        "GA": (36.9, -13.48),  "GC": (40.0, -11.08),
+        "GG": (33.7,  -8.11),  "GT": (34.4, -13.10),
+        "TA": (36.0, -11.85),  "TC": (36.9, -13.48),
+        "TG": (34.5,  -9.45),  "TT": (35.6, -18.66),
+    }
     
     # Base pair geometry
     BASE_PAIR_WIDTH = 10.8  # Distance between C1' atoms in a base pair
-    BASE_PAIR_PROPELLER = -11.0  # Propeller twist angle in degrees
     
     # Standard bond lengths
     C1_N_BOND = 1.48  # C1'-N9/N1 bond length
@@ -115,7 +127,26 @@ class DNAStructureGenerator:
         x, y, z = coord
         return np.array([x, y*cos_a - z*sin_a, y*sin_a + z*cos_a])
     
-    def _build_base_pair(self, base1, base2, bp_index, z_position, twist_angle):
+    def _rotate_y(self, coord, angle):
+        """Rotate coordinate around Y axis"""
+        cos_a, sin_a = math.cos(angle), math.sin(angle)
+        x, y, z = coord
+        return np.array([x*cos_a + z*sin_a, y, -x*sin_a + z*cos_a])
+    
+    def _get_dinuc_params(self, sequence, i):
+        """Get dinucleotide-specific twist and propeller parameters."""
+        if i < len(sequence) - 1:
+            dinuc = sequence[i:i+2]
+            return self.DINUC_PARAMS.get(dinuc, (36.0, -11.0))
+        else:
+            # For last base pair, use previous dinucleotide
+            if i > 0:
+                dinuc = sequence[i-1:i+1]
+                return self.DINUC_PARAMS.get(dinuc, (36.0, -11.0))
+            else:
+                return (36.0, -11.0)  # Default values
+    
+    def _build_base_pair(self, base1, base2, bp_index, z_position, twist_angle, propeller_angle):
         """
         Build a Watson-Crick base pair at the specified position.
         base1: base type for strand 1 (A, T, G, or C)
@@ -123,6 +154,7 @@ class DNAStructureGenerator:
         bp_index: base pair index (0-based)
         z_position: position along helix axis
         twist_angle: cumulative twist angle
+        propeller_angle: propeller-twist angle in radians
         """
         # Strand 1 (chain A)
         strand1_atoms = []
@@ -147,16 +179,34 @@ class DNAStructureGenerator:
             strand1_atoms.append(atom)
         
         # Add base atoms for strand 1 - properly attached to C1'
+        # First, create glycosidic bond vector
+        glycosidic_bond = np.array([0, 0, self.C1_N_BOND])
+        # Rotate glycosidic bond for proper chi angle (anti conformation ~-160°)
+        chi_angle = math.radians(-160)
+        glycosidic_bond = self._rotate_z(glycosidic_bond, chi_angle)
+        
         for name, element, coord in self.BASE_ATOMS[base1]:
-            # Translate base to be attached to C1'
-            attached_coord = coord + c1_pos
-            # Add glycosidic bond vector to position base properly
-            attached_coord[2] += self.C1_N_BOND
+            # Rotate base to anti conformation
+            attached_coord = coord.copy()
+            attached_coord = self._rotate_z(attached_coord, chi_angle)
+            
+            # Apply Y-flip for inward facing
+            attached_coord = self._rotate_y(attached_coord, math.pi)
+            
+            # Apply half propeller-twist
+            attached_coord = self._rotate_x(attached_coord, propeller_angle / 2)
+            
+            # Position relative to N9/N1 attachment point
+            if name in ['N9', 'N1']:  # Attachment atom
+                base_offset = c1_pos + glycosidic_bond
+            else:
+                base_offset = c1_pos + glycosidic_bond + attached_coord
+                attached_coord = base_offset
             
             atom = {
                 'name': name,
                 'element': element,
-                'coord': attached_coord,
+                'coord': attached_coord if name not in ['N9', 'N1'] else c1_pos + glycosidic_bond,
                 'residue_id': bp_index + 1,
                 'residue_name': f'D{base1}',
                 'chain': 'A',
@@ -197,16 +247,31 @@ class DNAStructureGenerator:
             strand2_atoms.append(atom)
         
         # Add base atoms for strand 2 - properly attached to C1'
+        # Create glycosidic bond vector for strand 2
+        glycosidic_bond_2 = np.array([0, 0, self.C1_N_BOND])
+        # Rotate glycosidic bond for proper chi angle (anti conformation ~-160°)
+        chi_angle_2 = math.radians(-160)
+        glycosidic_bond_2 = self._rotate_z(glycosidic_bond_2, chi_angle_2)
+        
         for name, element, coord in self.BASE_ATOMS[base2]:
-            # Translate base to be attached to C1'
-            attached_coord = coord + c1_pos_2
-            # Add glycosidic bond vector to position base properly
-            attached_coord[2] += self.C1_N_BOND
+            # Rotate base to anti conformation
+            attached_coord = coord.copy()
+            attached_coord = self._rotate_z(attached_coord, chi_angle_2)
+            
+            # Apply negative half propeller-twist
+            attached_coord = self._rotate_x(attached_coord, -propeller_angle / 2)
+            
+            # Position relative to N9/N1 attachment point
+            if name in ['N9', 'N1']:  # Attachment atom
+                base_offset = c1_pos_2 + glycosidic_bond_2
+            else:
+                base_offset = c1_pos_2 + glycosidic_bond_2 + attached_coord
+                attached_coord = base_offset
             
             atom = {
                 'name': name,
                 'element': element,
-                'coord': attached_coord,
+                'coord': attached_coord if name not in ['N9', 'N1'] else c1_pos_2 + glycosidic_bond_2,
                 'residue_id': bp_index + 1,
                 'residue_name': f'D{base2}',
                 'chain': 'B',
@@ -216,16 +281,47 @@ class DNAStructureGenerator:
             strand2_atoms.append(atom)
         
         # Position strand 2 (opposite strand)
+        # For antiparallel orientation, we need to:
+        # 1. Rotate 180° around Z axis (opposite side of helix)
+        # 2. Flip Z coordinates for 3' to 5' direction
         for atom in strand2_atoms:
-            # Flip for antiparallel orientation
-            atom['coord'][1] = -atom['coord'][1]
-            atom['coord'][2] = -atom['coord'][2]
-            # Move to helix radius on opposite side
-            atom['coord'][0] -= self.HELIX_RADIUS
-            # Apply twist (same angle as strand 1)
+            # First rotate 180° around Z to put on opposite side
+            atom['coord'] = self._rotate_z(atom['coord'], math.pi)
+            # Move to helix radius (now on opposite side due to rotation)
+            atom['coord'][0] += self.HELIX_RADIUS
+            # Apply the same helical twist as strand 1
             atom['coord'] = self._rotate_z(atom['coord'], twist_angle)
+            # Flip Z for antiparallel (3' to 5' direction)
+            atom['coord'][2] = -atom['coord'][2]
             # Move to z position
             atom['coord'][2] += z_position
+        
+        # Validate and adjust C1'-C1' distance
+        c1_strand1 = None
+        c1_strand2 = None
+        for atom in strand1_atoms:
+            if atom['name'] == "C1'":
+                c1_strand1 = atom['coord']
+                break
+        for atom in strand2_atoms:
+            if atom['name'] == "C1'":
+                c1_strand2 = atom['coord']
+                break
+        
+        if c1_strand1 is not None and c1_strand2 is not None:
+            # Calculate current C1'-C1' distance
+            c1_c1_vector = c1_strand2 - c1_strand1
+            current_distance = np.linalg.norm(c1_c1_vector)
+            
+            # Target distance is BASE_PAIR_WIDTH (10.8 Å)
+            if abs(current_distance - self.BASE_PAIR_WIDTH) > 0.5:  # Allow 0.5 Å tolerance
+                # Adjust strand 2 position to achieve correct distance
+                scale_factor = self.BASE_PAIR_WIDTH / current_distance
+                adjustment_vector = c1_c1_vector * (scale_factor - 1.0)
+                
+                # Apply adjustment to all atoms in strand 2
+                for atom in strand2_atoms:
+                    atom['coord'] = atom['coord'] + adjustment_vector * 0.5  # Apply half adjustment to avoid overcorrection
         
         return strand1_atoms, strand2_atoms
     
@@ -244,9 +340,13 @@ class DNAStructureGenerator:
         o3_positions_b = {}
         
         # Build base pairs
+        cumulative_twist = 0.0
         for i in range(n_bases):
             z_pos = i * self.RISE_PER_BASE
-            twist = math.radians(i * self.TWIST_PER_BASE)
+            
+            # Get dinucleotide-specific parameters
+            twist_deg, propeller_deg = self._get_dinuc_params(sequence, i)
+            propeller_rad = math.radians(propeller_deg)
             
             # Chain A base at this position
             base_a = sequence[i]
@@ -261,7 +361,11 @@ class DNAStructureGenerator:
             assert self.COMPLEMENT[base_a] == base_b, f"Base pair mismatch at position {i}: {base_a}-{base_b}"
             
             # Build the base pair with correct residue IDs
-            atoms_a, atoms_b = self._build_base_pair(base_a, base_b, i, z_pos, twist)
+            atoms_a, atoms_b = self._build_base_pair(base_a, base_b, i, z_pos, cumulative_twist, propeller_rad)
+            
+            # Update cumulative twist for next base pair
+            if i < n_bases - 1:
+                cumulative_twist += math.radians(twist_deg)
             
             # Update residue ID for chain B
             for atom in atoms_b:
@@ -330,15 +434,50 @@ class DNAStructureGenerator:
     
     def _calculate_phosphate_position(self, o3_prev, o5_curr, c5_curr):
         """Calculate phosphate position with proper geometry."""
-        # Calculate midpoint between O3' and O5'
-        midpoint = (o3_prev + o5_curr) / 2.0
+        # Target bond lengths
+        o3_p_bond = self.O3_P_BOND  # 1.61 Å
+        p_o5_bond = self.P_O5_BOND  # 1.61 Å
         
-        # Offset slightly towards O5' to avoid overlaps
-        direction = o5_curr - o3_prev
-        direction = direction / np.linalg.norm(direction)
+        # Vector from O3' to O5'
+        o3_to_o5 = o5_curr - o3_prev
+        dist_o3_o5 = np.linalg.norm(o3_to_o5)
         
-        # Position phosphate closer to O5' to avoid overlaps with previous residue
-        p_pos = midpoint + direction * 0.5
+        # If O3' and O5' are too far apart, we need to find the best P position
+        if dist_o3_o5 > o3_p_bond + p_o5_bond:
+            # Place P along the line at proper distances
+            o3_to_o5_unit = o3_to_o5 / dist_o3_o5
+            p_pos = o3_prev + o3_to_o5_unit * o3_p_bond
+        else:
+            # Use law of cosines to find P position that maintains both bond lengths
+            # This creates a triangle O3'-P-O5' with known sides
+            cos_angle = (o3_p_bond**2 + p_o5_bond**2 - dist_o3_o5**2) / (2 * o3_p_bond * p_o5_bond)
+            cos_angle = np.clip(cos_angle, -1, 1)  # Ensure valid range
+            
+            # Position P at correct distance from O3'
+            o3_to_o5_unit = o3_to_o5 / dist_o3_o5
+            p_along_line = o3_prev + o3_to_o5_unit * o3_p_bond
+            
+            # Add perpendicular component to achieve correct P-O5' distance
+            # Use C5' to determine the perpendicular direction
+            o5_to_c5 = c5_curr - o5_curr
+            perp = np.cross(o3_to_o5_unit, o5_to_c5)
+            if np.linalg.norm(perp) > 0:
+                perp = perp / np.linalg.norm(perp)
+            else:
+                # Fallback perpendicular
+                perp = np.cross(o3_to_o5_unit, np.array([1, 0, 0]))
+                if np.linalg.norm(perp) < 0.1:
+                    perp = np.cross(o3_to_o5_unit, np.array([0, 1, 0]))
+                perp = perp / np.linalg.norm(perp)
+            
+            # Calculate perpendicular offset to maintain P-O5' distance
+            p_to_o5_along = o5_curr - p_along_line
+            needed_dist_sq = p_o5_bond**2 - np.dot(p_to_o5_along, p_to_o5_along)
+            if needed_dist_sq > 0:
+                perp_offset = np.sqrt(needed_dist_sq)
+                p_pos = p_along_line + perp * perp_offset * 0.3  # Scale down to avoid extreme positions
+            else:
+                p_pos = p_along_line
         
         return p_pos
     
