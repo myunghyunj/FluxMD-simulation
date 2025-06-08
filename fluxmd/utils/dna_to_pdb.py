@@ -39,12 +39,12 @@ class DNAStructureGenerator:
     }
     
     # Base pair geometry
-    BASE_PAIR_WIDTH = 10.8  # Distance between C1' atoms in a base pair
+    BASE_PAIR_WIDTH = 10.4  # Distance between C1' atoms in a base pair (from 2BNA)
     
     # Standard bond lengths
     C1_N_BOND = 1.48  # C1'-N9/N1 bond length
-    O3_P_BOND = 1.61  # O3'-P phosphodiester bond
-    P_O5_BOND = 1.61  # P-O5' phosphodiester bond
+    O3_P_BOND = 1.60  # O3'-P phosphodiester bond (from 2BNA)
+    P_O5_BOND = 1.60  # P-O5' phosphodiester bond (from 2BNA)
     
     # Watson-Crick base pairing
     COMPLEMENT = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
@@ -99,16 +99,16 @@ class DNAStructureGenerator:
         ]
     }
     
-    # Sugar-phosphate backbone atoms
+    # Sugar-phosphate backbone atoms (C2'-endo conformation from 2BNA)
     SUGAR_ATOMS = [
-        ("C1'", 'C', np.array([0.000, 0.000, -1.480])),
-        ("C2'", 'C', np.array([0.755, -1.217, -2.023])),
+        ("C1'", 'C', np.array([0.000, 0.000, -1.476])),  # Adjusted for correct bond length
+        ("C2'", 'C', np.array([0.670, -1.310, -1.890])), # C2'-endo configuration
         ("O4'", 'O', np.array([0.829, 1.179, -1.728])),
-        ("C3'", 'C', np.array([1.784, -0.564, -2.963])),
-        ("C4'", 'C', np.array([2.173, 0.751, -2.279])),
-        ("O3'", 'O', np.array([2.880, -1.433, -3.201])),
-        ("C5'", 'C', np.array([3.204, 0.706, -1.154])),
-        ("O5'", 'O', np.array([3.455, 2.007, -0.636])),
+        ("C3'", 'C', np.array([1.920, -0.900, -2.720])), # Adjusted for C2'-endo
+        ("C4'", 'C', np.array([2.100, 0.630, -2.450])),  
+        ("O3'", 'O', np.array([3.080, -1.600, -2.380])), # Positioned for correct O3'-P distance
+        ("C5'", 'C', np.array([3.204, 1.100, -1.480])),
+        ("O5'", 'O', np.array([3.380, 2.507, -1.540])),  # Positioned for correct P-O5' distance
     ]
     
     def __init__(self):
@@ -181,8 +181,8 @@ class DNAStructureGenerator:
         # Add base atoms for strand 1 - properly attached to C1'
         # First, create glycosidic bond vector
         glycosidic_bond = np.array([0, 0, self.C1_N_BOND])
-        # Rotate glycosidic bond for proper chi angle (anti conformation ~-160°)
-        chi_angle = math.radians(-160)
+        # Rotate glycosidic bond for proper chi angle (anti conformation ~-116° from 2BNA)
+        chi_angle = math.radians(-116)
         glycosidic_bond = self._rotate_z(glycosidic_bond, chi_angle)
         
         for name, element, coord in self.BASE_ATOMS[base1]:
@@ -249,8 +249,8 @@ class DNAStructureGenerator:
         # Add base atoms for strand 2 - properly attached to C1'
         # Create glycosidic bond vector for strand 2
         glycosidic_bond_2 = np.array([0, 0, self.C1_N_BOND])
-        # Rotate glycosidic bond for proper chi angle (anti conformation ~-160°)
-        chi_angle_2 = math.radians(-160)
+        # Rotate glycosidic bond for proper chi angle (anti conformation ~-116° from 2BNA)
+        chi_angle_2 = math.radians(-116)
         glycosidic_bond_2 = self._rotate_z(glycosidic_bond_2, chi_angle_2)
         
         for name, element, coord in self.BASE_ATOMS[base2]:
