@@ -127,6 +127,9 @@ class DNAStructureGenerator:
         # Strand 1 (chain A)
         strand1_atoms = []
         
+        # Find C1' position from sugar atoms
+        c1_pos = None
+        
         # Add sugar atoms for strand 1
         for name, element, coord in self.SUGAR_ATOMS:
             atom = {
@@ -138,15 +141,22 @@ class DNAStructureGenerator:
                 'chain': 'A',
                 'atom_id': self.atom_id_counter
             }
+            if name == "C1'":
+                c1_pos = coord.copy()
             self.atom_id_counter += 1
             strand1_atoms.append(atom)
         
-        # Add base atoms for strand 1
+        # Add base atoms for strand 1 - properly attached to C1'
         for name, element, coord in self.BASE_ATOMS[base1]:
+            # Translate base to be attached to C1'
+            attached_coord = coord + c1_pos
+            # Add glycosidic bond vector to position base properly
+            attached_coord[2] += self.C1_N_BOND
+            
             atom = {
                 'name': name,
                 'element': element,
-                'coord': coord.copy(),
+                'coord': attached_coord,
                 'residue_id': bp_index + 1,
                 'residue_name': f'D{base1}',
                 'chain': 'A',
@@ -167,6 +177,9 @@ class DNAStructureGenerator:
         # Strand 2 (chain B) - antiparallel
         strand2_atoms = []
         
+        # Find C1' position for strand 2
+        c1_pos_2 = None
+        
         # Add sugar atoms for strand 2
         for name, element, coord in self.SUGAR_ATOMS:
             atom = {
@@ -178,15 +191,22 @@ class DNAStructureGenerator:
                 'chain': 'B',
                 'atom_id': self.atom_id_counter
             }
+            if name == "C1'":
+                c1_pos_2 = coord.copy()
             self.atom_id_counter += 1
             strand2_atoms.append(atom)
         
-        # Add base atoms for strand 2
+        # Add base atoms for strand 2 - properly attached to C1'
         for name, element, coord in self.BASE_ATOMS[base2]:
+            # Translate base to be attached to C1'
+            attached_coord = coord + c1_pos_2
+            # Add glycosidic bond vector to position base properly
+            attached_coord[2] += self.C1_N_BOND
+            
             atom = {
                 'name': name,
                 'element': element,
-                'coord': coord.copy(),
+                'coord': attached_coord,
                 'residue_id': bp_index + 1,
                 'residue_name': f'D{base2}',
                 'chain': 'B',
@@ -310,9 +330,16 @@ class DNAStructureGenerator:
     
     def _calculate_phosphate_position(self, o3_prev, o5_curr, c5_curr):
         """Calculate phosphate position with proper geometry."""
-        # Simple linear interpolation for now
-        # Could be improved with proper tetrahedral angles
-        p_pos = o3_prev + (o5_curr - o3_prev) * (self.O3_P_BOND / np.linalg.norm(o5_curr - o3_prev))
+        # Calculate midpoint between O3' and O5'
+        midpoint = (o3_prev + o5_curr) / 2.0
+        
+        # Offset slightly towards O5' to avoid overlaps
+        direction = o5_curr - o3_prev
+        direction = direction / np.linalg.norm(direction)
+        
+        # Position phosphate closer to O5' to avoid overlaps with previous residue
+        p_pos = midpoint + direction * 0.5
+        
         return p_pos
     
     def _calculate_phosphate_oxygens(self, p_pos, o3_pos, o5_pos):
