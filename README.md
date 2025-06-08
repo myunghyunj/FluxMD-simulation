@@ -334,7 +334,7 @@ DNA sequence conversion:
 - Direct generation of B-DNA double helix from sequence (e.g., ATCGATCG)
 - Automatic complementary strand generation (A↔T, G↔C)
 - Pure Python implementation with proper Watson-Crick base pairing
-- Canonical B-DNA parameters: 3.38 Å rise, 34.3° twist per base
+- Canonical B-DNA parameters: 3.38 Å rise, 36° twist per base
 - Creates full atomic structure with bases, sugars, and phosphates
 - Proper intertwined double helix with antiparallel strands
 - CONECT records for backbone connectivity
