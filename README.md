@@ -260,6 +260,9 @@ FluxMD/
   - Creates B-DNA double helix from sequence
   - Automatic Watson-Crick pairing
   - Full atomic detail with backbone
+- **`dna_builder.py`** - Sequence-dependent DNA helix
+  - Uses `atomseq.py` templates if available
+  - Applies dinucleotide twist and propeller-twist
 
 ### Key Features by Module
 
@@ -275,6 +278,7 @@ FluxMD/
 | analysis/flux_analyzer.py | Statistical analysis | Bootstrap validation, heatmaps, p-values |
 | analysis/flux_analyzer_uma.py | UMA analysis | Direct GPU processing, scatter operations |
 | utils/dna_to_pdb.py | DNA generator | B-DNA helix, Watson-Crick pairing, full atoms |
+| utils/dna_builder.py | Sequence-aware DNA | Dinucleotide twist, optional templates |
 | visualization/visualize_multiflux.py | Multi-protein plots | Publication figures, comparative analysis |
 
 ## Usage
@@ -290,6 +294,8 @@ fluxmd
 ```bash
 # From command line - generates double helix with automatic complement
 fluxmd-dna ATCGATCG -o my_dna.pdb
+# Or using the standalone builder
+python dna_builder.py ATCGATCG -o helix.pdb --conect
 
 # Example: input ATCG generates:
 # Strand 1 (5'→3'): ATCG
@@ -334,7 +340,7 @@ DNA sequence conversion:
 - Direct generation of B-DNA double helix from sequence (e.g., ATCGATCG)
 - Automatic complementary strand generation (A↔T, G↔C)
 - Pure Python implementation with proper Watson-Crick base pairing
-- Canonical B-DNA parameters: 3.38 Å rise, 34.3° twist per base
+- Canonical B-DNA parameters: 3.38 Å rise, 36° twist per base
 - Creates full atomic structure with bases, sugars, and phosphates
 - Proper intertwined double helix with antiparallel strands
 - CONECT records for backbone connectivity

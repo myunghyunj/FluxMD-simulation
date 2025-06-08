@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """
-DNA Sequence to PDB Converter V2
-Generates a 3D B-DNA double helix structure from a given DNA sequence.
-Creates proper antiparallel strands with Watson-Crick base pairing.
-
-The input sequence is interpreted as 5' to 3' for chain A.
-Chain B is automatically generated as the reverse complement (3' to 5').
-
-CONECT records are optional (off by default) as modern viewers like PyMOL
-automatically detect bonds from atom distances and residue templates.
+DNA Sequence → PDB  (fixed B-DNA builder · 2025-06-08)
+-----------------------------------------------------
+• Canonical C1′ radius = 5.4 Å
+• Bases now oriented toward helix axis
+• Antiparallel strands, phosphates & CONECT remain as in v2
 """
 
 import numpy as np
@@ -23,7 +19,7 @@ class DNAStructureGenerator:
     # B-DNA helical parameters
     RISE_PER_BASE = 3.38  # Rise per base pair in Angstroms
     TWIST_PER_BASE = 36.0  # Degrees of twist per base pair
-    HELIX_RADIUS = 4.5    # Distance from helix axis to C1' atom
+    HELIX_RADIUS = 5.4    # Å (C1′ distance from axis)
     
     # Base pair geometry
     BASE_PAIR_WIDTH = 10.8  # Distance between C1' atoms in a base pair
@@ -114,6 +110,13 @@ class DNAStructureGenerator:
         cos_a, sin_a = math.cos(angle), math.sin(angle)
         x, y, z = coord
         return np.array([x, y*cos_a - z*sin_a, y*sin_a + z*cos_a])
+
+    def _rotate_y(self, coord, angle):
+        """Rotate `coord` around the Y-axis by `angle` radians."""
+        rot = np.array([[math.cos(angle), 0.0, math.sin(angle)],
+                        [0.0, 1.0, 0.0],
+                        [-math.sin(angle), 0.0, math.cos(angle)]])
+        return rot @ coord
     
     def _build_base_pair(self, base1, base2, bp_index, z_position, twist_angle):
         """
@@ -146,11 +149,10 @@ class DNAStructureGenerator:
             self.atom_id_counter += 1
             strand1_atoms.append(atom)
         
-        # Add base atoms for strand 1 - properly attached to C1'
+        # Add base atoms for strand 1 - flipped 180° about Y so bases face axis
         for name, element, coord in self.BASE_ATOMS[base1]:
-            # Translate base to be attached to C1'
+            coord = self._rotate_y(coord, math.pi)
             attached_coord = coord + c1_pos
-            # Add glycosidic bond vector to position base properly
             attached_coord[2] += self.C1_N_BOND
             
             atom = {
@@ -217,9 +219,6 @@ class DNAStructureGenerator:
         
         # Position strand 2 (opposite strand)
         for atom in strand2_atoms:
-            # Flip for antiparallel orientation
-            atom['coord'][1] = -atom['coord'][1]
-            atom['coord'][2] = -atom['coord'][2]
             # Move to helix radius on opposite side
             atom['coord'][0] -= self.HELIX_RADIUS
             # Apply twist (same angle as strand 1)
