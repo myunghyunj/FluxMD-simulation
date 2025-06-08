@@ -1170,16 +1170,12 @@ def main():
         if not output_name.endswith('.pdb'):
             output_name += '.pdb'
         
-        # Import the improved generator
+        # Import the DNA builder
         try:
-            # First try to import from separate file
-            from fluxmd.utils.dna_to_pdb_improved import DNAStructureGenerator
+            from fluxmd.utils.dna_to_pdb import DNABuilder
         except ImportError:
-            # If not available as separate file, use the embedded version
-            print("Using embedded DNA generator...")
-            # Here you would have the DNAStructureGenerator class defined inline
-            # For now, fall back to original
-            from fluxmd.utils.dna_to_pdb import DNAStructureGenerator
+            print("Error: Could not import DNA builder")
+            return
         
         print(f"\nGenerating B-DNA structure for: {sequence}")
         print(f"Sequence length: {len(sequence)} bp")
@@ -1189,12 +1185,12 @@ def main():
         print(f"  - Helix length: ~{len(sequence) * 3.38:.1f} Angstroms")
         
         try:
-            generator = DNAStructureGenerator()
-            generator.generate_dna(sequence)
-            generator.write_pdb(output_name)
+            builder = DNABuilder()
+            builder.build_dna(sequence)
+            builder.write_pdb(output_name)
             
             print(f"\nStructure successfully written to: {output_name}")
-            print(f"  Total atoms: {len(generator.atoms)}")
+            print(f"  Total atoms: {len(builder.atoms)}")
             print(f"  Base pairs: {len(sequence)}")
             print(f"  Chains: A (5' to 3'), B (3' to 5')")
             

@@ -2,8 +2,8 @@
 Utility modules for FluxMD
 """
 
-from .dna_to_pdb import DNAStructureGenerator
+from .dna_to_pdb import DNABuilder
 
 __all__ = [
-    'DNAStructureGenerator'
+    'DNABuilder'
 ]

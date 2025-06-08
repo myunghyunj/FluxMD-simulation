@@ -43,7 +43,7 @@ setup(
             "fluxmd=fluxmd.cli:main",
             "fluxmd-uma=fluxmd.cli:main_uma",
             "fluxmd-uma-interactive=fluxmd_uma_interactive:main",
-            "fluxmd-dna=fluxmd.utils.dna_to_pdb_v2:main",
+            "fluxmd-dna=fluxmd.utils.dna_to_pdb:main",
         ],
     },
     include_package_data=True,
