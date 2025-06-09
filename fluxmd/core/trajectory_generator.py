@@ -298,30 +298,18 @@ class ProteinLigandFluxAnalyzer:
         return D_angstrom_fs
     
     def generate_cocoon_trajectory(self, protein_coords, ligand_coords, ligand_atoms,
-                                  molecular_weight, n_steps=100, dt=40, 
+                                  molecular_weight, n_steps=100, dt=40,
                                   target_distance=35.0):
         """
         Generate cocoon-style trajectory that winds around protein like thread
-        
-        Args:
-            protein_coords: Array of protein atom coordinates (or CA coords)
-            ligand_coords: Ligand atom coordinates
-            ligand_atoms: Ligand atom data
-            molecular_weight: Molecular weight of ligand
-            n_steps: Number of trajectory steps
-            dt: Time step (fs)
-            target_distance: Initial/average distance from protein (Å)
-        
-        Returns:
-            trajectory: Array of positions shape (n_steps, 3)
-            times: Array of time points
+        FIXED: Allow closer approaches for H-bond detection
         """
         # Calculate diffusion coefficient
         D = self.calculate_diffusion_coefficient(molecular_weight)
         step_size = np.sqrt(2 * D * dt)
         
         # Increase step size for more visible motion
-        step_size *= 5.0  # Even more amplification for free motion
+        step_size *= 5.0
         
         # Find center and principal axes of protein
         protein_center = np.mean(protein_coords, axis=0)
@@ -329,19 +317,13 @@ class ProteinLigandFluxAnalyzer:
         # Calculate protein's principal axes using PCA
         centered_coords = protein_coords - protein_center
         
-        # Check if we have enough atoms for PCA
         if len(protein_coords) < 3:
             print(f"  ⚠️  Warning: Only {len(protein_coords)} protein atoms found.")
-            print("      This appears to be a ligand file, not a protein structure.")
-            print("      Please provide a proper protein PDB file with more atoms.")
-            # Use default axes
             principal_axes = np.eye(3)
         else:
             try:
                 cov_matrix = np.cov(centered_coords.T)
                 eigenvalues, eigenvectors = np.linalg.eig(cov_matrix)
-                
-                # Sort by eigenvalue to get principal axes
                 idx = eigenvalues.argsort()[::-1]
                 principal_axes = eigenvectors[:, idx]
             except np.linalg.LinAlgError:
@@ -349,20 +331,22 @@ class ProteinLigandFluxAnalyzer:
                 principal_axes = np.eye(3)
         
         # Initialize spherical coordinates for winding motion
-        # Start at a random position
-        theta = np.random.uniform(0, 2 * np.pi)  # Azimuthal angle
-        phi = np.random.uniform(np.pi/4, 3*np.pi/4)  # Polar angle (avoid poles)
+        theta = np.random.uniform(0, 2 * np.pi)
+        phi = np.random.uniform(np.pi/4, 3*np.pi/4)
         
         # Initial distance with more variation allowed
         current_radius = target_distance + np.max(cdist([protein_center], protein_coords)[0])
         
         # Angular velocities for winding motion
         theta_velocity = 2 * np.pi / (n_steps / 4)  # Complete ~4 winds
-        phi_velocity = 0.0  # Will add random perturbations
+        phi_velocity = 0.0
         
-        # Distance variation parameters
-        min_distance = 5.0  # Can come very close
-        max_distance = target_distance * 2.5  # Can go quite far
+        # FIXED: Allow much closer approaches for H-bond detection
+        min_distance = 2.0  # Allow approach to 2.0Å (H-bonds need < 3.5Å)
+        max_distance = target_distance * 2.5
+        
+        # Add periodic close approaches for sampling H-bonds
+        close_approach_frequency = n_steps // 10  # Make 10 close approaches
         
         trajectory = []
         times = []
@@ -374,7 +358,7 @@ class ProteinLigandFluxAnalyzer:
         
         for i in range(n_steps):
             # Update angular position with momentum (winding motion)
-            theta_momentum += np.random.randn() * 0.1  # Random angular acceleration
+            theta_momentum += np.random.randn() * 0.1
             phi_momentum += np.random.randn() * 0.05
             
             # Apply damping to momentum
@@ -389,9 +373,13 @@ class ProteinLigandFluxAnalyzer:
             phi = np.clip(phi, 0.1, np.pi - 0.1)
             
             # Distance variation with momentum
-            # Add random force that can push in/out
             distance_force = np.random.randn() * 2.0
             
+            # FIXED: Add periodic close approaches for H-bond sampling
+            if i % close_approach_frequency == 0:
+                # Force a close approach every N steps
+                distance_force -= 10.0  # Strong attractive force
+                
             # Add oscillatory component for natural in/out motion
             oscillation = 5.0 * np.sin(2 * np.pi * i / (n_steps / 6))
             
@@ -399,12 +387,12 @@ class ProteinLigandFluxAnalyzer:
             distance_momentum += distance_force + oscillation * 0.1
             distance_momentum *= 0.9  # Damping
             
-            # Update radius with large freedom
+            # Update radius
             current_radius += distance_momentum
             
-            # Soft boundaries - allow going close or far but with gentle resistance
+            # Enforce boundaries with stronger force for close approaches
             if current_radius < min_distance:
-                distance_momentum += (min_distance - current_radius) * 0.2
+                distance_momentum += (min_distance - current_radius) * 0.5  # Stronger repulsion at close range
             elif current_radius > max_distance:
                 distance_momentum -= (current_radius - max_distance) * 0.1
             
@@ -425,13 +413,14 @@ class ProteinLigandFluxAnalyzer:
             test_coords = ligand_coords + (pos_world - ligand_coords.mean(axis=0))
             
             if not self.collision_detector.check_collision(test_coords, ligand_atoms):
-                # No collision - accept position
                 trajectory.append(pos_world.copy())
                 times.append(i * dt)
             else:
                 # Collision detected - try adjusting radius
-                # Back off by increasing radius
-                for radius_adjust in [1.5, 3.0, 5.0]:
+                # For close approaches, try backing off gradually
+                radius_adjustments = np.linspace(0.5, 5.0, 10)
+                
+                for radius_adjust in radius_adjustments:
                     test_radius = current_radius + radius_adjust
                     
                     # Recalculate position with adjusted radius
@@ -445,25 +434,30 @@ class ProteinLigandFluxAnalyzer:
                     test_coords = ligand_coords + (pos_world_adj - ligand_coords.mean(axis=0))
                     
                     if not self.collision_detector.check_collision(test_coords, ligand_atoms):
-                        # Found collision-free position
                         trajectory.append(pos_world_adj.copy())
                         times.append(i * dt)
-                        # Update radius for next step
                         current_radius = test_radius
                         break
-                else:
-                    # If all attempts fail, skip this position
-                    # Continue winding but don't add to trajectory
-                    pass
         
         # Convert to numpy arrays
         trajectory = np.array(trajectory)
         times = np.array(times[:len(trajectory)])
         
+        # Print distance statistics for debugging
+        if len(trajectory) > 0:
+            distances_to_center = np.linalg.norm(trajectory - protein_center, axis=1)
+            protein_radius = np.max(cdist([protein_center], protein_coords)[0])
+            surface_distances = distances_to_center - protein_radius
+            
+            print(f"\n   Trajectory distance statistics:")
+            print(f"     Min distance from surface: {np.min(surface_distances):.1f} Å")
+            print(f"     Max distance from surface: {np.max(surface_distances):.1f} Å")
+            print(f"     Close approaches (<3.5Å): {np.sum(surface_distances < 3.5)} frames")
+            print(f"     H-bond range (<3.5Å): {100 * np.sum(surface_distances < 3.5) / len(surface_distances):.1f}% of frames")
+        
         # Ensure we have enough points
         if len(trajectory) < n_steps // 2:
             print(f"Warning: Only {len(trajectory)} collision-free positions found")
-            # Fall back to simpler method if needed
             return self.generate_simple_cocoon_trajectory(
                 protein_coords, ligand_coords, ligand_atoms,
                 molecular_weight, n_steps, dt, target_distance
@@ -472,7 +466,7 @@ class ProteinLigandFluxAnalyzer:
         return trajectory, times
     
     def generate_simple_cocoon_trajectory(self, protein_coords, ligand_coords, ligand_atoms,
-                                        molecular_weight, n_steps=100, dt=40, 
+                                        molecular_weight, n_steps=100, dt=40,
                                         target_distance=35.0):
         """Fallback simple cocoon trajectory for when winding fails"""
         # Calculate diffusion coefficient
@@ -598,7 +592,7 @@ class ProteinLigandFluxAnalyzer:
         
         return np.array(trajectory)
     
-    def generate_random_walk_trajectory(self, start_pos, n_steps, ligand_coords, 
+    def generate_random_walk_trajectory(self, start_pos, n_steps, ligand_coords,
                                       ligand_atoms, molecular_weight=300.0, dt=40,
                                       max_distance=None):
         """
@@ -938,8 +932,8 @@ class ProteinLigandFluxAnalyzer:
         """Calculate all non-covalent interactions with protonation awareness"""
         # Use protonation-aware interaction detection
         interactions_df = calculate_interactions_with_protonation(
-            protein_atoms, ligand_atoms, 
-            pH=self.physiological_pH, 
+            protein_atoms, ligand_atoms,
+            pH=self.physiological_pH,
             iteration_num=iteration_num
         )
         
@@ -972,8 +966,8 @@ class ProteinLigandFluxAnalyzer:
             interactions_df['vector_y'] = interactions_df['inter_vector_y'] + interactions_df['intra_vector_y']
             interactions_df['vector_z'] = interactions_df['inter_vector_z'] + interactions_df['intra_vector_z']
             interactions_df['combined_magnitude'] = np.sqrt(
-                interactions_df['vector_x']**2 + 
-                interactions_df['vector_y']**2 + 
+                interactions_df['vector_x']**2 +
+                interactions_df['vector_y']**2 +
                 interactions_df['vector_z']**2
             )
             
@@ -1310,7 +1304,7 @@ class ProteinLigandFluxAnalyzer:
         target_distance = np.mean(min_distances)
         
         ax2.plot(range(len(trajectory)), min_distances, 'b-', linewidth=2, label='Actual distance')
-        ax2.axhline(y=np.mean(min_distances), color='g', linestyle='--', linewidth=2, 
+        ax2.axhline(y=np.mean(min_distances), color='g', linestyle='--', linewidth=2,
                    label=f'Mean: {np.mean(min_distances):.1f} Å')
         ax2.fill_between(range(len(trajectory)), min_distances, alpha=0.3, color='lightblue')
         ax2.set_xlabel('Trajectory Step', fontsize=12, fontweight='bold')
@@ -1438,7 +1432,7 @@ class ProteinLigandFluxAnalyzer:
         protein_coords = protein_atoms[['x', 'y', 'z']].values
         ligand_coords = ligand_atoms[['x', 'y', 'z']].values
         
-        # Extract CA coordinates for cocoon trajectory  
+        # Extract CA coordinates for cocoon trajectory
         ca_coords = self.extract_ca_backbone(protein_atoms)
         
         # Calculate molecular weight
@@ -1492,7 +1486,7 @@ class ProteinLigandFluxAnalyzer:
                         'step': range(len(trajectory)),
                         'time_ps': times / 1000,
                         'x': trajectory[:, 0],
-                        'y': trajectory[:, 1], 
+                        'y': trajectory[:, 1],
                         'z': trajectory[:, 2],
                         'approach': approach_idx,
                         'initial_distance': initial_distance
@@ -1632,7 +1626,7 @@ class ProteinLigandFluxAnalyzer:
                     'step': range(len(trajectory)),
                     'time_ps': times / 1000,  # Convert fs to ps
                     'x': trajectory[:, 0],
-                    'y': trajectory[:, 1], 
+                    'y': trajectory[:, 1],
                     'z': trajectory[:, 2],
                     'approach': approach_idx,
                     'initial_distance': initial_distance

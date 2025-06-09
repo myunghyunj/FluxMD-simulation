@@ -5,6 +5,7 @@ This module is responsible for calculating raw interaction data on the GPU.
 The aggregation and flux calculation is handled by the FluxAnalyzer.
 
 Optimized for Unified Memory Architecture (UMA) - keeps everything on GPU.
+FIXED: Now uses the same energy functions as the reference implementation.
 """
 
 import torch
@@ -91,13 +92,14 @@ class GPUAcceleratedInteractionCalculator:
         
         properties = {
             'coords': torch.tensor(protein_atoms[['x', 'y', 'z']].values, device=self.device, dtype=torch.float32),
-            'residue_ids': torch.tensor(protein_atoms.get('residue_id', protein_atoms.get('resSeq', range(n_atoms))).values, 
+            'residue_ids': torch.tensor(protein_atoms.get('residue_id', protein_atoms.get('resSeq', range(n_atoms))).values,
                                        device=self.device, dtype=torch.long),
             'is_donor': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
             'is_acceptor': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
             'is_charged_pos': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
             'is_charged_neg': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
             'is_aromatic': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'formal_charges': torch.zeros(n_atoms, device=self.device, dtype=torch.float32),  # NEW: Track actual charges
         }
 
         # Process each atom for properties
@@ -119,6 +121,7 @@ class GPUAcceleratedInteractionCalculator:
             properties['is_acceptor'][i] = pa_atom.can_accept_hbond
             properties['is_charged_pos'][i] = pa_atom.formal_charge > 0
             properties['is_charged_neg'][i] = pa_atom.formal_charge < 0
+            properties['formal_charges'][i] = pa_atom.formal_charge  # Store actual charge value
             
             # Mark aromatic residues
             if atom['resname'] in ['PHE', 'TYR', 'TRP', 'HIS']:
@@ -138,6 +141,7 @@ class GPUAcceleratedInteractionCalculator:
             'is_charged_pos': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
             'is_charged_neg': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
             'is_aromatic': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'formal_charges': torch.zeros(n_atoms, device=self.device, dtype=torch.float32),  # NEW: Track actual charges
         }
         
         for i, (_, atom) in enumerate(ligand_atoms.iterrows()):
@@ -159,6 +163,7 @@ class GPUAcceleratedInteractionCalculator:
             properties['is_acceptor'][i] = pa_atom.can_accept_hbond
             properties['is_charged_pos'][i] = pa_atom.formal_charge > 0
             properties['is_charged_neg'][i] = pa_atom.formal_charge < 0
+            properties['formal_charges'][i] = pa_atom.formal_charge  # Store actual charge value
             
             # Mark potential aromatic atoms
             if element in ['C', 'N', 'O', 'S']:
@@ -166,7 +171,7 @@ class GPUAcceleratedInteractionCalculator:
         
         return properties
 
-    def calculate_interactions_for_frame(self, ligand_coords_gpu: torch.Tensor, 
+    def calculate_interactions_for_frame(self, ligand_coords_gpu: torch.Tensor,
                                        ligand_properties: Dict[str, torch.Tensor]) -> Optional[InteractionResult]:
         """Calculates all interactions for a single frame (ligand position) entirely on the GPU."""
         max_dist = max(self.cutoffs.values())
@@ -189,12 +194,14 @@ class GPUAcceleratedInteractionCalculator:
         p_pos = self.protein_properties['is_charged_pos'][p_idx]
         p_neg = self.protein_properties['is_charged_neg'][p_idx]
         p_aromatic = self.protein_properties['is_aromatic'][p_idx]
+        p_charges = self.protein_properties['formal_charges'][p_idx]  # Get actual charges
         
         l_donor = ligand_properties['is_donor'][l_idx]
         l_acceptor = ligand_properties['is_acceptor'][l_idx]
         l_pos = ligand_properties['is_charged_pos'][l_idx]
         l_neg = ligand_properties['is_charged_neg'][l_idx]
         l_aromatic = ligand_properties['is_aromatic'][l_idx]
+        l_charges = ligand_properties['formal_charges'][l_idx]  # Get actual charges
 
         # Detect interaction types and initialize type tracking
         hbond_mask = ((p_donor & l_acceptor) | (p_acceptor & l_donor)) & (distances <= self.cutoffs['hbond'])
@@ -208,28 +215,34 @@ class GPUAcceleratedInteractionCalculator:
         # Calculate energies
         energies = torch.zeros_like(distances)
         
-        # H-bonds
+        # H-bonds - FIXED: Now using Gaussian potential like reference implementation
         if hbond_mask.any():
             interaction_types[hbond_mask] = InteractionResult.HBOND
-            d0 = 2.8
             r = distances[hbond_mask]
-            energies[hbond_mask] = -5.0 * (5*(d0/r)**12 - 6*(d0/r)**10)
-            energies[hbond_mask] = torch.clamp(energies[hbond_mask], -8.0, -0.5)
+            # Gaussian potential: -5.0 * exp(-((distance - 2.8) / 0.5)^2)
+            energies[hbond_mask] = -5.0 * torch.exp(-((r - 2.8) / 0.5) ** 2)
+            
+            # Apply 1.5x multiplier for charged groups (matching reference)
+            charged_hbond_mask = hbond_mask & ((p_charges != 0) | (l_charges != 0))
+            if charged_hbond_mask.any():
+                energies[charged_hbond_mask] *= 1.5
         
-        # Salt bridges
+        # Salt bridges - FIXED: Now includes actual charge magnitudes
         if salt_mask.any():
             interaction_types[salt_mask] = InteractionResult.SALT_BRIDGE
             r = distances[salt_mask]
-            energies[salt_mask] = -332.0 / (4.0 * r * r)
+            # Include actual charge magnitudes in calculation
+            charge_products = torch.abs(p_charges[salt_mask] * l_charges[salt_mask])
+            energies[salt_mask] = -332.0 * charge_products / (4.0 * r * r)
             energies[salt_mask] = torch.clamp(energies[salt_mask], -10.0, -1.0)
         
-        # Pi-pi stacking
+        # Pi-pi stacking - keeping as is (already uses Gaussian-like form)
         if pi_pi_mask.any():
             interaction_types[pi_pi_mask] = InteractionResult.PI_PI
             r = distances[pi_pi_mask]
             energies[pi_pi_mask] = -4.0 * torch.exp(-((r - 3.8) / 1.5)**2)
         
-        # Pi-cation
+        # Pi-cation - keeping as is (already uses Gaussian-like form)
         if pi_cation_mask.any():
             interaction_types[pi_cation_mask] = InteractionResult.PI_CATION
             r = distances[pi_cation_mask]
@@ -312,7 +325,7 @@ class GPUAcceleratedInteractionCalculator:
                 
                 # Calculate interactions
                 result = self.calculate_interactions_for_frame(
-                    transformed_ligands[rot_idx], 
+                    transformed_ligands[rot_idx],
                     current_ligand_properties
                 )
                 
