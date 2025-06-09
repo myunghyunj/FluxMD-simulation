@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DNA to PDB Converter - Main version with correct phosphate connectivity
+DNA to PDB Converter - Enhanced version with dinucleotide-specific parameters
 Generates accurate B-DNA double helix structures from DNA sequences.
 """
 
@@ -10,15 +10,37 @@ import math
 from typing import Dict, List, Tuple
 
 class DNABuilder:
-    """Builds B-DNA structures with proper backbone connectivity."""
+    """Builds B-DNA structures with dinucleotide-specific parameters."""
     
     # Standard B-DNA parameters
-    RISE = 3.38  # Å per base pair
-    TWIST = 36.0  # degrees per base pair
+    RISE = 3.38  # Å per base pair (can vary by dinucleotide)
     RADIUS = 10.0  # Å from helix axis to phosphate
     
     # Watson-Crick pairing
     COMPLEMENT = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
+    
+    # Dinucleotide-specific twist angles (degrees)
+    # Based on Olson et al. (1998) PNAS 95:11163-11168
+    DINUCLEOTIDE_TWIST = {
+        'AA': 35.6, 'AT': 31.5, 'AG': 31.9, 'AC': 34.4,
+        'TA': 36.0, 'TT': 35.6, 'TG': 34.0, 'TC': 33.6,
+        'GA': 36.9, 'GT': 34.4, 'GG': 32.9, 'GC': 40.0,
+        'CA': 34.5, 'CT': 31.9, 'CG': 29.8, 'CC': 32.9,
+    }
+    
+    # Dinucleotide-specific rise values (Å)
+    DINUCLEOTIDE_RISE = {
+        'AA': 3.32, 'AT': 3.38, 'AG': 3.38, 'AC': 3.38,
+        'TA': 3.36, 'TT': 3.32, 'TG': 3.44, 'TC': 3.30,
+        'GA': 3.39, 'GT': 3.38, 'GG': 3.38, 'GC': 3.38,
+        'CA': 3.45, 'CT': 3.38, 'CG': 3.32, 'CC': 3.38,
+    }
+    
+    # Propeller twist angles for base pairs (degrees)
+    BASE_PAIR_PROPELLER = {
+        'AT': -11.0, 'TA': -11.0,
+        'GC': -10.5, 'CG': -10.5,
+    }
     
     # Atom templates (simplified but chemically accurate)
     # Sugar atoms relative to base attachment point
@@ -91,10 +113,42 @@ class DNABuilder:
         c, s = np.cos(angle), np.sin(angle)
         return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
     
+    def rotation_x(self, angle: float) -> np.ndarray:
+        """Rotation matrix around X axis (angle in radians)."""
+        c, s = np.cos(angle), np.sin(angle)
+        return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+    
+    def get_dinucleotide_params(self, base1: str, base2: str) -> Tuple[float, float]:
+        """Get twist and rise for a dinucleotide step."""
+        dinuc = base1 + base2
+        twist = self.DINUCLEOTIDE_TWIST.get(dinuc, 36.0)
+        rise = self.DINUCLEOTIDE_RISE.get(dinuc, 3.38)
+        return twist, rise
+    
+    def get_propeller_twist(self, base1: str, base2: str) -> float:
+        """Get propeller twist angle for a base pair."""
+        bp = base1 + base2
+        if bp in self.BASE_PAIR_PROPELLER:
+            return self.BASE_PAIR_PROPELLER[bp]
+        # Try reverse
+        bp_rev = base2 + base1
+        return self.BASE_PAIR_PROPELLER.get(bp_rev, -11.0)
+    
     def add_nucleotide(self, base_type: str, chain: str, res_id: int,
-                      position: np.ndarray, rotation: np.ndarray) -> Dict[str, np.ndarray]:
+                      position: np.ndarray, rotation: np.ndarray,
+                      propeller: float = 0.0) -> Dict[str, np.ndarray]:
         """Add a nucleotide (sugar + base) at the specified position."""
         atom_positions = {}
+        
+        # Apply propeller twist if specified
+        if propeller != 0.0 and chain == 'B':
+            # For chain B, apply negative propeller
+            prop_rot = self.rotation_x(-math.radians(propeller))
+            rotation = rotation @ prop_rot
+        elif propeller != 0.0:
+            # For chain A, apply positive propeller
+            prop_rot = self.rotation_x(math.radians(propeller))
+            rotation = rotation @ prop_rot
         
         # Add sugar atoms
         for atom_name, local_pos in self.SUGAR_ATOMS.items():
@@ -188,7 +242,7 @@ class DNABuilder:
         return 'N'  # Default
     
     def build_dna(self, sequence: str):
-        """Build B-DNA double helix from sequence."""
+        """Build B-DNA double helix from sequence with dinucleotide-specific parameters."""
         self.atoms = []
         n = len(sequence)
         
@@ -196,30 +250,42 @@ class DNABuilder:
         o3_positions = {'A': {}, 'B': {}}
         o5_positions = {'A': {}, 'B': {}}
         
-        # Build base pairs
+        # Build base pairs with dinucleotide-specific parameters
+        cumulative_twist = 0.0
+        z_position = 0.0
+        
         for i in range(n):
-            # Calculate position and orientation
-            z = i * self.RISE
-            twist = i * math.radians(self.TWIST)
+            # Get current base and its complement
+            base_a = sequence[i]
+            base_b = self.COMPLEMENT[base_a]
+            
+            # Get propeller twist for this base pair
+            propeller = self.get_propeller_twist(base_a, base_b)
             
             # Chain A (5' to 3')
-            rot_a = self.rotation_z(twist)
-            pos_a = np.array([self.RADIUS / 2, 0, z])
+            rot_a = self.rotation_z(cumulative_twist)
+            pos_a = np.array([self.RADIUS / 2, 0, z_position])
             pos_a[:2] = rot_a[:2, :2] @ np.array([self.RADIUS / 2, 0])
             
-            atom_pos_a = self.add_nucleotide(sequence[i], 'A', i + 1, pos_a, rot_a)
+            atom_pos_a = self.add_nucleotide(base_a, 'A', i + 1, pos_a, rot_a, propeller/2)
             o3_positions['A'][i + 1] = atom_pos_a["O3'"]
             o5_positions['A'][i + 1] = atom_pos_a["O5'"]
             
             # Chain B (3' to 5', antiparallel)
-            rot_b = self.rotation_z(twist + math.pi)  # 180° rotation for opposite strand
-            pos_b = np.array([-self.RADIUS / 2, 0, z])
+            rot_b = self.rotation_z(cumulative_twist + math.pi)  # 180° rotation for opposite strand
+            pos_b = np.array([-self.RADIUS / 2, 0, z_position])
             pos_b[:2] = rot_b[:2, :2] @ np.array([self.RADIUS / 2, 0])
             
-            complement = self.COMPLEMENT[sequence[i]]
-            atom_pos_b = self.add_nucleotide(complement, 'B', n - i, pos_b, rot_b)
+            atom_pos_b = self.add_nucleotide(base_b, 'B', n - i, pos_b, rot_b, propeller/2)
             o3_positions['B'][n - i] = atom_pos_b["O3'"]
             o5_positions['B'][n - i] = atom_pos_b["O5'"]
+            
+            # Update position for next base pair
+            if i < n - 1:
+                # Get dinucleotide-specific parameters
+                twist_deg, rise = self.get_dinucleotide_params(base_a, sequence[i + 1])
+                cumulative_twist += math.radians(twist_deg)
+                z_position += rise
         
         # Add phosphate groups for backbone connectivity
         # Chain A: connect 5' to 3' (residues 1->2, 2->3, etc.)
@@ -236,7 +302,8 @@ class DNABuilder:
         """Write structure to PDB file."""
         with open(filename, 'w') as f:
             f.write("REMARK   Generated by FluxMD DNA Builder\n")
-            f.write("REMARK   B-DNA double helix structure\n")
+            f.write("REMARK   B-DNA with dinucleotide-specific parameters\n")
+            f.write("REMARK   Based on Olson et al. (1998) PNAS 95:11163-11168\n")
             
             atom_id = 1
             for atom in self.atoms:
@@ -272,6 +339,7 @@ def main():
     
     print(f"Building B-DNA structure for: 5'-{sequence}-3'")
     print(f"Complementary strand: 3'-{''.join(DNABuilder.COMPLEMENT[b] for b in sequence)}-5'")
+    print("Using dinucleotide-specific parameters...")
     
     # Build and save
     builder = DNABuilder()
@@ -280,6 +348,13 @@ def main():
     
     print(f"\nGenerated: {args.output}")
     print(f"Total atoms: {len(builder.atoms)}")
+    
+    # Report dinucleotide steps used
+    print("\nDinucleotide steps:")
+    for i in range(len(sequence) - 1):
+        dinuc = sequence[i:i+2]
+        twist, rise = builder.get_dinucleotide_params(sequence[i], sequence[i+1])
+        print(f"  {dinuc}: twist={twist}°, rise={rise} Å")
 
 if __name__ == '__main__':
     main()
