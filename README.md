@@ -144,10 +144,10 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
 ## Features
 
 ### Physics-Based Analysis
-- **Winding trajectories**: Ligand spirals around protein exploring all surfaces
-  - Cocoon-like hovering motion ensures complete surface sampling
-  - Oscillatory approach/retreat patterns mimic molecular breathing
-  - Thread-like spiraling with controlled pitch for systematic coverage
+- **Stochastic Trajectory Synthesis**: Ligands execute helical orbits via Brownian dynamics
+  - **Temporal discretization**: 40 fs sampling interval satisfies Shannon-Nyquist criterion for intermolecular forces (DC-10 THz passband) while deliberately aliasing intramolecular vibrations (>25 THz)
+  - **Overdamped regime**: Momentum relaxation (τ ≈ 10 fs) ensures Markovian dynamics; thermal bandwidth (kT/h ≈ 6.2 THz) resides comfortably below Nyquist frequency (12.5 THz)
+  - **Energy clipping**: 10 kcal/mol ceiling prevents Lennard-Jones singularities at r→0 while preserving physiological interaction magnitudes (-5 to +10 kcal/mol operating range)
 - **Force field integration**: Combines static protein forces with dynamic interactions
   - Static forces pre-computed once for efficiency
   - Dynamic forces calculated at each trajectory point
