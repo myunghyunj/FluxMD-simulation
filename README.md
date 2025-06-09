@@ -144,10 +144,11 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
 ## Features
 
 ### Physics-Based Analysis
-- **Winding trajectories**: Ligand spirals around protein exploring all surfaces
-  - Cocoon-like hovering motion ensures complete surface sampling
-  - Oscillatory approach/retreat patterns mimic molecular breathing
-  - Thread-like spiraling with controlled pitch for systematic coverage
+- **Random trajectories**: Ligand hovers around protein exploring all surfaces
+  - Ligands traverse helical trajectories with Brownian-resolved temporal sampling
+  - Thermodynamically windowed : 10 kcal/mol energetic ceiling circumscribes biologically plausible interactions while precluding
+  computational singularities (Steric clashes can reach +10 to +20 kcal/mol at close contact)
+
 - **Force field integration**: Combines static protein forces with dynamic interactions
   - Static forces pre-computed once for efficiency
   - Dynamic forces calculated at each trajectory point
@@ -174,6 +175,7 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
   - Flux magnitude correlates with -TΔS (entropic contribution)
   - Directional consistency reflects ΔH (enthalpic contribution)
   - Combined analysis approximates binding ΔG landscapes
+  - Further elaboration needed to correlate Flux and Gibbs Free Energy. Currently, energetics print out provided per iterations.
 
 ### GPU Acceleration
 - **Automatic optimization**: Detects Apple Silicon MPS or NVIDIA CUDA
