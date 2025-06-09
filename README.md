@@ -121,6 +121,7 @@ fluxmd
   - Preserves aromatic bond information
   - Generates proper 3D coordinates with planarity
   - Creates both PDB and SDF files (SDF retains aromaticity)
+  - *Note: CACTUS SDF to PDB conversion has been modified in this FluxMD module to properly preserve aromatic bond orders in CONECT records*
 - **Fallback method**: OpenBabel (local, when offline)
   - Basic 3D structure generation
   - May have limitations with complex aromatics
