@@ -241,16 +241,33 @@ class ProtonationAwareInteractionDetector:
         
         # Simple element-based rules for ligands
         if pa_atom.element == 'N':
-            # Most N are protonated at pH 7.4
-            pa_atom.formal_charge = +1
-            pa_atom.can_donate_hbond = True
-            pa_atom.protonation_state = "protonated"
+            # Check if it's likely an aromatic N (e.g., in heterocycles)
+            # For now, assume aromatic N are acceptors, not donors
+            # This is a simplification - ideally we'd check connectivity
+            atom_name = atom.get('name', '').upper()
+            if 'AR' in atom_name or atom.get('is_aromatic', False):
+                # Aromatic N (like in thiadiazole) are typically acceptors
+                pa_atom.can_accept_hbond = True
+                pa_atom.formal_charge = 0
+                pa_atom.protonation_state = "neutral"
+            else:
+                # Aliphatic N are often protonated at pH 7.4
+                pa_atom.formal_charge = +1
+                pa_atom.can_donate_hbond = True
+                pa_atom.protonation_state = "protonated"
+            
+            # FIXED: Also make N acceptors regardless (they can be both)
+            pa_atom.can_accept_hbond = True
         elif pa_atom.element == 'O':
             pa_atom.can_accept_hbond = True
             # Check if carboxylate (simplified)
             if 'COO' in atom.get('name', ''):
                 pa_atom.formal_charge = -0.5
                 pa_atom.protonation_state = "deprotonated"
+            # FIXED: O can also be donors if part of OH group
+            # This is simplified - ideally we'd check for attached H
+            if 'OH' in atom.get('name', '') or 'HO' in atom.get('name', ''):
+                pa_atom.can_donate_hbond = True
         elif pa_atom.element == 'S':
             pa_atom.can_accept_hbond = True
         elif pa_atom.element == 'H':
@@ -375,6 +392,12 @@ def enhance_fluxmd_with_protonation(protein_atoms: pd.DataFrame,
     print(f"\nProtonation Summary at pH {pH}:")
     print(f"Protein charged atoms: {(protein_enhanced['formal_charge'] != 0).sum()}")
     print(f"Ligand charged atoms: {(ligand_enhanced['formal_charge'] != 0).sum()}")
+    
+    # Add ligand donor/acceptor summary
+    ligand_donors = ligand_enhanced['can_donate_hbond'].sum()
+    ligand_acceptors = ligand_enhanced['can_accept_hbond'].sum()
+    print(f"Ligand H-bond donors: {ligand_donors}")
+    print(f"Ligand H-bond acceptors: {ligand_acceptors}")
     
     # Key residues
     for res in ['HIS', 'ASP', 'GLU', 'LYS', 'ARG', 'CYS']:

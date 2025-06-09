@@ -129,10 +129,22 @@ class GPUAcceleratedInteractionCalculator:
             
         self.protein_properties = properties
         print("   ✓ Protein properties pre-computed and stored on GPU")
+        
+        # FIXED: Add debug output for donor/acceptor detection
+        print(f"\n   Donor/Acceptor Statistics:")
+        print(f"     Total donors: {properties['is_donor'].sum().item()}")
+        print(f"     Total acceptors: {properties['is_acceptor'].sum().item()}")
+        print(f"     Charged positive: {properties['is_charged_pos'].sum().item()}")
+        print(f"     Charged negative: {properties['is_charged_neg'].sum().item()}")
+        print(f"     Aromatic atoms: {properties['is_aromatic'].sum().item()}")
 
     def precompute_ligand_properties(self, ligand_atoms: pd.DataFrame) -> Dict[str, torch.Tensor]:
         """Pre-computes ligand properties and returns them as GPU tensors."""
         n_atoms = len(ligand_atoms)
+        
+        # FIXED: Debug element detection
+        print(f"\n   Ligand element detection:")
+        element_counts = {}
         
         properties = {
             'coords': torch.tensor(ligand_atoms[['x', 'y', 'z']].values, device=self.device, dtype=torch.float32),
@@ -145,9 +157,27 @@ class GPUAcceleratedInteractionCalculator:
         }
         
         for i, (_, atom) in enumerate(ligand_atoms.iterrows()):
-            element = str(atom.get('element', '')).strip().upper()
-            if not element and atom.get('name'):
-                element = atom['name'][0].upper()
+            # FIXED: Properly handle element extraction
+            element = atom.get('element', '')
+            if element:
+                element = str(element).strip().upper()
+            else:
+                # If element is missing, check atom name
+                atom_name = str(atom.get('name', '')).strip()
+                if atom_name in ['N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I']:
+                    element = atom_name.upper()
+                elif atom_name.startswith('CL'):
+                    element = 'CL'
+                elif atom_name.startswith('BR'): 
+                    element = 'BR'
+                elif atom_name and atom_name[0] in ['C', 'N', 'O', 'S', 'P', 'H', 'F']:
+                    element = atom_name[0].upper()
+                else:
+                    element = 'C'  # Default
+                    print(f"WARNING: Could not determine element for atom {i} with name '{atom_name}', defaulting to C")
+            
+            # Track element counts for debug
+            element_counts[element] = element_counts.get(element, 0) + 1
             
             atom_dict = {
                 'name': atom.get('name', ''),
@@ -168,6 +198,16 @@ class GPUAcceleratedInteractionCalculator:
             # Mark potential aromatic atoms
             if element in ['C', 'N', 'O', 'S']:
                 properties['is_aromatic'][i] = True
+        
+        # Print element counts
+        print(f"     Elements found: {dict(sorted(element_counts.items()))}")
+        
+        # FIXED: Add debug output for ligand donor/acceptor detection
+        print(f"\n   Ligand Donor/Acceptor Statistics:")
+        print(f"     Total donors: {properties['is_donor'].sum().item()}")
+        print(f"     Total acceptors: {properties['is_acceptor'].sum().item()}")
+        print(f"     Charged positive: {properties['is_charged_pos'].sum().item()}")
+        print(f"     Charged negative: {properties['is_charged_neg'].sum().item()}")
         
         return properties
 
