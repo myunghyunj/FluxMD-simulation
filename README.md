@@ -136,7 +136,7 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
 - Creates Watson-Crick paired double helix
 - Uses crystallographic parameters (Olson et al., 1998)
 - Includes full atomic detail with backbone
-
+- Fun fact : B for B-DNA does not stand for binding DNA
 
 ## Features
 
