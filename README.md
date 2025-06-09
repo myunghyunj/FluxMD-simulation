@@ -17,6 +17,8 @@ FluxMD conceptualizes proteins as pre-stressed mechanical networks where binding
 
 **pH-Responsive Molecular Recognition**: FluxMD implements Henderson-Hasselbalch-based protonation state calculations that dynamically reassign residues as hydrogen bond donors or acceptors. At physiological pH, histidine (pKa ~6.0) exists in equilibrium between charged and neutral states, fundamentally altering its interaction profile—a phenomenon static protonation models cannot capture.
 
+**Brownian-Resolution Temporal Sampling**: FluxMD samples molecular interactions at 40-femtosecond resolution, capturing thermal fluctuations that govern biomolecular recognition. This temporal granularity—commensurate with bond vibration timescales—yields force tensors that encode both instantaneous interactions and their stochastic variations. Architecture-specific signal processing transforms these high-dimensional tensors into scalar flux metrics through convolution, filtering, and statistical aggregation.
+
 ### Non-Covalent Interaction Spectrum
 
 FluxMD quantifies the complete repertoire of molecular forces with distance- and geometry-dependent precision:
