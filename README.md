@@ -76,9 +76,9 @@ graph TD
     Analysis --> Output[Generate visualizations & reports]
 
     Start -->|2| UMA[UMA-Optimized Workflow]
-    UMA --> GPU[Zero-copy GPU pipeline]
+    UMA --> GPU[Unified memory GPU pipeline]
     GPU --> Direct[Direct tensor operations]
-    Direct --> Fast[100x faster analysis]
+    Direct --> Fast[Optimized analysis]
 
     Start -->|3| SMILES[SMILES to PDB Converter]
     SMILES --> CACTUS[NCI CACTUS web service]
@@ -95,7 +95,7 @@ FluxMD provides multiple entry points optimized for different use cases:
 ### 1. `fluxmd` - Interactive Interface
 The main entry point with a menu-driven interface:
 - **Option 1**: Standard workflow - Complete analysis with file I/O
-- **Option 2**: UMA workflow - GPU-accelerated zero-copy pipeline  
+- **Option 2**: UMA workflow - GPU-accelerated unified memory pipeline  
 - **Option 3**: SMILES converter - Chemical structure to PDB
 - **Option 4**: DNA generator - Sequence to double helix structure
 
@@ -185,14 +185,14 @@ results/
 | Pipeline | File I/O | Speed | Memory | Best For |
 |----------|----------|-------|---------|----------|
 | Standard (`fluxmd`) | Yes (CSV) | 1x | Low | Compatibility, debugging |
-| UMA (`fluxmd-uma`) | None | 100x+ | High | Production, large datasets |
+| UMA (`fluxmd-uma`) | None | Optimized | High | Production, large datasets |
 
 ### Benchmark Results (Apple M1 Pro)
 ```
 Processing 5M interactions:
 - Standard pipeline: 115 seconds
 - GPU optimized: 0.9 seconds  
-- UMA optimized: 0.4 seconds (287x speedup)
+- UMA optimized: 0.4 seconds
 ```
 
 ### When to Use Each Version
