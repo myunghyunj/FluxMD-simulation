@@ -212,10 +212,12 @@ Processing 5M interactions:
    - Static intra-protein forces (pre-computed once)
    - Dynamic protein-ligand interactions at each trajectory point
    - pH-dependent protonation states affect charges and H-bonds
-   - Adaptive neighbor search optimization:
-     - Small systems (<1M pairs): Direct GPU computation
-     - Medium systems (1M-100M pairs): Spatial hashing with O(1) lookups
-     - Large systems (>100M pairs): Octree + hierarchical distance filtering
+   - Neighbor search approaches:
+     - **Standard GPU pipeline**: Adaptive optimization based on system size
+       - Small systems (<1M pairs): Direct GPU computation
+       - Medium systems (1M-100M pairs): Spatial hashing with O(1) lookups
+       - Large systems (>100M pairs): Octree + hierarchical distance filtering
+     - **UMA pipeline**: Direct distance matrix via torch.cdist for all system sizes
 
 3. **Flux Analysis**  
    - Combines force vectors at each residue
