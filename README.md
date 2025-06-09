@@ -317,9 +317,9 @@ conda install -c conda-forge openbabel
 
 ```bibtex
 @software{fluxmd2024,
-  title={FluxMD: GPU-Accelerated Binding Site Discovery via Energy Flux Analysis},
+  title={FluxMD: Biophysical Cartography for Biomolecular Energy Dynamics},
   author={Myunghyun Jeong},
-  year={2024},
+  year={2025},
   url={https://github.com/panelarin/FluxMD}
 }
 ```
