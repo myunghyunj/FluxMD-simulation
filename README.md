@@ -5,6 +5,8 @@
 
 **FluxMD** maps binding interfaces between two biomolecules by tracing the flow of interaction energy. Unlike traditional docking, which samples static conformers, FluxMD follows dynamic energy flux as molecules orbit and engage, exposing regions where forces perturbate. Intrinsically optimized from physics-level to signal-processing code for modern chip architectures—i.e. GPU, UMA—FluxMD enables accelerated high-throughput screening of molecular dynamics. The method applies to protein–protein and protein–ligand systems, with support for protein–nucleic acid interactions underway. Each run produces a **stress barcode**, a reproducible energy signature unique to the molecular pair.
 
+![FluxMD Concept](images/fluxmd_concept.png)
+
 ## Program Flow
 
 ```mermaid
@@ -143,9 +145,35 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
 
 ### Physics-Based Analysis
 - **Winding trajectories**: Ligand spirals around protein exploring all surfaces
+  - Cocoon-like hovering motion ensures complete surface sampling
+  - Oscillatory approach/retreat patterns mimic molecular breathing
+  - Thread-like spiraling with controlled pitch for systematic coverage
 - **Force field integration**: Combines static protein forces with dynamic interactions
-- **Protonation awareness**: pH-dependent charges and hydrogen bonding
+  - Static forces pre-computed once for efficiency
+  - Dynamic forces calculated at each trajectory point
+  - Chip-friendly smoothed potential functions prevent singularities
+- **Protonation awareness**: pH-dependent charges via Henderson-Hasselbalch
+  - Dynamic pKa calculations for ionizable residues
+  - pH-responsive hydrogen bonding networks
+  - Physiological pH 7.4 default with adjustable settings
 - **Complete interaction types**: H-bonds, salt bridges, π-π stacking, π-cation, VDW
+  - Each interaction uses optimized mathematical formulations
+  - Smooth differentiable functions for numerical stability
+  - Hardware-accelerated vector operations
+
+### Energetics & Thermodynamics
+- **Energy capping**: Maximum 10 kcal/mol prevents singularities at r→0
+  - Represents tight molecular translocation/overlap scenarios
+  - Enables analysis of repulsive binding rejection
+  - Critical for identifying both attractive and repulsive sites
+- **Statistical energy landscape**: Mean, std, min flux values reveal binding character
+  - Negative flux: Attractive binding sites (favorable ΔG)
+  - Positive flux: Repulsive regions (unfavorable ΔG)
+  - Standard deviation: Binding site flexibility/specificity
+- **Gibbs free energy interpretation**: 
+  - Flux magnitude correlates with -TΔS (entropic contribution)
+  - Directional consistency reflects ΔH (enthalpic contribution)
+  - Combined analysis approximates binding ΔG landscapes
 
 ### GPU Acceleration
 - **Automatic optimization**: Detects Apple Silicon MPS or NVIDIA CUDA
