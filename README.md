@@ -88,7 +88,7 @@ The main entry point with a menu-driven interface:
 - **Option 1**: Standard workflow - Complete analysis with file I/O
 - **Option 2**: UMA workflow - GPU-accelerated unified memory pipeline  
 - **Option 3**: SMILES converter - Chemical structure to PDB
-- **Option 4**: DNA generator - Sequence to double helix structure
+- **Option 4**: DNA generator - Sequence to double helix structure (currently unstable!)
 
 ### 2. `fluxmd-uma` - Command-Line Interface
 High-performance command-line tool for automation:
