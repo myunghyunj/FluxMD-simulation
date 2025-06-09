@@ -378,7 +378,13 @@ class ProteinLigandFluxAnalyzer:
             # FIXED: Add periodic close approaches for H-bond sampling
             if i % close_approach_frequency == 0:
                 # Force a close approach every N steps
-                distance_force -= 10.0  # Strong attractive force
+                distance_force -= 20.0  # ENHANCED: Increased attractive force for better H-bond sampling
+                
+                # Override minimum distance temporarily for H-bond detection
+                min_distance = 1.5  # Allow very close approach for H-bonds
+            else:
+                # Reset to normal minimum distance after close approach period
+                min_distance = 2.0
                 
             # Add oscillatory component for natural in/out motion
             oscillation = 5.0 * np.sin(2 * np.pi * i / (n_steps / 6))
@@ -390,9 +396,13 @@ class ProteinLigandFluxAnalyzer:
             # Update radius
             current_radius += distance_momentum
             
-            # Enforce boundaries with stronger force for close approaches
+            # Enforce boundaries with gentler force during H-bond sampling
             if current_radius < min_distance:
-                distance_momentum += (min_distance - current_radius) * 0.5  # Stronger repulsion at close range
+                # For H-bond sampling, allow temporary violations with gentler repulsion
+                if i % close_approach_frequency < 5:  # 5 steps of close approach
+                    distance_momentum += (min_distance - current_radius) * 0.1  # FIXED: Reduced from 0.5 for H-bond sampling
+                else:
+                    distance_momentum += (min_distance - current_radius) * 0.5  # Normal repulsion
             elif current_radius > max_distance:
                 distance_momentum -= (current_radius - max_distance) * 0.1
             
@@ -418,7 +428,8 @@ class ProteinLigandFluxAnalyzer:
             else:
                 # Collision detected - try adjusting radius
                 # For close approaches, try backing off gradually
-                radius_adjustments = np.linspace(0.5, 5.0, 10)
+                # FIXED: Allow closer approaches for H-bond sampling (down to 0.1Å adjustment)
+                radius_adjustments = np.linspace(0.1, 2.0, 20)
                 
                 for radius_adjust in radius_adjustments:
                     test_radius = current_radius + radius_adjust
@@ -710,9 +721,9 @@ class ProteinLigandFluxAnalyzer:
                                 element = 'O'  # Aromatic oxygen
                             elif atom_name.startswith('SA'):
                                 element = 'S'  # Aromatic sulfur
-                            # Common patterns
-                            elif atom_name[:2] in ['CL', 'BR']:
-                                element = atom_name[:2]
+                            # Common patterns (case-insensitive)
+                            elif atom_name[:2].upper() in ['CL', 'BR'] or atom_name in ['Cl', 'Br']:
+                                element = atom_name[:2].capitalize() if len(atom_name) > 1 else atom_name
                             elif atom_name and atom_name[0] in ['C', 'N', 'O', 'S', 'P', 'H', 'F']:
                                 element = atom_name[0]
                             else:
@@ -797,6 +808,15 @@ class ProteinLigandFluxAnalyzer:
                     if len(line) >= 78:
                         element = line[76:78].strip()
                     
+                    # If element column is empty but line is long enough, check if element is at end of line
+                    if not element and len(line) >= 77:
+                        # OpenBabel sometimes puts element right-justified at end of line
+                        potential_element = line.rstrip()[-2:].strip()
+                        if potential_element in ['H', 'C', 'N', 'O', 'F', 'P', 'S', 'CL', 'BR', 'I']:
+                            element = potential_element
+                        elif len(line.rstrip()) >= 1 and line.rstrip()[-1] in ['H', 'C', 'N', 'O', 'F', 'P', 'S']:
+                            element = line.rstrip()[-1]
+                    
                     # Check if element is PDBQT aromatic type
                     if element == 'A':
                         element = 'C'  # PDBQT aromatic carbon
@@ -808,10 +828,11 @@ class ProteinLigandFluxAnalyzer:
                         element = 'S'  # PDBQT aromatic sulfur
                     
                     if not element:
-                        # Guess from atom name
-                        if atom_name.startswith('CL'):
+                        # Guess from atom name (case-insensitive)
+                        atom_name_upper = atom_name.upper()
+                        if atom_name_upper.startswith('CL') or atom_name == 'Cl':
                             element = 'Cl'
-                        elif atom_name.startswith('BR'):
+                        elif atom_name_upper.startswith('BR') or atom_name == 'Br':
                             element = 'Br'
                         elif atom_name.startswith('AC') or atom_name.startswith('A'):
                             # PDBQT aromatic carbon

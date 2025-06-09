@@ -283,9 +283,9 @@ def main():
         if 'physiological_pH' in loaded_params:
             args.ph = loaded_params['physiological_pH']
         
-        # Ask for confirmation
-        confirm = input("\nUse these parameters? (y/n): ").strip().lower()
-        if confirm != 'y':
+        # Ask for confirmation (default: yes)
+        confirm = input("\nUse these parameters? (Y/n): ").strip().lower()
+        if confirm == 'n':
             print("Parameter loading cancelled.")
             return 1
     

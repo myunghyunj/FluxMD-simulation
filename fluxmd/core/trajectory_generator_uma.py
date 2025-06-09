@@ -361,6 +361,24 @@ def run_single_iteration_uma(self, iteration_num, protein_atoms_df, ligand_atoms
                     for itype, count in interaction_type_counts_file.items():
                         percentage = (count / total_typed_file * 100)
                         f.write(f"  {InteractionResult.get_interaction_name(itype)}: {count} ({percentage:.1f}%)\n")
+                
+                # FIXED: Add distance statistics for H-bond detection debugging
+                f.write("\nDISTANCE STATISTICS:\n")
+                all_distances = []
+                for result in iteration_results:
+                    if result is not None and hasattr(result, 'distances') and len(result.distances) > 0:
+                        distances = result.distances.cpu().numpy()
+                        all_distances.extend(distances)
+                
+                if all_distances:
+                    distances_array = np.array(all_distances)
+                    f.write(f"  Minimum distance: {np.min(distances_array):.2f} Å\n")
+                    f.write(f"  Average distance: {np.mean(distances_array):.2f} Å\n")
+                    f.write(f"  Median distance: {np.median(distances_array):.2f} Å\n")
+                    f.write(f"  Distances < 3.5Å (H-bond range): {np.sum(distances_array < 3.5)} ({100 * np.sum(distances_array < 3.5) / len(distances_array):.1f}%)\n")
+                    f.write(f"  Distances < 5.0Å (salt bridge range): {np.sum(distances_array < 5.0)} ({100 * np.sum(distances_array < 5.0) / len(distances_array):.1f}%)\n")
+                else:
+                    f.write("  No distance data available\n")
         
         # Save trajectory data as CSV for this iteration
         trajectory_data_file = os.path.join(iter_dir, 'trajectory_data.csv')
