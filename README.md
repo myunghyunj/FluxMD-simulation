@@ -108,7 +108,24 @@ Options:
   --save-trajectories   Save trajectory visualizations
 ```
 
-### 3. `fluxmd-dna` - DNA Structure Generator
+### 3. SMILES to PDB Converter (via `fluxmd` Option 3)
+Convert chemical structures from SMILES notation to 3D PDB format:
+```bash
+# Interactive mode
+fluxmd
+# Select option 3, enter SMILES (e.g., "c1ccccc1" for benzene)
+```
+
+**Features:**
+- **Primary method**: NCI CACTUS web service
+  - Preserves aromatic bond information
+  - Generates proper 3D coordinates with planarity
+  - Creates both PDB and SDF files (SDF retains aromaticity)
+- **Fallback method**: OpenBabel (local, when offline)
+  - Basic 3D structure generation
+  - May have limitations with complex aromatics
+
+### 4. `fluxmd-dna` - DNA Structure Generator
 Generate accurate B-DNA double helix structures:
 ```bash
 fluxmd-dna SEQUENCE [-o output.pdb]
