@@ -3,16 +3,16 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-**FluxMD** maps binding sites between biomolecules through energy flux analysis. While traditional docking methods sample static conformations, FluxMD tracks dynamic energy flow as molecules spiral around each other, revealing where forces converge. The method works for protein-protein and protein-ligand pairs, with protein-nucleic acid support in development. Each analysis produces a unique 'stress barcode'—a reproducible energy signature specific to the input molecules. 
+**FluxMD** maps binding interfaces between biomolecules by tracing the flow of interaction energy. Unlike traditional docking, which samples static conformers, FluxMD follows dynamic energy flux as molecules orbit and engage, exposing regions where forces converge. The method applies to protein–protein and protein–ligand systems, with support for protein–nucleic acid interactions underway. Each run produces a stress barcode: a reproducible energy signature unique to the molecular pair.
 
-## Key Innovation
+## Underlying Biochemistry and Biophysics
 
-FluxMD treats proteins as pre-stressed mechanical systems. Binding sites emerge as energy sinkholes where internal protein forces combine with external molecular interactions. The winding trajectory approach captures phenomena invisible to conventional methods:
+FluxMD models biomolecules as pre-stressed, energy-dispersive systems. Binding sites arise not as static clefts, but as energy sinks—regions where intrinsic mechanical strain aligns with extrinsic molecular forces. By simulating dynamic interaction trajectories, the method elucidates biophysical phenomena often obscured in conventional docking:
 
-- **Cryptic binding sites** that appear through conformational changes
-- **Allosteric sites** revealed by force propagation patterns  
-- **pH-dependent binding** through protonation state calculations
-- **True binding affinity** from thermodynamic convergence
+- **Cryptic binding sites** : emergent through conformational plasticity
+- **Allosteric sites** : discerned via long-range mechanical coupling
+- **pH-dependent binding** : resolved through protonation-state energetics
+- **True binding affinity** : extracted from the convergence of energy flux profiles
 
 ## Quick Start
 
