@@ -5,16 +5,31 @@
 
 **FluxMD** maps binding interfaces between biomolecules by tracing the flow of interaction energy. Unlike traditional docking, which samples static conformers, FluxMD follows dynamic energy flux as molecules orbit and engage, exposing regions where forces converge. The method applies to protein–protein and protein–ligand systems, with support for protein–nucleic acid interactions underway. Each run produces a stress barcode: a reproducible energy signature unique to the molecular pair.
 
-## Underlying Biochemistry
+## Biophysical Foundation
 
-FluxMD models biomolecules as pre-stressed, energy-dispersive systems. Binding sites arise not as static clefts, but as energy sinks—regions where intrinsic mechanical strain aligns with extrinsic molecular forces. By simulating dynamic interaction trajectories, the method elucidates biophysical phenomena often obscured in conventional docking:
+FluxMD conceptualizes proteins as pre-stressed mechanical networks where binding sites manifest as energy sinks—regions where molecular forces converge rather than merely geometric cavities. This paradigm shift from static structure to dynamic energy flow enables detection of binding mechanisms invisible to conventional methods.
 
-- **Cryptic binding sites** : emergent through conformational plasticity
-- **Allosteric sites** : discerned via long-range mechanical coupling
-- **pH-dependent binding** : resolved through protonation-state energetics
-- **True binding affinity** : extracted from the convergence of energy flux profiles
+### Core Principles
 
-  FluxMD implements pH-responsive protonation state calculations that dynamically reassign amino acid residues as hydrogen bond donors or acceptors based on their Henderson-Hasselbalch-derived ionization states, while simultaneously tracking π-π stacking through NetworkX-identified aromatic ring centroids with angle-dependent energetics (parallel, T-shaped, or offset geometries within 4.5 Å) and π-cation interactions between protonated lysine/arginine residues and aromatic systems within 6.0 Å, thereby capturing the full spectrum of non-covalent interactions that govern biomolecular recognition across varying pH environments.
+**Energy Flux Differential Analysis**: Rather than sampling discrete conformations, FluxMD traces continuous energy flow through protein surfaces. The method combines static intra-protein forces (maintaining native fold stability) with dynamic intermolecular interactions sampled via winding trajectories, revealing how proteins channel binding energy through their three-dimensional architecture.
+
+**Pre-stressed Mechanical Systems**: Proteins maintain internal force networks analogous to tensegrity structures in architecture. FluxMD computes these baseline stress fields, then tracks how external molecular interactions perturb and propagate through this pre-existing mechanical framework, exposing allosteric communication pathways and cryptic binding sites.
+
+**pH-Responsive Molecular Recognition**: FluxMD implements Henderson-Hasselbalch-based protonation state calculations that dynamically reassign residues as hydrogen bond donors or acceptors. At physiological pH, histidine (pKa ~6.0) exists in equilibrium between charged and neutral states, fundamentally altering its interaction profile—a phenomenon static protonation models cannot capture.
+
+### Non-Covalent Interaction Spectrum
+
+FluxMD quantifies the complete repertoire of molecular forces with distance- and geometry-dependent precision:
+
+- **Hydrogen bonds**: Detected within 3.5 Å with angular constraints (>120°), energies modulated by protonation states
+- **Salt bridges**: Coulombic interactions between charged residues within 4.0 Å, pH-dependent based on pKa values
+- **π-π stacking**: NetworkX-identified aromatic centroids evaluated for parallel (0-30°), T-shaped (60-120°), or offset (30-60°) geometries within 4.5 Å
+- **π-cation interactions**: Electrostatic attraction between aromatic systems and protonated lysine/arginine within 6.0 Å
+- **van der Waals forces**: Lennard-Jones potentials capturing dispersive attractions and steric repulsions (1-5 Å)
+
+### Thermodynamic Convergence
+
+The energy flux metric Φᵢ = ⟨|E̅ᵢ|⟩ · Cᵢ · (1 + τᵢ) integrates force magnitude, directional consistency, and temporal variation to identify thermodynamically favorable binding sites. High flux indicates regions where protein mechanical strain aligns with ligand interaction forces, creating energetic funnels that guide molecular recognition.
 
 ## Quick Start
 
