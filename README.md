@@ -5,7 +5,7 @@
 
 **FluxMD** maps binding interfaces between biomolecules by tracing the flow of interaction energy. Unlike traditional docking, which samples static conformers, FluxMD follows dynamic energy flux as molecules orbit and engage, exposing regions where forces converge. The method applies to protein–protein and protein–ligand systems, with support for protein–nucleic acid interactions underway. Each run produces a stress barcode: a reproducible energy signature unique to the molecular pair.
 
-## Underlying Biochemistry and Biophysics
+## Underlying Biochemistry
 
 FluxMD models biomolecules as pre-stressed, energy-dispersive systems. Binding sites arise not as static clefts, but as energy sinks—regions where intrinsic mechanical strain aligns with extrinsic molecular forces. By simulating dynamic interaction trajectories, the method elucidates biophysical phenomena often obscured in conventional docking:
 
@@ -13,6 +13,8 @@ FluxMD models biomolecules as pre-stressed, energy-dispersive systems. Binding s
 - **Allosteric sites** : discerned via long-range mechanical coupling
 - **pH-dependent binding** : resolved through protonation-state energetics
 - **True binding affinity** : extracted from the convergence of energy flux profiles
+
+  FluxMD implements pH-responsive protonation state calculations that dynamically reassign amino acid residues as hydrogen bond donors or acceptors based on their Henderson-Hasselbalch-derived ionization states, while simultaneously tracking π-π stacking through NetworkX-identified aromatic ring centroids with angle-dependent energetics (parallel, T-shaped, or offset geometries within 4.5 Å) and π-cation interactions between protonated lysine/arginine residues and aromatic systems within 6.0 Å, thereby capturing the full spectrum of non-covalent interactions that govern biomolecular recognition across varying pH environments.
 
 ## Quick Start
 
