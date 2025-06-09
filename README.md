@@ -140,9 +140,14 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
 
 ### GPU Acceleration
 - **Automatic optimization**: Detects Apple Silicon MPS or NVIDIA CUDA
-- **UMA optimization**: Zero-copy processing on unified memory architectures
+- **Pipeline-specific approaches**:
+  - Standard GPU pipeline: Uses spatial hashing for medium systems (1M-100M atom pairs)
+  - UMA pipeline: Direct distance matrix calculation via torch.cdist
 - **Smart selection**: Benchmarks actual performance to choose GPU vs CPU
-- **Massive speedup**: 100-240x faster than CPU for large systems
+- **Spatial hashing** (standard GPU pipeline only):
+  - Automatic algorithm selection based on system size
+  - Hash table with linked-list collision handling
+  - Batch query support for parallel neighbor lookups
 
 ### Statistical Validation
 - **Bootstrap analysis**: 1000 iterations for confidence intervals
@@ -207,6 +212,10 @@ Processing 5M interactions:
    - Static intra-protein forces (pre-computed once)
    - Dynamic protein-ligand interactions at each trajectory point
    - pH-dependent protonation states affect charges and H-bonds
+   - Adaptive neighbor search optimization:
+     - Small systems (<1M pairs): Direct GPU computation
+     - Medium systems (1M-100M pairs): Spatial hashing with O(1) lookups
+     - Large systems (>100M pairs): Octree + hierarchical distance filtering
 
 3. **Flux Analysis**  
    - Combines force vectors at each residue

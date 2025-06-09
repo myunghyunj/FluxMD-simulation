@@ -206,7 +206,7 @@ def run_single_iteration_uma(self, iteration_num, protein_atoms_df, ligand_atoms
         # Generate visualization if requested
         if save_trajectories:
             print("   📸 Generating trajectory visualization...")
-            iter_dir = os.path.join(output_dir, f'iteration_{iteration_num}')
+            iter_dir = os.path.join(output_dir, f'iteration_{iteration_num + 1}')
             os.makedirs(iter_dir, exist_ok=True)
             
             # Use the parent class visualization method if available
@@ -303,7 +303,7 @@ def run_single_iteration_uma(self, iteration_num, protein_atoms_df, ligand_atoms
             print(f"     Max: {np.max(energies_array):.2f} kcal/mol")
         
         # Save iteration data log
-        iter_dir = os.path.join(output_dir, f'iteration_{iteration_num}')
+        iter_dir = os.path.join(output_dir, f'iteration_{iteration_num + 1}')
         os.makedirs(iter_dir, exist_ok=True)
         
         # Save iteration summary
@@ -561,7 +561,7 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
             # Generate per-iteration flux visualization
             if save_trajectories:
                 print(f"  📊 Generating iteration {i+1} flux visualization...")
-                iter_dir = os.path.join(output_dir, f'iteration_{i}')
+                iter_dir = os.path.join(output_dir, f'iteration_{i + 1}')
                 
                 # Calculate flux for this iteration only
                 # TrajectoryFluxAnalyzer is already imported at the top
