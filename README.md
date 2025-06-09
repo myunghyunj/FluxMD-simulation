@@ -404,3 +404,7 @@ MIT License. See [LICENSE](LICENSE) file for details.
 ## Contact
 
 For questions or issues: mhjonathan@gm.gist.ac.kr
+
+## Acknowledgement
+
+Engineered on top of my previous 2023 term project: https://github.com/jaehee831/protein-folding-analysis-bioinformatics
