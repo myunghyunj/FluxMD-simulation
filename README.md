@@ -148,6 +148,7 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
   - **Temporal discretization**: 40 fs sampling interval satisfies Shannon-Nyquist criterion for intermolecular forces (DC-10 THz passband) while deliberately aliasing intramolecular vibrations (>25 THz)
   - **Overdamped regime**: Momentum relaxation (τ ≈ 10 fs) ensures Markovian dynamics; thermal bandwidth (kT/h ≈ 6.2 THz) resides comfortably below Nyquist frequency (12.5 THz)
   - **Energy clipping**: 10 kcal/mol ceiling prevents Lennard-Jones singularities at r→0 while preserving physiological interaction magnitudes (-5 to +10 kcal/mol operating range)
+
 - **Force field integration**: Combines static protein forces with dynamic interactions
   - Static forces pre-computed once for efficiency
   - Dynamic forces calculated at each trajectory point
@@ -174,6 +175,7 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
   - Flux magnitude correlates with -TΔS (entropic contribution)
   - Directional consistency reflects ΔH (enthalpic contribution)
   - Combined analysis approximates binding ΔG landscapes
+  - Further elaboration needed to correlate Flux and Gibbs Free Energy. Currently, energetics print out provided per iterations.
 
 ### GPU Acceleration
 - **Automatic optimization**: Detects Apple Silicon MPS or NVIDIA CUDA
