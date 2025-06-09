@@ -1059,11 +1059,13 @@ def main():
             physiological_pH = input("pH for protonation states (default 7.4): ").strip()
             physiological_pH = float(physiological_pH) if physiological_pH else 7.4
         
-        # Ask about saving trajectories
-        save_trajectories = input("\nSave trajectory files? (y/n): ").strip().lower() == 'y'
+        # Ask about saving trajectories (default: yes)
+        save_trajectories_input = input("\nSave trajectory files? (Y/n): ").strip().lower()
+        save_trajectories = save_trajectories_input != 'n'  # Default to yes unless 'n' is entered
         
-        # Ask about showing detailed interaction breakdown
-        show_interactions = input("Show detailed interaction breakdown? (y/n): ").strip().lower() == 'y'
+        # Ask about showing detailed interaction breakdown (default: yes)
+        show_interactions_input = input("Show detailed interaction breakdown? (Y/n): ").strip().lower()
+        show_interactions = show_interactions_input != 'n'  # Default to yes unless 'n' is entered
         
         # Show summary
         print("\nUMA ANALYSIS CONFIGURATION:")
@@ -1084,8 +1086,8 @@ def main():
         total_frames = n_steps * n_approaches * n_iterations
         print(f"\nTotal trajectory frames: {total_frames:,}")
         
-        confirm = input("\nProceed with UMA-optimized analysis? (y/n): ").strip().lower()
-        if confirm != 'y':
+        confirm = input("\nProceed with UMA-optimized analysis? (Y/n): ").strip().lower()
+        if confirm == 'n':
             print("Analysis cancelled.")
             return
         
