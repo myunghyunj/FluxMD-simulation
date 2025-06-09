@@ -141,7 +141,7 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
 - Includes full atomic detail with backbone
 - Fun fact : B for B-DNA does not stand for binding DNA
 
-## Features
+## Underlying Science
 
 ### Physics-Based Analysis
 - **Stochastic Trajectory Synthesis**: Ligands execute helical orbits via Brownian dynamics
