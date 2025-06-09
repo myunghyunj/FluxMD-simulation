@@ -79,32 +79,6 @@ python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
 fluxmd --help
 ```
 
-## Program Flow
-
-```mermaid
-graph TD
-    Start[fluxmd Menu] -->|1| Standard[Standard Workflow]
-    Standard --> Load1[Load protein PDB/CIF/mmCIF]
-    Standard --> Load2[Load ligand or SMILES]
-    Load2 -->|SMILES| Convert[Convert to PDB via CACTUS/OpenBabel]
-    Standard --> Trajectory[Generate winding trajectories]
-    Trajectory --> Forces[Calculate force interactions]
-    Forces --> Analysis[Compute energy flux]
-    Analysis --> Output[Generate visualizations & reports]
-
-    Start -->|2| UMA[UMA-Optimized Workflow]
-    UMA --> GPU[Unified memory GPU pipeline]
-    GPU --> Direct[Direct tensor operations]
-    Direct --> Fast[Optimized analysis]
-
-    Start -->|3| SMILES[SMILES to PDB Converter]
-    SMILES --> CACTUS[NCI CACTUS web service]
-    SMILES --> OpenBabel[OpenBabel fallback]
-    
-    Start -->|4| DNA[DNA Structure Generator]
-    DNA --> Builder[B-DNA double helix builder]
-```
-
 ## Entry Points
 
 FluxMD provides multiple entry points optimized for different use cases:
