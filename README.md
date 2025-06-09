@@ -62,17 +62,46 @@ python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
 fluxmd --help
 ```
 
+## Program Flow
+
+```mermaid
+graph TD
+    Start[fluxmd Menu] -->|1| Standard[Standard Workflow]
+    Standard --> Load1[Load protein PDB/CIF/mmCIF]
+    Standard --> Load2[Load ligand or SMILES]
+    Load2 -->|SMILES| Convert[Convert to PDB via CACTUS/OpenBabel]
+    Standard --> Trajectory[Generate winding trajectories]
+    Trajectory --> Forces[Calculate force interactions]
+    Forces --> Analysis[Compute energy flux]
+    Analysis --> Output[Generate visualizations & reports]
+
+    Start -->|2| UMA[UMA-Optimized Workflow]
+    UMA --> GPU[Zero-copy GPU pipeline]
+    GPU --> Direct[Direct tensor operations]
+    Direct --> Fast[100x faster analysis]
+
+    Start -->|3| SMILES[SMILES to PDB Converter]
+    SMILES --> CACTUS[NCI CACTUS web service]
+    SMILES --> OpenBabel[OpenBabel fallback]
+    
+    Start -->|4| DNA[DNA Structure Generator]
+    DNA --> Builder[B-DNA double helix builder]
+    
+    Start -->|5| Visualize[Multi-Protein Comparison]
+    Visualize --> Compare[Side-by-side flux visualization]
+```
+
 ## Entry Points
 
 FluxMD provides multiple entry points optimized for different use cases:
 
 ### 1. `fluxmd` - Interactive Interface
 The main entry point with a menu-driven interface:
-- **Option 1**: Standard workflow (file-based, compatible with all systems)
-- **Option 2**: UMA-optimized workflow (100x faster on Apple Silicon)
-- **Option 3**: Convert SMILES to PDB structure
-- **Option 4**: Generate DNA double helix from sequence
-- **Option 5**: Visualize and compare multiple proteins
+- **Option 1**: Standard workflow - Complete analysis with file I/O
+- **Option 2**: UMA workflow - GPU-accelerated zero-copy pipeline  
+- **Option 3**: SMILES converter - Chemical structure to PDB
+- **Option 4**: DNA generator - Sequence to double helix structure
+- **Option 5**: Visualization - Compare multiple protein results
 
 ### 2. `fluxmd-uma` - Command-Line Interface
 High-performance command-line tool for automation:
