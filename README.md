@@ -3,11 +3,11 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-**FluxMD** is a GPU-accelerated computational biology tool that identifies protein-ligand binding sites through energy flux analysis. Unlike traditional docking methods that sample static conformations, FluxMD reveals binding sites by analyzing the dynamic flow of interaction energy across protein surfaces—finding where molecular forces naturally converge.
+**FluxMD** is a modern chip architecture optimized computational biology tool that identifies binding sites between two biomolecules—i.e. protein-protein, protein-ligand, and protein-nucleic acid (under work!)—through energy flux analysis. Unlike traditional docking methods that sample static conformations, FluxMD reveals the overall energy dynamics per amino acid residues by hovering the molecules and sample the dynamic flow of non-covalent interaction across protein surfaces—finding where molecular forces naturally flow. Intriguingly, FluxMD results a 'stress barcode', which is unique to input biomolecules, but consistent across various simulation parameters. 
 
 ## Key Innovation
 
-FluxMD treats proteins as pre-stressed mechanical systems where binding sites emerge as energy sinkholes. By combining static intra-protein forces with dynamic protein-ligand interactions sampled through winding trajectories, FluxMD captures phenomena invisible to conventional methods:
+FluxMD treats proteins as pre-stressed mechanical systems where binding sites emerge as energy sinkholes. By combining static intra-protein forces (internal strain) with dynamic biomolecular interactions sampled through winding trajectories (a.k.a cocoon trajectory), FluxMD captures phenomena invisible to conventional methods:
 
 - **Cryptic binding sites** that appear through conformational changes
 - **Allosteric sites** revealed by force propagation patterns  
