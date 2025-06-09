@@ -392,8 +392,8 @@ conda install -c conda-forge openbabel
 @software{fluxmd2024,
   title={FluxMD: Biophysical Cartography for Biomolecular Energy Dynamics},
   author={Myunghyun Jeong},
-  year={2025},
-  url={https://github.com/panelarin/FluxMD}
+  year={-},
+  url={https://github.com/myunghyunj/FluxMD-simulation}
 }
 ```
 
