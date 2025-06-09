@@ -7,7 +7,7 @@
 
 ## Biophysical Foundation
 
-FluxMD conceptualizes proteins as pre-stressed mechanical networks where binding sites manifest as energy sinks—regions where molecular forces converge rather than merely geometric cavities. This paradigm shift from static structure to dynamic energy flow enables detection of binding mechanisms invisible to conventional methods.
+FluxMD conceptualizes proteins as pre-stressed mechanical networks where binding sites manifest as energy sinks—regions where molecular forces converge rather than merely geometric cavities. This simple inspiration extends static structure analysis to dynamic energy flow tracking, which enables detection of binding mechanisms invisible from conventional methods.
 
 ### Core Principles
 
