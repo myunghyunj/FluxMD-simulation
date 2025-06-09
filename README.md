@@ -3,11 +3,11 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-**FluxMD** is a modern chip architecture optimized computational biology tool that identifies binding sites between two biomolecules—i.e. protein-protein, protein-ligand, and protein-nucleic acid (under work!)—through energy flux analysis. Unlike traditional docking methods that sample static conformations, FluxMD reveals the overall energy dynamics per amino acid residues by hovering the molecules and sample the dynamic flow of non-covalent interaction across protein surfaces—finding where molecular forces naturally flow. Intriguingly, FluxMD results a 'stress barcode', which is unique to input biomolecules, but consistent across various simulation parameters. 
+**FluxMD** maps binding sites between biomolecules through energy flux analysis. While traditional docking methods sample static conformations, FluxMD tracks dynamic energy flow as molecules spiral around each other, revealing where forces converge. The method works for protein-protein and protein-ligand pairs, with protein-nucleic acid support in development. Each analysis produces a unique 'stress barcode'—a reproducible energy signature specific to the input molecules. 
 
 ## Key Innovation
 
-FluxMD treats proteins as pre-stressed mechanical systems where binding sites emerge as energy sinkholes. By combining static intra-protein forces (internal strain) with dynamic biomolecular interactions sampled through winding trajectories (a.k.a cocoon trajectory), FluxMD captures phenomena invisible to conventional methods:
+FluxMD treats proteins as pre-stressed mechanical systems. Binding sites emerge as energy sinkholes where internal protein forces combine with external molecular interactions. The winding trajectory approach captures phenomena invisible to conventional methods:
 
 - **Cryptic binding sites** that appear through conformational changes
 - **Allosteric sites** revealed by force propagation patterns  
