@@ -1,4 +1,4 @@
-# FluxMD
+ # FluxMD
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
@@ -134,7 +134,7 @@ fluxmd-dna SEQUENCE [-o output.pdb]
 fluxmd-dna ATCGATCG -o dna_structure.pdb
 ```
 - Creates Watson-Crick paired double helix
-- Uses crystallographic parameters (Olson et al., 1998)
+- Uses crystallographic parameters ([Olson et al., 1998](https://www.pnas.org/doi/10.1073/pnas.95.19.11163))
 - Includes full atomic detail with backbone
 - Fun fact : B for B-DNA does not stand for binding DNA
 
@@ -205,7 +205,7 @@ Processing 5M interactions:
 
 ### When to Use Each Version
 - **Standard**: Small molecules, debugging, cross-platform compatibility
-- **UMA**: Large proteins, high-throughput screening, Apple Silicon systems
+- **UMA**: Large proteins, high-throughput screening, Apple Silicon systems (prepare icepacks!)
 
 ## How It Works
 
