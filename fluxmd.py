@@ -18,7 +18,6 @@ warnings.filterwarnings('ignore')
 from fluxmd.core.trajectory_generator import ProteinLigandFluxAnalyzer
 from fluxmd.analysis.flux_analyzer import TrajectoryFluxAnalyzer
 from fluxmd.gpu.gpu_accelerated_flux import get_device
-from fluxmd.visualization.visualize_multiflux import visualize_multiflux
 
 
 def benchmark_performance(protein_atoms, ligand_atoms, n_test_frames=5, n_test_rotations=12):
@@ -841,10 +840,9 @@ def main():
     print("2. Run UMA-optimized workflow (zero-copy GPU, 100x faster)")
     print("3. Convert SMILES to PDB (CACTUS with aromatics or OpenBabel)")
     print("4. Generate DNA structure from sequence")
-    print("5. Visualize multiple proteins (compare flux)")
-    print("6. Exit")
+    print("5. Exit")
     
-    choice = input("\nEnter choice (1-6): ").strip()
+    choice = input("\nEnter choice (1-5): ").strip()
     
     if choice == "1":
         run_complete_workflow()
@@ -1232,31 +1230,6 @@ def main():
             print("  - Try a shorter test sequence first")
         
     elif choice == "5":
-        print_banner("MULTI-PROTEIN FLUX COMPARISON")
-        n_proteins = int(input("How many proteins to compare? "))
-        
-        protein_flux_pairs = []
-        for i in range(n_proteins):
-            print(f"\nProtein {i+1}:")
-            pdb_file = input("  PDB file: ").strip()
-            csv_file = input("  Flux CSV file: ").strip()
-            label = input("  Label: ").strip()
-            
-            if os.path.exists(pdb_file) and os.path.exists(csv_file):
-                protein_flux_pairs.append((pdb_file, csv_file, label))
-            else:
-                print(f"  Error: File not found, skipping this protein")
-        
-        if protein_flux_pairs:
-            output_file = input("\nOutput filename (default: multiflux_comparison.png): ").strip()
-            if not output_file:
-                output_file = "multiflux_comparison.png"
-            
-            print(f"\nCreating visualization for {len(protein_flux_pairs)} proteins...")
-            visualize_multiflux(protein_flux_pairs, output_file)
-        else:
-            print("No valid protein-flux pairs provided.")
-    elif choice == "6":
         print("\nThank you for using FluxMD!")
     else:
         print("Invalid choice!")
