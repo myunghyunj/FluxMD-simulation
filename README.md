@@ -3,35 +3,33 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-**FluxMD** maps binding interfaces between biomolecules by tracing the flow of interaction energy. Unlike traditional docking, which samples static conformers, FluxMD follows dynamic energy flux as molecules orbit and engage, exposing regions where forces converge. Built for modern chip architectures—GPU and unified memory systems—FluxMD enables high-throughput screening of molecular libraries. The method applies to protein–protein and protein–ligand systems, with support for protein–nucleic acid interactions underway. Each run produces a **stress barcode**, a reproducible energy signature unique to two molecular pair.
+**FluxMD** maps binding interfaces between biomolecules by tracing the flow of interaction energy. Unlike traditional docking, which samples static conformers, FluxMD follows dynamic energy flux as molecules orbit and engage, exposing regions where forces converge. Built for modern chip architectures—GPU and unified memory systems—FluxMD enables high-throughput screening of molecular libraries. The method applies to protein–protein and protein–ligand systems, with support for protein–nucleic acid interactions underway. Each run produces a **stress barcode**, a reproducible energy signature unique to the molecular pair.
 
-## Biophysical Foundation
+## Program Flow
 
-FluxMD conceptualizes proteins as pre-stressed mechanical networks where binding sites manifest as energy sinks—regions where molecular forces converge rather than merely geometric cavities. This simple inspiration extends static structure analysis to dynamic energy flow tracking, which enables detection of binding mechanisms invisible from conventional methods.
+```mermaid
+graph TD
+    Start[fluxmd Menu] -->|1| Standard[Standard Workflow]
+    Standard --> Load1[Load protein PDB/CIF/mmCIF]
+    Standard --> Load2[Load ligand or SMILES]
+    Load2 -->|SMILES| Convert[Convert to PDB via CACTUS/OpenBabel]
+    Standard --> Trajectory[Generate winding trajectories]
+    Trajectory --> Forces[Calculate force interactions]
+    Forces --> Analysis[Compute energy flux]
+    Analysis --> Output[Generate visualizations & reports]
 
-### Core Principles
+    Start -->|2| UMA[UMA-Optimized Workflow]
+    UMA --> GPU[Unified memory GPU pipeline]
+    GPU --> Direct[Direct tensor operations]
+    Direct --> Fast[Optimized analysis]
 
-**Energy Flux Differential Analysis**: Rather than sampling discrete conformations, FluxMD traces continuous energy flow through protein surfaces. The method combines static intra-protein forces (maintaining native fold stability) with dynamic intermolecular interactions sampled via winding trajectories, revealing how proteins channel binding energy through their three-dimensional architecture.
-
-**Pre-stressed Mechanical Systems**: Proteins maintain internal force networks analogous to tensegrity structures in architecture. FluxMD computes these baseline stress fields, then tracks how external molecular interactions perturb and propagate through this pre-existing mechanical framework, exposing allosteric communication pathways and cryptic binding sites.
-
-**pH-Responsive Molecular Recognition**: FluxMD implements Henderson-Hasselbalch-based protonation state calculations that dynamically reassign residues as hydrogen bond donors or acceptors. At physiological pH, histidine (pKa ~6.0) exists in equilibrium between charged and neutral states, fundamentally altering its interaction profile—a phenomenon static protonation models cannot capture.
-
-**Brownian-Resolution Temporal Sampling**: FluxMD samples molecular interactions at 40-femtosecond resolution—deliberately within the ballistic regime where thermal fluctuations dominate over deterministic forces. This temporal granularity, shorter than position autocorrelation decay (~100 fs), captures raw thermal noise rather than time-averaged interactions. The resulting force tensors encode kT-scale stochastic variations that must be extracted through signal processing: temporal convolution filters separate systematic binding forces from thermal background, while statistical aggregation across trajectory ensembles converges toward thermodynamic averages. Architecture-specific implementations (GPU spatial hashing, UMA tensor operations) accelerate these noise-resilient algorithms.
-
-### Non-Covalent Interaction Spectrum
-
-FluxMD quantifies the complete repertoire of molecular forces with distance- and geometry-dependent precision:
-
-- **Hydrogen bonds**: Detected within 3.5 Å with angular constraints (>120°), energies modulated by protonation states
-- **Salt bridges**: Coulombic interactions between charged residues within 4.0 Å, pH-dependent based on pKa values
-- **π-π stacking**: NetworkX-identified aromatic centroids evaluated for parallel (0-30°), T-shaped (60-120°), or offset (30-60°) geometries within 4.5 Å
-- **π-cation interactions**: Electrostatic attraction between aromatic systems and protonated lysine/arginine within 6.0 Å
-- **van der Waals forces**: Lennard-Jones potentials capturing dispersive attractions and steric repulsions (1-5 Å)
-
-### Thermodynamic Convergence
-
-The energy flux metric Φᵢ = ⟨|E̅ᵢ|⟩ · Cᵢ · (1 + τᵢ) integrates force magnitude, directional consistency, and temporal variation to identify thermodynamically favorable binding sites. High flux indicates regions where protein mechanical strain aligns with ligand interaction forces, creating energetic funnels that guide molecular recognition.
+    Start -->|3| SMILES[SMILES to PDB Converter]
+    SMILES --> CACTUS[NCI CACTUS web service]
+    SMILES --> OpenBabel[OpenBabel fallback]
+    
+    Start -->|4| DNA[DNA Structure Generator]
+    DNA --> Builder[B-DNA double helix builder]
+```
 
 ## Quick Start
 
