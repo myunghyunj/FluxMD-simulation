@@ -86,9 +86,6 @@ graph TD
     
     Start -->|4| DNA[DNA Structure Generator]
     DNA --> Builder[B-DNA double helix builder]
-    
-    Start -->|5| Visualize[Multi-Protein Comparison]
-    Visualize --> Compare[Side-by-side flux visualization]
 ```
 
 ## Entry Points
@@ -101,7 +98,6 @@ The main entry point with a menu-driven interface:
 - **Option 2**: UMA workflow - GPU-accelerated zero-copy pipeline  
 - **Option 3**: SMILES converter - Chemical structure to PDB
 - **Option 4**: DNA generator - Sequence to double helix structure
-- **Option 5**: Visualization - Compare multiple protein results
 
 ### 2. `fluxmd-uma` - Command-Line Interface
 High-performance command-line tool for automation:
@@ -133,19 +129,6 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
 - Uses crystallographic parameters (Olson et al., 1998)
 - Includes full atomic detail with backbone
 
-### 4. Visualization Tools
-Compare flux results across multiple proteins:
-```bash
-# Interactive mode
-python -m fluxmd.visualization.visualize_multiflux
-
-# Command-line mode
-python -m fluxmd.visualization.visualize_multiflux \
-  --proteins wt.pdb mutant.pdb \
-  --fluxes wt_flux.csv mutant_flux.csv \
-  --labels "Wild-Type" "Mutant" \
-  --output comparison.png
-```
 
 ## Features
 
@@ -211,7 +194,31 @@ Processing 5M interactions:
 - **Standard**: Small molecules, debugging, cross-platform compatibility
 - **UMA**: Large proteins, high-throughput screening, Apple Silicon systems
 
-## Theory
+## How It Works
+
+### Analysis Pipeline
+
+1. **Trajectory Generation**
+   - Ligand spirals around protein like thread on a spool
+   - Samples 5-50 Å distance range with oscillatory motion
+   - 36 rotations tested at each position
+
+2. **Force Calculation**
+   - Static intra-protein forces (pre-computed once)
+   - Dynamic protein-ligand interactions at each trajectory point
+   - pH-dependent protonation states affect charges and H-bonds
+
+3. **Flux Analysis**  
+   - Combines force vectors at each residue
+   - Calculates directional consistency and temporal variation
+   - Bootstrap statistics over multiple iterations
+
+4. **Binding Site Identification**
+   - High flux regions indicate energy convergence
+   - Statistical significance via p-values
+   - Ranked list of potential binding sites
+
+### Theory
 
 FluxMD calculates energy flux Φᵢ for each residue:
 
