@@ -177,7 +177,7 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
   - Combined analysis approximates binding ΔG landscapes
   - Further elaboration needed to correlate Flux and Gibbs Free Energy. Currently, energetics print out provided per iterations.
 
-### GPU Acceleration
+### Modern Chip Friendly Software Engineered
 - **Automatic optimization**: Detects Apple Silicon MPS or NVIDIA CUDA
 - **Pipeline-specific approaches**:
   - Standard GPU pipeline: Uses spatial hashing for medium systems (1M-100M atom pairs)
