@@ -736,6 +736,11 @@ class ProteinLigandFluxAnalyzer:
                                     element = 'C'  # Default to carbon
                                     print(f"Warning: Could not determine element for atom {atom_name}, defaulting to C")
                         
+                        # Check if atom name indicates PDBQT aromatic type
+                        is_aromatic_atom = False
+                        if atom_name in ['A', 'NA', 'OA', 'SA'] or atom_name.startswith(('AC', 'NA', 'OA', 'SA')):
+                            is_aromatic_atom = True
+                        
                         atom_info = {
                             'chain': chain.get_id(),
                             'resname': residue.get_resname(),
@@ -747,7 +752,8 @@ class ProteinLigandFluxAnalyzer:
                             'z': atom.get_coord()[2],
                             'atom_id': atom.get_serial_number(),
                             'is_hetatm': hetatm_flag != ' ',
-                            'residue_id': residue.get_id()[1]  # Add this for consistency
+                            'residue_id': residue.get_id()[1],  # Add this for consistency
+                            'is_aromatic': is_aromatic_atom
                         }
                         atoms.append(atom_info)
         
@@ -818,14 +824,19 @@ class ProteinLigandFluxAnalyzer:
                             element = line.rstrip()[-1]
                     
                     # Check if element is PDBQT aromatic type
+                    is_aromatic_atom = False
                     if element == 'A':
                         element = 'C'  # PDBQT aromatic carbon
+                        is_aromatic_atom = True
                     elif element == 'NA':
                         element = 'N'  # PDBQT aromatic nitrogen
+                        is_aromatic_atom = True
                     elif element == 'OA':
                         element = 'O'  # PDBQT aromatic oxygen
+                        is_aromatic_atom = True
                     elif element == 'SA':
                         element = 'S'  # PDBQT aromatic sulfur
+                        is_aromatic_atom = True
                     
                     if not element:
                         # Guess from atom name (case-insensitive)
@@ -871,7 +882,8 @@ class ProteinLigandFluxAnalyzer:
                         'z': z,
                         'atom_id': atom_serial,
                         'is_hetatm': is_hetatm,
-                        'residue_id': res_seq
+                        'residue_id': res_seq,
+                        'is_aromatic': is_aromatic_atom  # Track if from PDBQT aromatic type
                     })
                     
                 except Exception as e:

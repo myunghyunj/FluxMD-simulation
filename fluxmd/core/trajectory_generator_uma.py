@@ -228,7 +228,7 @@ def run_single_iteration_uma(self, iteration_num, protein_atoms_df, ligand_atoms
             
             # Process entire trajectory batch on GPU
             approach_results = gpu_calc.process_trajectory_batch(
-                trajectory, ligand_coords, n_rotations
+                trajectory, ligand_coords, n_rotations, ligand_atoms_df
             )
             
             # Extend iteration results

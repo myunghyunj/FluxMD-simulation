@@ -109,10 +109,15 @@ def convert_smiles_to_pdb_cactus(smiles_string, output_name="ligand"):
     
     pdb_file = f"{output_name}.pdb"
     sdf_file = f"{output_name}.sdf"
+    pdbqt_file = f"{output_name}.pdbqt"
     
     try:
         print(f"Converting SMILES to 3D structure using NCI CACTUS...")
         print(f"SMILES: {smiles_string}")
+        
+        # Try to count aromatic rings in SMILES
+        aromatic_count = smiles_string.lower().count('c') + smiles_string.lower().count('n')
+        aromatic_rings_est = aromatic_count // 5  # Rough estimate
         
         # URL encode the SMILES string
         encoded_smiles = urllib.parse.quote(smiles_string, safe='')
@@ -180,6 +185,157 @@ def convert_smiles_to_pdb_cactus(smiles_string, output_name="ligand"):
         return None
     except Exception as e:
         print(f"Error during conversion: {e}")
+        return None
+
+def convert_smiles_with_aromatics(smiles_string, output_name="ligand"):
+    """Enhanced SMILES to PDB conversion with aromatic ring detection and preservation"""
+    import re
+    
+    # Count aromatic rings from SMILES patterns
+    patterns = {
+        'benzene': [r'c1ccccc1', r'c1=cc=cc=c1'],
+        'pyridine': [r'c1ccncc1', r'n1ccccc1'],
+        'pyrrole': [r'c1cc[nH]c1', r'n1cccc1'],
+        'furan': [r'c1ccoc1', r'o1cccc1'],
+        'thiophene': [r'c1ccsc1', r's1cccc1'],
+        'imidazole': [r'c1cnc[nH]1', r'n1ccnc1'],
+        'thiadiazole': [r'c1nnsc1', r's1nncc1', r'c1snns1']
+    }
+    
+    smiles_lower = smiles_string.lower()
+    ring_count = 0
+    ring_types = []
+    
+    # Count each type of ring
+    for ring_type, pattern_list in patterns.items():
+        for pattern in pattern_list:
+            matches = len(re.findall(pattern, smiles_lower))
+            if matches > 0:
+                ring_count += matches
+                ring_types.append(f"{matches} {ring_type}")
+                break
+    
+    # Estimate from aromatic atoms
+    aromatic_atoms = smiles_lower.count('c') + smiles_lower.count('n')
+    estimated_rings = aromatic_atoms // 5
+    
+    print(f"\nAnalyzing SMILES: {smiles_string}")
+    if ring_types:
+        print(f"Detected aromatic patterns: {', '.join(ring_types)}")
+    print(f"Estimated aromatic rings: ~{max(ring_count, estimated_rings)}")
+    
+    # Ask user to confirm
+    user_rings = input(f"\nHow many aromatic rings are in this molecule? [{max(ring_count, estimated_rings)}]: ").strip()
+    if user_rings:
+        try:
+            actual_rings = int(user_rings)
+        except:
+            actual_rings = max(ring_count, estimated_rings)
+    else:
+        actual_rings = max(ring_count, estimated_rings)
+    
+    print(f"\nGenerating structure with {actual_rings} aromatic rings...")
+    
+    # Convert using OpenBabel PDBQT to preserve aromaticity
+    smi_file = f"{output_name}.smi"
+    pdbqt_file = f"{output_name}.pdbqt"
+    pdb_file = f"{output_name}.pdb"
+    
+    try:
+        # Write SMILES
+        with open(smi_file, 'w') as f:
+            f.write(smiles_string)
+        
+        # Convert to PDBQT (preserves aromatic atom types)
+        print("Converting to PDBQT format (preserves aromaticity)...")
+        cmd = ['obabel', '-ismi', smi_file, '-opdbqt', '-O', pdbqt_file,
+               '--gen3d', '-h', '-p', '7.4']
+        
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        
+        # Clean up
+        if os.path.exists(smi_file):
+            os.remove(smi_file)
+        
+        # Analyze PDBQT and convert to PDB
+        if os.path.exists(pdbqt_file):
+            aromatic_atom_nums = []
+            
+            with open(pdbqt_file, 'r') as f:
+                pdbqt_content = f.read()
+            
+            # Count aromatic atoms
+            aromatic_c = pdbqt_content.count(' A  ')
+            aromatic_n = pdbqt_content.count(' NA ')
+            aromatic_o = pdbqt_content.count(' OA ')
+            aromatic_s = pdbqt_content.count(' SA ')
+            
+            print(f"\nAromatic atoms detected:")
+            print(f"  C (aromatic): {aromatic_c}")
+            print(f"  N (aromatic): {aromatic_n}")
+            print(f"  O (aromatic): {aromatic_o}")
+            print(f"  S (aromatic): {aromatic_s}")
+            print(f"  Total: {aromatic_c + aromatic_n + aromatic_o + aromatic_s}")
+            
+            # Convert PDBQT to PDB with aromatic annotations
+            with open(pdbqt_file, 'r') as f_in, open(pdb_file, 'w') as f_out:
+                f_out.write(f"REMARK   Generated from SMILES with {actual_rings} aromatic rings\n")
+                f_out.write(f"REMARK   SMILES: {smiles_string}\n")
+                
+                for line in f_in:
+                    if line.startswith(('ATOM', 'HETATM')):
+                        atom_type = line[77:79].strip() if len(line) > 78 else ''
+                        
+                        # Track aromatic atoms
+                        if atom_type in ['A', 'NA', 'OA', 'SA']:
+                            atom_num = int(line[6:11].strip())
+                            aromatic_atom_nums.append(atom_num)
+                        
+                        # Convert atom type to element
+                        element_map = {
+                            'A': 'C', 'NA': 'N', 'OA': 'O', 'SA': 'S',
+                            'C': 'C', 'N': 'N', 'O': 'O', 'S': 'S',
+                            'CL': 'Cl', 'BR': 'Br', 'I': 'I', 'F': 'F',
+                            'HD': 'H', 'H': 'H'
+                        }
+                        element = element_map.get(atom_type, atom_type[0] if atom_type else 'C')
+                        
+                        # Write PDB line with proper element
+                        if len(line) >= 78:
+                            pdb_line = line[:76] + f"{element:>2}" + '\n'
+                        else:
+                            pdb_line = line.rstrip() + ' ' * (76 - len(line.rstrip())) + f"{element:>2}" + '\n'
+                        
+                        f_out.write(pdb_line)
+                    elif line.startswith('CONECT'):
+                        f_out.write(line)
+                
+                # Add aromatic atom list
+                if aromatic_atom_nums:
+                    f_out.write(f"REMARK   AROMATIC_ATOMS {','.join(map(str, aromatic_atom_nums))}\n")
+            
+            print(f"\nFiles created:")
+            print(f"  {pdb_file} - Standard PDB for FluxMD")
+            print(f"  {pdbqt_file} - PDBQT with aromatic types preserved")
+            
+            if actual_rings > 0:
+                print(f"\nIMPORTANT: This molecule has {actual_rings} aromatic ring(s)")
+                print("FluxMD will now properly detect π-π stacking interactions")
+            
+            # Clean up PDBQT if user doesn't need it
+            keep_pdbqt = input("\nKeep PDBQT file for reference? (y/N): ").strip().lower()
+            if keep_pdbqt != 'y' and os.path.exists(pdbqt_file):
+                os.remove(pdbqt_file)
+                print(f"Removed {pdbqt_file}")
+            
+            return pdb_file
+            
+    except subprocess.CalledProcessError as e:
+        print(f"OpenBabel error: {e}")
+        print("Make sure OpenBabel is installed: conda install -c conda-forge openbabel")
+        return None
+    except Exception as e:
+        print(f"Error: {e}")
         return None
 
 def convert_smiles_to_pdb_openbabel(smiles_string, output_name="ligand"):
@@ -1122,15 +1278,19 @@ def main():
             name = input("Enter output name: ").strip() or "ligand"
             
             print("\nConversion options:")
-            print("1. NCI CACTUS (recommended - preserves aromaticity, requires internet)")
-            print("2. OpenBabel (local fallback - may have aromatic issues)")
+            print("1. NCI CACTUS (web service - fast but limited aromatic preservation)")
+            print("2. OpenBabel standard (local - basic PDB)")
+            print("3. OpenBabel PDBQT (local - BEST for aromatic preservation)")
             
-            method = input("\nSelect method (1-2): ").strip() or "1"
+            method = input("\nSelect method (1-3) [3]: ").strip() or "3"
             
             if method == "1":
                 convert_smiles_to_pdb_cactus(smiles, name)
-            else:
+            elif method == "2":
                 convert_smiles_to_pdb_openbabel(smiles, name)
+            else:
+                # Use enhanced PDBQT method
+                convert_smiles_with_aromatics(smiles, name)
     elif choice == "4":
         print_banner("DNA SEQUENCE TO STRUCTURE")
         print("Generate 3D B-DNA structure from sequence")

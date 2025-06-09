@@ -196,7 +196,10 @@ class GPUAcceleratedInteractionCalculator:
             properties['formal_charges'][i] = pa_atom.formal_charge  # Store actual charge value
             
             # Mark potential aromatic atoms
-            if element in ['C', 'N', 'O', 'S']:
+            # FIXED: Don't mark ALL C,N,O,S as aromatic
+            # Only mark if specifically tagged or in aromatic residues
+            # For now, leave aromatic detection to PDBQT atom types or explicit marking
+            if atom.get('is_aromatic', False):
                 properties['is_aromatic'][i] = True
         
         # Print element counts
@@ -316,7 +319,7 @@ class GPUAcceleratedInteractionCalculator:
         )
 
     def process_trajectory_batch(self, trajectory: np.ndarray, ligand_base_coords: np.ndarray,
-                               n_rotations: int = 36) -> List[InteractionResult]:
+                               n_rotations: int = 36, ligand_atoms_df: pd.DataFrame = None) -> List[InteractionResult]:
         """Process a trajectory batch, returning raw GPU interaction results."""
         trajectory_gpu = torch.tensor(trajectory, device=self.device, dtype=torch.float32)
         ligand_base_gpu = torch.tensor(ligand_base_coords, device=self.device, dtype=torch.float32)
@@ -338,13 +341,16 @@ class GPUAcceleratedInteractionCalculator:
         ligand_centered = ligand_base_gpu - ligand_center
         
         # Pre-compute base ligand properties
-        ligand_atoms_df = pd.DataFrame({
-            'x': ligand_base_coords[:, 0],
-            'y': ligand_base_coords[:, 1],
-            'z': ligand_base_coords[:, 2],
-            'element': ['C'] * len(ligand_base_coords),  # Placeholder
-            'name': [f'L{i}' for i in range(len(ligand_base_coords))]
-        })
+        if ligand_atoms_df is None:
+            # Fallback if no dataframe provided (shouldn't happen)
+            print("WARNING: No ligand dataframe provided, using placeholder elements")
+            ligand_atoms_df = pd.DataFrame({
+                'x': ligand_base_coords[:, 0],
+                'y': ligand_base_coords[:, 1],
+                'z': ligand_base_coords[:, 2],
+                'element': ['C'] * len(ligand_base_coords),  # Placeholder
+                'name': [f'L{i}' for i in range(len(ligand_base_coords))]
+            })
         base_ligand_properties = self.precompute_ligand_properties(ligand_atoms_df)
         
         all_results = []
