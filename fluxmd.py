@@ -530,7 +530,7 @@ def run_complete_workflow():
     print("2. Generate WINDING trajectories (thread-like motion around protein)")
     print("3. Sample multiple ligand orientations at each position")
     print("4. Calculate non-covalent interactions with combined forces")
-    print("5. Compute energy flux differentials (합벡터 analysis)")
+    print("5. Compute energy flux differentials (combined vector analysis)")
     print("6. Identify binding sites with statistical validation")
     print("7. Create visualizations and reports\n")
     

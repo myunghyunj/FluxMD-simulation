@@ -994,7 +994,7 @@ class ProteinLigandFluxAnalyzer:
             interactions_df['inter_vector_y'] = interactions_df['vector_y']
             interactions_df['inter_vector_z'] = interactions_df['vector_z']
             
-            # Calculate combined vectors (합벡터)
+            # Calculate combined vectors
             interactions_df['vector_x'] = interactions_df['inter_vector_x'] + interactions_df['intra_vector_x']
             interactions_df['vector_y'] = interactions_df['inter_vector_y'] + interactions_df['intra_vector_y']
             interactions_df['vector_z'] = interactions_df['inter_vector_z'] + interactions_df['intra_vector_z']
@@ -1036,7 +1036,7 @@ class ProteinLigandFluxAnalyzer:
                 'intra_vector_x': intra_vector[0],
                 'intra_vector_y': intra_vector[1],
                 'intra_vector_z': intra_vector[2],
-                'vector_x': combined_vector[0],  # 합벡터
+                'vector_x': combined_vector[0],  # combined vector
                 'vector_y': combined_vector[1],
                 'vector_z': combined_vector[2],
                 'combined_magnitude': np.linalg.norm(combined_vector),

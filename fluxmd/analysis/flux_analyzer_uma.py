@@ -104,7 +104,7 @@ class TrajectoryFluxAnalyzer:
             # Get intra-protein vectors for these atoms
             intra_vectors = intra_protein_vectors_gpu[all_protein_indices]
             
-            # Calculate combined vectors (합벡터)
+            # Calculate combined vectors
             combined_vectors = all_inter_vectors + intra_vectors
             
             # Calculate flux using scatter operations
