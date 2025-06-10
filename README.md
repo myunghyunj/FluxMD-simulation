@@ -141,6 +141,7 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
 - Uses crystallographic parameters ([Olson et al., 1998](https://www.pnas.org/doi/10.1073/pnas.95.19.11163))
 - Includes full atomic detail with backbone
 - Fun fact : B for B-DNA does not stand for binding DNA
+- Loading DNA in FluxMD is currently under work
 
 ## Underlying Science
 
