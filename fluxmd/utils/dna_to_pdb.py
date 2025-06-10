@@ -2,19 +2,21 @@
 """
 DNA to PDB Converter - Enhanced version with dinucleotide-specific parameters
 Generates accurate B-DNA double helix structures from DNA sequences.
+Includes CONECT records for proper connectivity and optimized base pair alignment.
 """
 
 import numpy as np
 import argparse
 import math
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Set
 
 class DNABuilder:
     """Builds B-DNA structures with dinucleotide-specific parameters."""
     
-    # Standard B-DNA parameters
+    # Standard B-DNA parameters (updated based on crystallographic data)
     RISE = 3.38  # Å per base pair (can vary by dinucleotide)
     RADIUS = 10.0  # Å from helix axis to phosphate
+    BASE_PAIR_DISTANCE = 10.85  # Å between C1' atoms in a base pair
     
     # Watson-Crick pairing
     COMPLEMENT = {'A': 'T', 'T': 'A', 'G': 'C', 'C': 'G'}
@@ -42,8 +44,9 @@ class DNABuilder:
         'GC': -10.5, 'CG': -10.5,
     }
     
-    # Atom templates (simplified but chemically accurate)
-    # Sugar atoms relative to base attachment point
+    # Atom templates are defined in a local coordinate system where C1' is the
+    # point of attachment, but not necessarily the origin.
+    # The _process_atom_templates method will correct this upon initialization.
     SUGAR_ATOMS = {
         "C1'": np.array([0.0, 0.0, 0.0]),
         "C2'": np.array([0.862, -1.373, 0.206]),
@@ -105,8 +108,47 @@ class DNABuilder:
         }
     }
     
+    # H-bond donor/acceptor pairs for Watson-Crick base pairs
+    HBOND_PAIRS = {
+        ('A', 'T'): [('N1', 'N3'), ('N6', 'O4')],  # A-T has 2 H-bonds
+        ('T', 'A'): [('N3', 'N1'), ('O4', 'N6')],
+        ('G', 'C'): [('N1', 'N3'), ('N2', 'O2'), ('O6', 'N4')],  # G-C has 3 H-bonds
+        ('C', 'G'): [('N3', 'N1'), ('O2', 'N2'), ('N4', 'O6')],
+    }
+    
     def __init__(self):
         self.atoms = []
+        self.atom_index_map = {}  # Maps (chain, res_id, atom_name) to atom index
+        self.connectivity = []  # List of atom index pairs for CONECT records
+        self._process_atom_templates()
+        
+    def _process_atom_templates(self):
+        """
+        Re-centers the base templates so the glycosidic bond attachment point is at the origin,
+        and flips the base to extend into the negative X direction. This ensures that the
+        sugar and base are on opposite sides, which is essential for correct geometry.
+        The sugar template is assumed to be in the positive X direction.
+        """
+        self.PROCESSED_BASE_ATOMS = {}
+        for base_type, atoms in self.BASE_ATOMS.items():
+            processed_atoms = {}
+            # Determine anchor atom (N9 for purines, N1 for pyrimidines)
+            anchor_atom = 'N9' if base_type in ['A', 'G'] else 'N1'
+            
+            # Ensure the anchor atom exists before proceeding
+            if anchor_atom not in atoms:
+                raise ValueError(f"Anchor atom {anchor_atom} not found in base {base_type}")
+            
+            offset = atoms[anchor_atom]
+
+            for atom_name, pos in atoms.items():
+                # Step 1: Recenter the coordinates around the anchor atom.
+                new_pos = pos - offset
+                # Step 2: Flip the base by negating the X-coordinate.
+                # This places the base on the opposite side of the sugar.
+                new_pos[0] = -new_pos[0]
+                processed_atoms[atom_name] = new_pos
+            self.PROCESSED_BASE_ATOMS[base_type] = processed_atoms
         
     def rotation_z(self, angle: float) -> np.ndarray:
         """Rotation matrix around Z axis (angle in radians)."""
@@ -117,6 +159,11 @@ class DNABuilder:
         """Rotation matrix around X axis (angle in radians)."""
         c, s = np.cos(angle), np.sin(angle)
         return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+    
+    def rotation_y(self, angle: float) -> np.ndarray:
+        """Rotation matrix around Y axis (angle in radians)."""
+        c, s = np.cos(angle), np.sin(angle)
+        return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
     
     def get_dinucleotide_params(self, base1: str, base2: str) -> Tuple[float, float]:
         """Get twist and rise for a dinucleotide step."""
@@ -139,15 +186,16 @@ class DNABuilder:
                       propeller: float = 0.0) -> Dict[str, np.ndarray]:
         """Add a nucleotide (sugar + base) at the specified position."""
         atom_positions = {}
+        atom_indices = {}
         
         # Apply propeller twist if specified
-        if propeller != 0.0 and chain == 'B':
-            # For chain B, apply negative propeller
-            prop_rot = self.rotation_x(-math.radians(propeller))
-            rotation = rotation @ prop_rot
-        elif propeller != 0.0:
-            # For chain A, apply positive propeller
-            prop_rot = self.rotation_x(math.radians(propeller))
+        if propeller != 0.0:
+            if chain == 'B':
+                # For chain B, apply negative propeller
+                prop_rot = self.rotation_x(-math.radians(propeller/2))
+            else:
+                # For chain A, apply positive propeller
+                prop_rot = self.rotation_x(math.radians(propeller/2))
             rotation = rotation @ prop_rot
         
         # Add sugar atoms
@@ -156,7 +204,12 @@ class DNABuilder:
             atom_positions[atom_name] = global_pos
             
             element = atom_name[0]
+            atom_index = len(self.atoms) + 1
+            atom_indices[atom_name] = atom_index
+            self.atom_index_map[(chain, res_id, atom_name)] = atom_index
+            
             self.atoms.append({
+                'index': atom_index,
                 'name': atom_name,
                 'element': element,
                 'coord': global_pos,
@@ -166,13 +219,18 @@ class DNABuilder:
             })
         
         # Add base atoms
-        for atom_name, local_pos in self.BASE_ATOMS[base_type].items():
+        for atom_name, local_pos in self.PROCESSED_BASE_ATOMS[base_type].items():
             global_pos = position + rotation @ local_pos
             
             element = 'N' if atom_name[0] == 'N' else \
                      'O' if atom_name[0] == 'O' else 'C'
             
+            atom_index = len(self.atoms) + 1
+            atom_indices[atom_name] = atom_index
+            self.atom_index_map[(chain, res_id, atom_name)] = atom_index
+            
             self.atoms.append({
+                'index': atom_index,
                 'name': atom_name,
                 'element': element,
                 'coord': global_pos,
@@ -181,7 +239,61 @@ class DNABuilder:
                 'res_name': f'D{base_type}'
             })
         
+        # Add intra-residue connectivity
+        self._add_nucleotide_connectivity(chain, res_id, atom_indices, base_type)
+        
         return atom_positions
+    
+    def _add_nucleotide_connectivity(self, chain: str, res_id: int,
+                                   atom_indices: Dict[str, int], base_type: str):
+        """Add CONECT records for intra-nucleotide bonds."""
+        # Sugar ring connectivity
+        sugar_bonds = [
+            ("C1'", "C2'"), ("C2'", "C3'"), ("C3'", "C4'"),
+            ("C4'", "O4'"), ("O4'", "C1'"), ("C4'", "C5'"),
+            ("C5'", "O5'"), ("C3'", "O3'")
+        ]
+        
+        # Base-sugar connection
+        if base_type in ['A', 'G']:  # Purines connect via N9
+            sugar_bonds.append(("C1'", "N9"))
+        else:  # Pyrimidines connect via N1
+            sugar_bonds.append(("C1'", "N1"))
+        
+        # Add sugar bonds
+        for atom1, atom2 in sugar_bonds:
+            if atom1 in atom_indices and atom2 in atom_indices:
+                self.connectivity.append((atom_indices[atom1], atom_indices[atom2]))
+        
+        # Base ring connectivity (simplified - just major bonds)
+        if base_type == 'A':
+            base_bonds = [
+                ("N9", "C8"), ("C8", "N7"), ("N7", "C5"), ("C5", "C4"),
+                ("C4", "N9"), ("C4", "N3"), ("N3", "C2"), ("C2", "N1"),
+                ("N1", "C6"), ("C6", "C5"), ("C6", "N6")
+            ]
+        elif base_type == 'T':
+            base_bonds = [
+                ("N1", "C2"), ("C2", "N3"), ("N3", "C4"), ("C4", "C5"),
+                ("C5", "C6"), ("C6", "N1"), ("C2", "O2"), ("C4", "O4"),
+                ("C5", "C5M")
+            ]
+        elif base_type == 'G':
+            base_bonds = [
+                ("N9", "C8"), ("C8", "N7"), ("N7", "C5"), ("C5", "C4"),
+                ("C4", "N9"), ("C4", "N3"), ("N3", "C2"), ("C2", "N1"),
+                ("N1", "C6"), ("C6", "C5"), ("C6", "O6"), ("C2", "N2")
+            ]
+        elif base_type == 'C':
+            base_bonds = [
+                ("N1", "C2"), ("C2", "N3"), ("N3", "C4"), ("C4", "C5"),
+                ("C5", "C6"), ("C6", "N1"), ("C2", "O2"), ("C4", "N4")
+            ]
+        
+        # Add base bonds
+        for atom1, atom2 in base_bonds:
+            if atom1 in atom_indices and atom2 in atom_indices:
+                self.connectivity.append((atom_indices[atom1], atom_indices[atom2]))
     
     def add_phosphate(self, chain: str, res_id: int, o3_prev: np.ndarray, o5_curr: np.ndarray):
         """Add phosphate group between O3' of previous and O5' of current residue."""
@@ -195,7 +307,11 @@ class DNABuilder:
             p_pos = o3_prev + unit_vec * 1.59
             
             # Add phosphorus
+            p_index = len(self.atoms) + 1
+            self.atom_index_map[(chain, res_id, 'P')] = p_index
+            
             self.atoms.append({
+                'index': p_index,
                 'name': 'P',
                 'element': 'P',
                 'coord': p_pos,
@@ -216,7 +332,10 @@ class DNABuilder:
             op1_pos = p_pos + 1.48 * (0.7 * perp1 + 0.3 * unit_vec)
             op2_pos = p_pos + 1.48 * (-0.7 * perp1 + 0.3 * unit_vec)
             
+            op1_index = len(self.atoms) + 1
+            self.atom_index_map[(chain, res_id, 'OP1')] = op1_index
             self.atoms.append({
+                'index': op1_index,
                 'name': 'OP1',
                 'element': 'O',
                 'coord': op1_pos,
@@ -225,7 +344,10 @@ class DNABuilder:
                 'res_name': f'D{self.get_base_type(chain, res_id)}'
             })
             
+            op2_index = len(self.atoms) + 1
+            self.atom_index_map[(chain, res_id, 'OP2')] = op2_index
             self.atoms.append({
+                'index': op2_index,
                 'name': 'OP2',
                 'element': 'O',
                 'coord': op2_pos,
@@ -233,6 +355,21 @@ class DNABuilder:
                 'res_id': res_id,
                 'res_name': f'D{self.get_base_type(chain, res_id)}'
             })
+            
+            # Add connectivity for phosphate group
+            self.connectivity.append((p_index, op1_index))
+            self.connectivity.append((p_index, op2_index))
+            
+            # Connect to O3' of previous residue
+            prev_res_id = res_id - 1 if chain == 'A' else res_id + 1
+            o3_key = (chain, prev_res_id, "O3'")
+            if o3_key in self.atom_index_map:
+                self.connectivity.append((self.atom_index_map[o3_key], p_index))
+            
+            # Connect to O5' of current residue
+            o5_key = (chain, res_id, "O5'")
+            if o5_key in self.atom_index_map:
+                self.connectivity.append((p_index, self.atom_index_map[o5_key]))
     
     def get_base_type(self, chain: str, res_id: int) -> str:
         """Get base type for a residue from the atoms list."""
@@ -244,6 +381,8 @@ class DNABuilder:
     def build_dna(self, sequence: str):
         """Build B-DNA double helix from sequence with dinucleotide-specific parameters."""
         self.atoms = []
+        self.atom_index_map = {}
+        self.connectivity = []
         n = len(sequence)
         
         # Store O3' and O5' positions for backbone connectivity
@@ -262,28 +401,49 @@ class DNABuilder:
             # Get propeller twist for this base pair
             propeller = self.get_propeller_twist(base_a, base_b)
             
-            # Chain A (5' to 3')
-            rot_a = self.rotation_z(cumulative_twist)
-            pos_a = np.array([self.RADIUS / 2, 0, z_position])
-            pos_a[:2] = rot_a[:2, :2] @ np.array([self.RADIUS / 2, 0])
+            # Calculate positions to ensure proper base pair distance
+            c1_distance = self.BASE_PAIR_DISTANCE / 2
             
-            atom_pos_a = self.add_nucleotide(base_a, 'A', i + 1, pos_a, rot_a, propeller/2)
+            # Common rotation around the helix axis
+            rot_z_twist = self.rotation_z(cumulative_twist)
+            
+            # With the processed templates, the geometry is now intrinsically correct.
+            # The sugar will point away from the helix axis, and the base will point toward it.
+            
+            # Chain A (5' to 3')
+            # The nucleotide template now has the sugar pointing outward and base inward.
+            # We just need to apply the helical twist.
+            rot_a = rot_z_twist
+            
+            # Position C1' atom at the correct radius
+            pos_a = rot_z_twist @ np.array([c1_distance, 0, 0])
+            pos_a = np.array([pos_a[0], pos_a[1], z_position])
+            
+            atom_pos_a = self.add_nucleotide(base_a, 'A', i + 1, pos_a, rot_a, propeller)
             o3_positions['A'][i + 1] = atom_pos_a["O3'"]
             o5_positions['A'][i + 1] = atom_pos_a["O5'"]
             
             # Chain B (3' to 5', antiparallel)
-            rot_b = self.rotation_z(cumulative_twist + math.pi)  # 180° rotation for opposite strand
-            pos_b = np.array([-self.RADIUS / 2, 0, z_position])
-            pos_b[:2] = rot_b[:2, :2] @ np.array([self.RADIUS / 2, 0])
+            # To make the strand antiparallel and oriented correctly, we need two rotations:
+            # 1. A 180° rotation around the X-axis to flip the strand direction.
+            # 2. A 180° rotation around the Y-axis to ensure the sugar points outward
+            #    and the base points inward from the other side of the helix.
+            antiparallel_rot = self.rotation_x(math.pi)
+            reorient_rot = self.rotation_y(math.pi)
+            rot_b = rot_z_twist @ reorient_rot @ antiparallel_rot
             
-            atom_pos_b = self.add_nucleotide(base_b, 'B', n - i, pos_b, rot_b, propeller/2)
+            # Position on opposite side of helix
+            pos_b = rot_z_twist @ np.array([-c1_distance, 0, 0])
+            pos_b = np.array([pos_b[0], pos_b[1], z_position])
+            
+            atom_pos_b = self.add_nucleotide(base_b, 'B', n - i, pos_b, rot_b, propeller)
             o3_positions['B'][n - i] = atom_pos_b["O3'"]
             o5_positions['B'][n - i] = atom_pos_b["O5'"]
             
             # Update position for next base pair
             if i < n - 1:
                 # Get dinucleotide-specific parameters
-                twist_deg, rise = self.get_dinucleotide_params(base_a, sequence[i + 1])
+                twist_deg, rise = self.get_dinucleotide_params(sequence[i], sequence[i+1])
                 cumulative_twist += math.radians(twist_deg)
                 z_position += rise
         
@@ -299,13 +459,15 @@ class DNABuilder:
                 self.add_phosphate('B', i - 1, o3_positions['B'][i], o5_positions['B'][i - 1])
     
     def write_pdb(self, filename: str):
-        """Write structure to PDB file."""
+        """Write structure to PDB file with CONECT records."""
         with open(filename, 'w') as f:
+            # Write header
             f.write("REMARK   Generated by FluxMD DNA Builder\n")
             f.write("REMARK   B-DNA with dinucleotide-specific parameters\n")
             f.write("REMARK   Based on Olson et al. (1998) PNAS 95:11163-11168\n")
+            f.write("REMARK   Structure includes full atomic connectivity\n")
             
-            atom_id = 1
+            # Write atoms
             for atom in self.atoms:
                 name = atom['name']
                 if len(name) < 4:
@@ -314,20 +476,63 @@ class DNABuilder:
                     name = f"{name:<4}"
                 
                 f.write(
-                    f"ATOM  {atom_id:>5} {name} {atom['res_name']:>3} "
+                    f"ATOM  {atom['index']:>5} {name} {atom['res_name']:>3} "
                     f"{atom['chain']}{atom['res_id']:>4}    "
                     f"{atom['coord'][0]:>8.3f}{atom['coord'][1]:>8.3f}"
                     f"{atom['coord'][2]:>8.3f}  1.00  0.00          "
                     f"{atom['element']:>2}\n"
                 )
-                atom_id += 1
+            
+            # Write TER records for each chain
+            chain_atoms = {}
+            for atom in self.atoms:
+                chain = atom['chain']
+                if chain not in chain_atoms:
+                    chain_atoms[chain] = []
+                chain_atoms[chain].append(atom)
+            
+            # Sort chains
+            for chain in sorted(chain_atoms.keys()):
+                last_atom = chain_atoms[chain][-1]
+                f.write(f"TER   {last_atom['index']+1:>5}      {last_atom['res_name']:>3} "
+                       f"{chain}{last_atom['res_id']:>4}\n")
+            
+            # Write CONECT records
+            # Group connections by atom
+            conect_dict = {}
+            for atom1, atom2 in self.connectivity:
+                if atom1 not in conect_dict:
+                    conect_dict[atom1] = []
+                if atom2 not in conect_dict:
+                    conect_dict[atom2] = []
+                if atom2 not in conect_dict[atom1]:
+                    conect_dict[atom1].append(atom2)
+                if atom1 not in conect_dict[atom2]:
+                    conect_dict[atom2].append(atom1)
+            
+            # Write CONECT records
+            for atom_idx in sorted(conect_dict.keys()):
+                connected = sorted(conect_dict[atom_idx])
+                # Write in groups of 4 connections per line
+                for i in range(0, len(connected), 4):
+                    conect_line = f"CONECT{atom_idx:>5}"
+                    for j in range(4):
+                        if i + j < len(connected):
+                            conect_line += f"{connected[i+j]:>5}"
+                    f.write(conect_line + "\n")
             
             f.write("END\n")
 
 def main():
-    parser = argparse.ArgumentParser(description='Generate B-DNA structure from sequence.')
-    parser.add_argument('sequence', help='DNA sequence (5\' to 3\')')
-    parser.add_argument('-o', '--output', default='dna_structure.pdb', help='Output PDB file')
+    parser = argparse.ArgumentParser(
+        description='Generate B-DNA structure from sequence (5\' to 3\').',
+        epilog='Example: %(prog)s ATCGATCG -o my_dna.pdb'
+    )
+    parser.add_argument('sequence', help='DNA sequence (5\' to 3\'), using A, T, G, C')
+    parser.add_argument('-o', '--output', default='dna_structure.pdb',
+                       help='Output PDB file (default: dna_structure.pdb)')
+    parser.add_argument('--no-conect', action='store_true',
+                       help='Skip writing CONECT records')
     
     args = parser.parse_args()
     
@@ -339,15 +544,21 @@ def main():
     
     print(f"Building B-DNA structure for: 5'-{sequence}-3'")
     print(f"Complementary strand: 3'-{''.join(DNABuilder.COMPLEMENT[b] for b in sequence)}-5'")
-    print("Using dinucleotide-specific parameters...")
+    print("Using dinucleotide-specific parameters from Olson et al. (1998)...")
     
     # Build and save
     builder = DNABuilder()
     builder.build_dna(sequence)
+    
+    # Modify write method if no CONECT requested
+    if args.no_conect:
+        builder.connectivity = []
+    
     builder.write_pdb(args.output)
     
     print(f"\nGenerated: {args.output}")
     print(f"Total atoms: {len(builder.atoms)}")
+    print(f"Total bonds: {len(builder.connectivity)}")
     
     # Report dinucleotide steps used
     print("\nDinucleotide steps:")
@@ -355,6 +566,13 @@ def main():
         dinuc = sequence[i:i+2]
         twist, rise = builder.get_dinucleotide_params(sequence[i], sequence[i+1])
         print(f"  {dinuc}: twist={twist}°, rise={rise} Å")
+    
+    # Report base pairs
+    print(f"\nBase pairs: {len(sequence)}")
+    for i in range(len(sequence)):
+        base_a = sequence[i]
+        base_b = DNABuilder.COMPLEMENT[base_a]
+        print(f"  {i+1}: {base_a}-{base_b}")
 
 if __name__ == '__main__':
     main()
