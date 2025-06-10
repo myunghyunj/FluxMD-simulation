@@ -140,7 +140,7 @@ def run_single_iteration_uma(self, iteration_num, protein_atoms_df, ligand_atoms
                              starting_distance, n_steps, n_approaches, n_rotations,
                              output_dir, gpu_calc=None, approach_angles=None,
                              ca_coords=None, ligand_mw=None, approach_distance=2.5,
-                             save_trajectories=False):
+                             save_trajectories=False, n_iterations=None):
     """
     Run a single iteration with UMA-optimized GPU processing.
     Returns raw GPU InteractionResult objects instead of writing files.
@@ -151,7 +151,10 @@ def run_single_iteration_uma(self, iteration_num, protein_atoms_df, ligand_atoms
     import numpy as np  # Ensure numpy is available in this function scope
     
     print(f"\n{'='*60}")
-    print(f"ITERATION {iteration_num + 1}")
+    if n_iterations:
+        print(f"ITERATION {iteration_num + 1} of {n_iterations}")
+    else:
+        print(f"ITERATION {iteration_num + 1}")
     print(f"{'='*60}")
     
     iteration_results = []
@@ -520,7 +523,8 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
             output_dir, gpu_calc, approach_angles,
             ca_coords=ca_coords, ligand_mw=ligand_mw,
             save_trajectories=save_trajectories,
-            approach_distance=approach_distance
+            approach_distance=approach_distance,
+            n_iterations=n_iterations
         )
         
         all_iteration_results.append(iteration_results)
