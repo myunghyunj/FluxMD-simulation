@@ -9,6 +9,9 @@ from typing import Dict, List, Tuple, Optional
 from dataclasses import dataclass
 from scipy.spatial.distance import cdist
 import logging
+from Bio.PDB.Atom import Atom
+from Bio.PDB.Residue import Residue
+from fluxmd.core.energy_config import ENERGY_BOUNDS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -325,8 +328,7 @@ class ProtonationAwareInteractionDetector:
         # 2. Salt bridges - requires opposite charges
         if distance <= self.cutoffs['salt_bridge']:
             if p_atom.formal_charge * l_atom.formal_charge < 0:
-                energy = -332.0 * abs(p_atom.formal_charge * l_atom.formal_charge) / (4 * distance * distance)
-                energy = max(energy, -10.0)
+                energy = self._calculate_salt_bridge_energy(p_atom.formal_charge, l_atom.formal_charge, distance)
                 interactions.append({
                     'type': 'Salt Bridge',
                     'energy': energy
@@ -360,6 +362,31 @@ class ProtonationAwareInteractionDetector:
             interactions.append({'type': 'Van der Waals', 'energy': energy})
         
         return interactions
+
+    def _calculate_salt_bridge_energy(self, charge1: float, charge2: float, distance: float, epsilon_r: float = 80.0) -> float:
+        """Calculates salt bridge energy using a simplified Coulomb's model."""
+        # Simplified Coulomb's law, capped for stability
+        # Using a dielectric constant for water
+        # Note: This is a simplified model. A more accurate model would use distance-dependent dielectric.
+        if distance == 0:
+            return 0
+        
+        # Conversion factor to get kcal/mol
+        # q1*q2 / (epsilon_r * r) is in elementary charge units.
+        # 1.60218e-19 C/e, 1 cal = 4.184 J, Avogadro = 6.022e23
+        # (1.60218e-19)^2 * (6.022e23 / 4.184) / (4 * pi * 8.854e-12 * 1e-10) -> conversion factor
+        conversion_factor = 332.0637 
+        
+        energy = (conversion_factor * charge1 * charge2) / (epsilon_r * distance)
+        
+        # Cap the energy to prevent singularities at very close distances
+        energy = max(energy, ENERGY_BOUNDS['salt_bridge']['min'])
+        return energy
+
+    def _calculate_vdw_energy(self, res1: Residue, res2: Residue) -> float:
+        # Placeholder for VdW calculation if needed within this class,
+        # otherwise, it relies on intra_protein_interactions.py
+        return 0.0
 
 
 def enhance_fluxmd_with_protonation(protein_atoms: pd.DataFrame,

@@ -11,6 +11,7 @@ from typing import Dict, List, Tuple, Optional
 import logging
 from itertools import combinations
 from .protonation_aware_interactions import ProtonationAwareInteractionDetector
+from fluxmd.core.energy_config import ENERGY_BOUNDS
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -307,7 +308,7 @@ class IntraProteinInteractions:
         epsilon = 0.1  # kcal/mol
         r6 = (sigma / distance) ** 6
         energy = 4 * epsilon * (r6 * r6 - r6)
-        return max(min(energy, 10.0), -10.0)  # Cap to reasonable range
+        return max(min(energy, ENERGY_BOUNDS['vdw']['max']), ENERGY_BOUNDS['vdw']['min'])  # Cap to reasonable range
     
     def _calculate_hbond_energy(self, distance: float) -> float:
         """Hydrogen bond energy"""

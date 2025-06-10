@@ -244,12 +244,12 @@ class DNABuilder:
         
         return atom_positions
     
-    def _add_nucleotide_connectivity(self, chain: str, res_id: int,
+    def _add_nucleotide_connectivity(self, chain: str, res_id: int, 
                                    atom_indices: Dict[str, int], base_type: str):
         """Add CONECT records for intra-nucleotide bonds."""
         # Sugar ring connectivity
         sugar_bonds = [
-            ("C1'", "C2'"), ("C2'", "C3'"), ("C3'", "C4'"),
+            ("C1'", "C2'"), ("C2'", "C3'"), ("C3'", "C4'"), 
             ("C4'", "O4'"), ("O4'", "C1'"), ("C4'", "C5'"),
             ("C5'", "O5'"), ("C3'", "O3'")
         ]
@@ -529,7 +529,7 @@ def main():
         epilog='Example: %(prog)s ATCGATCG -o my_dna.pdb'
     )
     parser.add_argument('sequence', help='DNA sequence (5\' to 3\'), using A, T, G, C')
-    parser.add_argument('-o', '--output', default='dna_structure.pdb',
+    parser.add_argument('-o', '--output', default='dna_structure.pdb', 
                        help='Output PDB file (default: dna_structure.pdb)')
     parser.add_argument('--no-conect', action='store_true',
                        help='Skip writing CONECT records')

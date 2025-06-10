@@ -15,6 +15,9 @@ from typing import Dict, List, Optional
 import platform
 from dataclasses import dataclass
 from ..core.protonation_aware_interactions import ProtonationAwareInteractionDetector
+from fluxmd.core.energy_config import ENERGY_BOUNDS
+import logging
+import time
 
 def get_device():
     """Detects and returns the best available PyTorch device."""
@@ -277,7 +280,7 @@ class GPUAcceleratedInteractionCalculator:
             # Include actual charge magnitudes in calculation
             charge_products = torch.abs(p_charges[salt_mask] * l_charges[salt_mask])
             energies[salt_mask] = -332.0 * charge_products / (4.0 * r * r)
-            energies[salt_mask] = torch.clamp(energies[salt_mask], -10.0, -1.0)
+            energies[salt_mask] = torch.clamp(energies[salt_mask], ENERGY_BOUNDS['salt_bridge']['min'], ENERGY_BOUNDS['salt_bridge']['max'])
         
         # Pi-pi stacking - keeping as is (already uses Gaussian-like form)
         if pi_pi_mask.any():
@@ -299,8 +302,9 @@ class GPUAcceleratedInteractionCalculator:
             epsilon = 0.238
             r = distances[vdw_mask]
             sigma_over_r = sigma / r
-            energies[vdw_mask] = 4 * epsilon * (sigma_over_r**12 - sigma_over_r**6)
-            energies[vdw_mask] = torch.clamp(energies[vdw_mask], -10, 10)
+            r6 = (sigma_over_r) ** 6
+            vdw_energies = 4 * epsilon * (r6**2 - r6)
+            energies[vdw_mask] = torch.clamp(vdw_energies, ENERGY_BOUNDS['vdw']['min'], ENERGY_BOUNDS['vdw']['max'])
 
         # Filter out non-interacting pairs
         active_mask = energies != 0
