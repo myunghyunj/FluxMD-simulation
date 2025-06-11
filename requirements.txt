@@ -1,14 +1,27 @@
 # Core dependencies for FluxMD
-# This file is auto-generated from pyproject.toml
-# For development dependencies, see requirements-dev.txt
 
+# Scientific computing
 numpy>=1.20.0
-pandas>=1.3.0
 scipy>=1.7.0
+pandas>=1.3.0
+
+# Visualization
 matplotlib>=3.4.0
-biopython>=1.79
-torch>=2.0.0
-joblib>=1.0.0
-networkx>=2.8.0
 seaborn>=0.12.0
-colorama>=0.4.6
+
+# Machine learning / GPU
+torch>=2.0.0
+
+# Bioinformatics
+biopython>=1.79
+
+# Parallel processing
+joblib>=1.0.0
+
+# Optional dependencies (for specific features)
+# Note: OpenBabel must be installed via conda:
+# conda install -c conda-forge openbabel
+
+# For development and testing
+# colorama>=0.4.6  # For colored terminal output
+# networkx>=2.8.0  # For graph-based analysis (if needed)
