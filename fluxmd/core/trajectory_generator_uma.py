@@ -415,7 +415,7 @@ def run_single_iteration_uma(self, iteration_num, protein_atoms_df, ligand_atoms
                 f.write("  Energy Capping: ±10 kcal/mol\n")
                 f.write("  Purpose: Prevents numerical singularities while preserving physiological relevance\n")
                 f.write("  Justification:\n")
-                f.write("    - Physiological energy scale: -5 to +10 kcal/mol\n")
+                f.write("    - Physiological energy scale: -5 to +10 kcal/mol\n")   # 10 kcal/mol is a common threshold—steric clash
                 f.write("    - Capping at ±10 allows capture of high-energy transitions\n")
                 f.write("    - Prevents 1/r singularities at close contact\n")
                 f.write("    - Maintains numerical stability for GPU calculations\n")
