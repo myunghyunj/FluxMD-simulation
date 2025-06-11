@@ -32,6 +32,9 @@ warnings.filterwarnings('ignore')
 from .intra_protein_interactions import IntraProteinInteractions
 from .protonation_aware_interactions import calculate_interactions_with_protonation
 
+# Import utils
+from ..utils.pdb_parser import PDBParser
+
 
 class CollisionDetector:
     """Efficient collision detection for protein-ligand systems"""
@@ -126,21 +129,49 @@ class CollisionDetector:
 
 
 class ProteinLigandFluxAnalyzer:
-    """Main analyzer class for trajectory generation with integrated force fields"""
-    
-    def __init__(self, physiological_pH=7.4):
-        self.parser = PDBParser(QUIET=True)
-        self.collision_detector = CollisionDetector()
-        self.physiological_pH = physiological_pH  # pH for protonation calculations
+    """
+    Main class to orchestrate the flux analysis, from trajectory generation
+    to interaction calculation and data processing.
+    """
+    def __init__(self, protein_file: str, ligand_file: str, output_dir: str, target_is_dna: bool = False):
+        self.protein_file = protein_file
+        self.ligand_file = ligand_file
+        self.output_dir = output_dir
+        self.target_is_dna = target_is_dna # NEW: Flag for DNA target
+        self.gpu_calculator = None
         
-        # Residue properties for interaction detection
-        self.init_residue_properties()
+        # Get protein and ligand names
+        self.protein_name = os.path.basename(protein_file).replace('.pdb', '').replace('.cif', '')
+        self.ligand_name = os.path.basename(ligand_file).replace('.pdb', '').replace('.smi', '')
         
-        # Intra-protein force field calculator
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Initialize intra-protein force field calculator
         self.intra_protein_calc = None
         self.intra_protein_vectors = None
         
-        # Store GPU trajectory results for integrated pipeline
+        # Initialize collision detector
+        self.collision_detector = CollisionDetector()
+        
+        # Initialize physiological pH
+        self.physiological_pH = 7.4
+        
+        # Initialize residue property definitions
+        self.init_residue_properties()
+        
+        # Initialize molecular weight dictionary
+        self.ELEMENT_MASSES = {
+            'H': 1.008, 'C': 12.011, 'N': 14.007, 'O': 15.999,
+            'S': 32.065, 'P': 30.974, 'F': 18.998, 'CL': 35.453,
+            'BR': 79.904, 'I': 126.904, 'FE': 55.845, 'ZN': 65.38,
+            'A': 12.011  # PDBQT aromatic carbon if not caught by parser
+        }
+        
+        # Initialize molecular weight
+        self.molecular_weight = None
+        
+        # Initialize trajectory results
         self.gpu_trajectory_results = None
         
     def init_residue_properties(self):
@@ -1971,6 +2002,45 @@ class ProteinLigandFluxAnalyzer:
             print("No valid iterations completed.")
         
         return iteration_data
+
+    def run_simulation_iterations(self, protein_atoms: pd.DataFrame,
+                                  ligand_atoms: pd.DataFrame,
+                                  n_iterations: int,
+                                  **kwargs):
+        """
+        Run the complete simulation across multiple iterations for statistical significance.
+        """
+        print_banner(f"🚀 STARTING FLUX SIMULATION: {self.protein_name} + {self.ligand_name}")
+        
+        # Create a pool of workers
+        # NOTE: Using 'fork' start method can cause issues with GPU resources on some platforms
+        # 'spawn' is safer but might be slower due to process creation overhead.
+        start_method = 'spawn' if platform.system() != 'Linux' else 'fork'
+        
+        try:
+            with mp.get_context(start_method).Pool(processes=mp.cpu_count()) as pool:
+                # Prepare arguments for each iteration
+                args_list = [(i, protein_atoms, ligand_atoms, self.output_dir, kwargs)
+                             for i in range(n_iterations)]
+                
+                # Run iterations in parallel
+                pool.starmap(self._run_single_iteration_wrapper, args_list)
+        
+        except Exception as e:
+            print(f"\nError during parallel processing: {e}")
+            print("Switching to sequential execution for remaining iterations.")
+            # Fallback to sequential execution
+            for i in range(n_iterations):
+                self._run_single_iteration_wrapper(i, protein_atoms, ligand_atoms, self.output_dir, kwargs)
+                
+        print("\nAll simulation iterations complete.")
+
+    def _run_single_iteration_wrapper(self, i, protein_atoms, ligand_atoms, output_dir, kwargs):
+        """Wrapper to pass self to the iteration function for parallel execution"""
+        # Re-initialize analyzer for each process to avoid sharing state
+        analyzer = ProteinLigandFluxAnalyzer(self.protein_file, self.ligand_file, output_dir, self.target_is_dna)
+        analyzer.set_gpu_calculator(self.gpu_calculator)
+        analyzer.run_single_iteration(i, protein_atoms, ligand_atoms, **kwargs)
 
 
 def main():

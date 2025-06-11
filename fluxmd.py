@@ -426,10 +426,17 @@ def parse_simulation_parameters(params_file):
                     params['n_rotations'] = int(value)
                 elif key == "pH":
                     params['physiological_pH'] = float(value)
+                elif key == "Physiological pH":
+                    params['physiological_pH'] = float(value)
                 elif key == "Protein":
                     params['protein_file'] = value
                 elif key == "Ligand":
                     params['ligand_file'] = value
+                # DNA workflow specific parameters
+                elif key == "DNA (target)":
+                    params['dna_file'] = value
+                elif key == "Protein (mobile)":
+                    params['protein_file'] = value
                 elif key == "Protein name":
                     params['protein_name'] = value
                 elif key == "Final distance":
@@ -986,9 +993,6 @@ def run_complete_workflow():
         print("3. Compare the flux reports to identify different binding preferences")
 
 
-def main():
-    """Main entry point with menu"""
-    print_banner("FLUXMD - PROTEIN-LIGAND FLUX ANALYSIS")
     
     print("Welcome to FluxMD - GPU-accelerated binding site prediction")
     print("\nOptions:")
@@ -1007,14 +1011,433 @@ def main():
         print_banner("UMA-OPTIMIZED WORKFLOW")
         print("This uses zero-copy GPU processing for maximum performance.")
         print("Best for Apple Silicon Macs and systems with unified memory.\n")
+    if use_existing == 'y':
+        params_file = input("Enter path to simulation_parameters.txt: ").strip()
+        if os.path.exists(params_file):
+            loaded_params = parse_simulation_parameters(params_file)
+            if loaded_params:
+                print("\nLoaded parameters from file:")
+                for key, value in loaded_params.items():
+                    print(f"  {key}: {value}")
+                
+                # Ask about protein and ligand files
+                if 'protein_file' in loaded_params and 'ligand_file' in loaded_params:
+                    print(f"\nLoaded protein: {loaded_params['protein_file']}")
+                    print(f"Loaded ligand: {loaded_params['ligand_file']}")
+                    use_same = input("\nUse the same protein and ligand files? (y/n): ").strip().lower()
+                    
+                    if use_same == 'y':
+                        protein_file = loaded_params['protein_file']
+                        ligand_file = loaded_params['ligand_file']
+                    else:
+                        # Will ask for new files below
+                        protein_file = None
+                        ligand_file = None
+                else:
+                    # If files weren't in the loaded params, use them if available
+                    if 'protein_file' in loaded_params:
+                        protein_file = loaded_params['protein_file']
+                    if 'ligand_file' in loaded_params:
+                        ligand_file = loaded_params['ligand_file']
+        else:
+            print(f"File not found: {params_file}")
+            use_existing = 'n'
+    
+    # Get input files if not loaded from parameters
+    if not protein_file:
+        protein_file = input("\nEnter protein PDB file: ").strip()
+    
+    # Check if protein file exists, if not, handle missing files
+    if not os.path.exists(protein_file):
+        print(f"Error: {protein_file} not found!")
+        
+        # Check if it's a path issue from loaded parameters
+        if loaded_params and 'protein_file' in loaded_params:
+            print("\nThe protein file path from the parameters file doesn't exist.")
+            print("This might be because the files were moved or you're on a different machine.")
+            
+            # Try to find the file in current directory
+            protein_basename = os.path.basename(protein_file)
+            if os.path.exists(protein_basename):
+                print(f"\nFound '{protein_basename}' in current directory.")
+                use_current = input("Use this file? (y/n): ").strip().lower()
+                if use_current == 'y':
+                    protein_file = protein_basename
+                else:
+                    protein_file = input("Enter correct path to protein PDB file: ").strip()
+            else:
+                # Ask for directory containing the files
+                print("\nPlease provide the directory containing your protein and ligand files.")
+                new_dir = input("Enter directory path (or press Enter to manually input file paths): ").strip()
+                
+                if new_dir:
+                    # Check if user entered a file path instead of directory
+                    if os.path.isfile(new_dir):
+                        print(f"\nYou entered a file path. Using: {new_dir}")
+                        protein_file = new_dir
+                    elif os.path.isdir(new_dir):
+                        # Try to find the protein file in the new directory
+                        potential_protein = os.path.join(new_dir, protein_basename)
+                        if os.path.exists(potential_protein):
+                            print(f"Found protein file: {potential_protein}")
+                            protein_file = potential_protein
+                        else:
+                            # List PDB files in the directory
+                            pdb_files = [f for f in os.listdir(new_dir) if f.endswith('.pdb')]
+                            if pdb_files:
+                                print(f"\nFound {len(pdb_files)} PDB files in {new_dir}:")
+                                for i, f in enumerate(pdb_files):
+                                    print(f"  {i+1}. {f}")
+                                choice = input("\nSelect protein file by number (or press Enter to input manually): ").strip()
+                                if choice.isdigit() and 1 <= int(choice) <= len(pdb_files):
+                                    protein_file = os.path.join(new_dir, pdb_files[int(choice)-1])
+                                else:
+                                    protein_file = input("Enter full path to protein PDB file: ").strip()
+                            else:
+                                protein_file = input("Enter full path to protein PDB file: ").strip()
+                        
+                        # Update ligand file path if it's also from loaded parameters
+                        if loaded_params and 'ligand_file' in loaded_params and ligand_file:
+                            ligand_basename = os.path.basename(ligand_file)
+                            potential_ligand = os.path.join(new_dir, ligand_basename)
+                            if os.path.exists(potential_ligand):
+                                print(f"Found ligand file: {potential_ligand}")
+                                ligand_file = potential_ligand
+                        else:
+                            print(f"\nPath not found: {new_dir}")
+                        protein_file = input("Enter full path to protein PDB file: ").strip()
+                else:
+                    protein_file = input("Enter full path to protein PDB file: ").strip()
+        
+        # Final check
+        if not os.path.exists(protein_file):
+            print(f"Error: Still cannot find {protein_file}")
+            return
+    
+    if not ligand_file:
+        ligand_file = input("Enter ligand PDB file: ").strip()
+    
+    # Similar handling for ligand file
+    if not os.path.exists(ligand_file):
+        print(f"Error: {ligand_file} not found!")
+        
+        if loaded_params and 'ligand_file' in loaded_params:
+            # Try to use the directory from protein file if it was updated
+            protein_dir = os.path.dirname(protein_file)
+            ligand_basename = os.path.basename(ligand_file)
+            potential_ligand = os.path.join(protein_dir, ligand_basename)
+            
+            if os.path.exists(potential_ligand):
+                print(f"\nFound '{ligand_basename}' in the same directory as protein.")
+                use_this = input("Use this file? (y/n): ").strip().lower()
+                if use_this == 'y':
+                    ligand_file = potential_ligand
+                else:
+                    ligand_file = input("Enter correct path to ligand file: ").strip()
+            else:
+                # List potential ligand files
+                ligand_extensions = ['.pdb', '.pdbqt', '.mol2', '.sdf']
+                ligand_files = [f for f in os.listdir(protein_dir) 
+                              if any(f.endswith(ext) for ext in ligand_extensions) 
+                              and f != os.path.basename(protein_file)]
+                
+                if ligand_files:
+                    print(f"\nFound {len(ligand_files)} potential ligand files:")
+                    for i, f in enumerate(ligand_files):
+                        print(f"  {i+1}. {f}")
+                    choice = input("\nSelect ligand file by number (or press Enter to input manually): ").strip()
+                    if choice.isdigit() and 1 <= int(choice) <= len(ligand_files):
+                        ligand_file = os.path.join(protein_dir, ligand_files[int(choice)-1])
+                    else:
+                        ligand_file = input("Enter full path to ligand file: ").strip()
+                else:
+                    ligand_file = input("Enter full path to ligand file: ").strip()
+        else:
+            ligand_file = input("Enter correct path to ligand file: ").strip()
+        
+        # Final check
+        if not os.path.exists(ligand_file):
+            print(f"Error: Still cannot find {ligand_file}")
+            return
+    
+    output_dir = input("Output directory (default 'flux_analysis_uma'): ").strip() or "flux_analysis_uma"
+    
+    # Continue with parameter confirmation if loaded
+    print("\nSIMULATION PARAMETERS")
+    
+    if use_existing == 'y' and loaded_params:
+        confirm = input("\nUse these parameters? (y/n): ").strip().lower()
+        if confirm == 'y':
+            # Use loaded parameters
+            n_steps = loaded_params.get('n_steps', 200)
+            n_iterations = loaded_params.get('n_iterations', 10)
+            n_approaches = loaded_params.get('n_approaches', 10)
+            approach_distance = loaded_params.get('approach_distance', 2.5)
+            starting_distance = loaded_params.get('starting_distance', 20.0)
+            n_rotations = loaded_params.get('n_rotations', 36)
+            physiological_pH = loaded_params.get('physiological_pH', 7.4)
+        else:
+            use_existing = 'n'  # Fall back to manual entry
+    else:
+        if use_existing == 'y':
+            print("Failed to parse parameters file.")
+        use_existing = 'n'
+    
+    if use_existing != 'y':
+        # Manual parameter entry
+        print("\nEnter parameters manually (press Enter for defaults):\n")
+        
+        n_steps = input("Steps per trajectory (default 200): ").strip()
+        n_steps = int(n_steps) if n_steps else 200
+        
+        n_iterations = input("Number of iterations (default 10): ").strip()
+        n_iterations = int(n_iterations) if n_iterations else 10
+        
+        n_approaches = input("Number of approach angles (default 10): ").strip()
+        n_approaches = int(n_approaches) if n_approaches else 10
+        
+        starting_distance = input("Starting distance in Angstroms (default 20.0): ").strip()
+        starting_distance = float(starting_distance) if starting_distance else 20.0
+        
+        approach_distance = input("Distance step between approaches in Angstroms (default 2.5): ").strip()
+        approach_distance = float(approach_distance) if approach_distance else 2.5
+        
+        n_rotations = input("Rotations per position (default 36): ").strip()
+        n_rotations = int(n_rotations) if n_rotations else 36
+        
+        physiological_pH = input("pH for protonation states (default 7.4): ").strip()
+        physiological_pH = float(physiological_pH) if physiological_pH else 7.4
+    
+    # Ask about saving trajectories (default: yes)
+    save_trajectories_input = input("\nSave trajectory files? (Y/n): ").strip().lower()
+    save_trajectories = save_trajectories_input != 'n'  # Default to yes unless 'n' is entered
+    
+    # Ask about showing detailed interaction breakdown (default: yes)
+    show_interactions_input = input("Show detailed interaction breakdown? (Y/n): ").strip().lower()
+    show_interactions = show_interactions_input != 'n'  # Default to yes unless 'n' is entered
+    
+    # Show summary
+    print("\nUMA ANALYSIS CONFIGURATION:")
+    print(f"  Protein: {protein_file}")
+    print(f"  Ligand: {ligand_file}")
+    print(f"  Output: {output_dir}")
+    print(f"  Steps: {n_steps}")
+    print(f"  Iterations: {n_iterations}")
+    print(f"  Approaches: {n_approaches}")
+    print(f"  Starting distance: {starting_distance} Å")
+    print(f"  Approach distance: {approach_distance} Å")
+    print(f"  Rotations: {n_rotations}")
+    print(f"  pH: {physiological_pH}")
+    print(f"  Save trajectories: {'Yes' if save_trajectories else 'No'}")
+    print(f"  Show interaction details: {'Yes' if show_interactions else 'No'}")
+    
+    # Calculate total operations
+    total_frames = n_steps * n_approaches * n_iterations
+    print(f"\nTotal trajectory frames: {total_frames:,}")
+    
+    confirm = input("\nProceed with UMA-optimized analysis? (Y/n): ").strip().lower()
+    if confirm == 'n':
+        print("Analysis cancelled.")
+        return
+    
+    # Run fluxmd_uma as subprocess with parameters
+    import subprocess
+    cmd = [
+        sys.executable, "fluxmd_uma.py", 
+        protein_file, ligand_file, 
+        "-o", output_dir,
+        "-s", str(n_steps),
+        "-i", str(n_iterations),
+        "-a", str(n_approaches),
+        "-d", str(starting_distance),
+        "--approach-distance", str(approach_distance),
+        "-r", str(n_rotations),
+        "--ph", str(physiological_pH)
+    ]
+    
+    # Add save trajectories flag if requested
+    if save_trajectories:
+        cmd.append("--save-trajectories")
+    
+    # Add interaction details flag if requested
+    if show_interactions:
+        cmd.append("--interaction-details")
+    
+    subprocess.run(cmd)
+
+
+def run_smiles_converter():
+    """Wrapper for the SMILES to PDB converter"""
+    print_banner("SMILES TO PDB CONVERTER")
+    smiles = input("Enter SMILES string: ").strip()
+    if smiles:
+        name = input("Enter output name: ").strip() or "ligand"
+        
+        print("\nConversion options:")
+        print("1. NCI CACTUS (web service - fast but limited aromatic preservation)")
+        print("2. OpenBabel standard (local - basic PDB)")
+        print("3. OpenBabel PDBQT (local - BEST for aromatic preservation)")
+        
+        method = input("\nSelect method (1-3) [3]: ").strip() or "3"
+        
+        if method == "1":
+            convert_smiles_to_pdb_cactus(smiles, name)
+        elif method == "2":
+            convert_smiles_to_pdb_openbabel(smiles, name)
+        else:
+            # Use enhanced PDBQT method
+            convert_smiles_with_aromatics(smiles, name)
+
+
+def run_dna_generator():
+    """Wrapper for the DNA generator"""
+    print_banner("DNA SEQUENCE TO STRUCTURE")
+    print("Generate 3D B-DNA structure from sequence")
+    print("\nNote: This creates atomically-detailed B-DNA for protein-DNA interaction analysis")
+    print("Features:")
+    print("  - Proper sugar-phosphate backbone with all atoms")
+    print("  - Watson-Crick base pairing geometry")
+    print("  - Standard B-DNA helical parameters")
+    print("  - Complete connectivity information (CONECT records)")
+    
+    sequence = input("\nEnter DNA sequence (e.g., ATCGATCG): ").strip().upper()
+    
+    # Validate sequence
+    valid_bases = set('ATGC')
+    if not sequence:
+        print("Error: Empty sequence")
+        return
+    if not all(base in valid_bases for base in sequence):
+        print("Error: Sequence must contain only A, T, G, C")
+        print(f"Found invalid characters: {set(sequence) - valid_bases}")
+        return
+    
+    # Warn about sequence length
+    if len(sequence) < 4:
+        print("Warning: Very short sequences may not show proper helical structure")
+    elif len(sequence) > 100:
+        print(f"Warning: Long sequence ({len(sequence)} bp) will generate many atoms")
+        confirm = input("Continue? (y/n): ").strip().lower()
+        if confirm != 'y':
+            return
+    
+    output_name = input("Enter output filename (default: dna_structure.pdb): ").strip()
+    if not output_name:
+        output_name = "dna_structure.pdb"
+    
+    # Ensure .pdb extension
+    if not output_name.endswith('.pdb'):
+        output_name += '.pdb'
+    
+    # Import the DNA builder
+    try:
+        from fluxmd.utils.dna_to_pdb import DNABuilder
+    except ImportError:
+        print("Error: Could not import DNA builder")
+        return
+    
+    print(f"\nGenerating B-DNA structure for: {sequence}")
+    print(f"Sequence length: {len(sequence)} bp")
+    print(f"Double helix will contain:")
+    print(f"  - {len(sequence) * 2} nucleotides total")
+    print(f"  - ~{len(sequence) * 35} atoms per strand")
+    print(f"  - Helix length: ~{len(sequence) * 3.38:.1f} Angstroms")
+    
+    try:
+        builder = DNABuilder()
+        builder.build_dna(sequence)
+        builder.write_pdb(output_name)
+        
+        print(f"\nStructure successfully written to: {output_name}")
+        print(f"  Total atoms: {len(builder.atoms)}")
+        print(f"  Base pairs: {len(sequence)}")
+        print(f"  Chains: A (5' to 3'), B (3' to 5')")
+        
+        # Provide usage tips
+        print("\nStructure details:")
+        print("  - Strand A: 5' to 3' direction")
+        print("  - Strand B: 3' to 5' direction (complementary)")
+        print("  - Standard B-DNA geometry (10.5 bp/turn)")
+        print("  - All atoms including hydrogens")
+        
+        print("\nUsage in FluxMD:")
+        print("  1. Use this DNA as the 'ligand' in workflow option 1")
+        print("  2. FluxMD will analyze protein-DNA interactions")
+        print("  3. High flux regions indicate DNA binding sites")
+        
+        print("\nVisualization tips:")
+        print("  pymol " + output_name)
+        print("  PyMOL commands:")
+        print("    show cartoon")
+        print("    set cartoon_nucleic_acid_mode, 4")
+        print("    color cyan, chain A")
+        print("    color yellow, chain B")
+        print("    show sticks, resn DG+DC+DA+DT")
+        print("    set stick_radius, 0.2")
+        
+        # Offer to generate a test protein-DNA complex
+        print("\nTip: For testing protein-DNA interactions:")
+        print("  - Use a DNA-binding protein (e.g., transcription factor)")
+        print("  - DNA groove widths: Major ~22Angstroms, Minor ~12Angstroms")
+        print("  - Typical protein-DNA interface: 10-20 base pairs")
+        
+    except Exception as e:
+        print(f"\nError generating DNA structure: {e}")
+        import traceback
+        traceback.print_exc()
+        print("\nTroubleshooting:")
+        print("  - Check sequence contains only ATGC")
+        print("  - Ensure write permissions in current directory")
+        print("  - Try a shorter test sequence first")
+
+
+def get_recommended_parameters(protein_atoms, dna_atoms, device):
+    """Recommend simulation parameters based on system size"""
+    protein_size = len(protein_atoms)
+    dna_size = len(dna_atoms)
+    total_size = protein_size + dna_size
+    
+    # Base recommendations on protein size
+    if protein_size < 2000:  # Small protein
+        n_iterations = 10
+        n_approaches = 10
+        n_steps = 200
+        n_rotations = 36
+    elif protein_size < 5000:  # Medium protein
+        n_iterations = 10
+        n_approaches = 8
+        n_steps = 150
+        n_rotations = 24
+    else:  # Large protein
+        n_iterations = 5
+        n_approaches = 6
+        n_steps = 100
+        n_rotations = 18
+    
+    # Adjust for DNA length
+    if dna_size > 5000:  # Long DNA
+        n_approaches = min(n_approaches, 6)
+        
+    return {
+        'n_iterations': n_iterations,
+        'n_approaches': n_approaches,
+        'n_steps': n_steps,
+        'n_rotations': n_rotations
+    }
+
+
+def run_protein_dna_uma_workflow():
+    """Wrapper for the Protein-DNA UMA workflow"""
+    print_banner("Protein-DNA Interaction Analysis (UMA Workflow)")
+    
+    try:
+        # Ask if user wants to load existing parameters
+        use_existing = input("\nLoad parameters from existing simulation? (y/n): ").strip().lower()
         
         # Initialize variables
-        protein_file = None
-        ligand_file = None
         loaded_params = None
-        
-        # Ask if user wants to use existing parameters first
-        use_existing = input("Load parameters from existing simulation? (y/n): ").strip().lower()
+        dna_file = ''
+        protein_file = ''
         
         if use_existing == 'y':
             params_file = input("Enter path to simulation_parameters.txt: ").strip()
@@ -1025,377 +1448,199 @@ def main():
                     for key, value in loaded_params.items():
                         print(f"  {key}: {value}")
                     
-                    # Ask about protein and ligand files
-                    if 'protein_file' in loaded_params and 'ligand_file' in loaded_params:
-                        print(f"\nLoaded protein: {loaded_params['protein_file']}")
-                        print(f"Loaded ligand: {loaded_params['ligand_file']}")
-                        use_same = input("\nUse the same protein and ligand files? (y/n): ").strip().lower()
-                        
-                        if use_same == 'y':
-                            protein_file = loaded_params['protein_file']
-                            ligand_file = loaded_params['ligand_file']
-                        else:
-                            # Will ask for new files below
-                            protein_file = None
-                            ligand_file = None
+                    # Extract file paths if available
+                    dna_file = loaded_params.get('dna_file', '')
+                    protein_file = loaded_params.get('protein_file', '')
+                    
+                    if dna_file and protein_file and os.path.exists(dna_file) and os.path.exists(protein_file):
+                        print(f"\nDNA file: {dna_file}")
+                        print(f"Protein file: {protein_file}")
+                        use_files = input("Use these files? (y/n): ").strip().lower()
+                        if use_files != 'y':
+                            dna_file = ''
+                            protein_file = ''
                     else:
-                        # If files weren't in the loaded params, use them if available
-                        if 'protein_file' in loaded_params:
-                            protein_file = loaded_params['protein_file']
-                        if 'ligand_file' in loaded_params:
-                            ligand_file = loaded_params['ligand_file']
+                        dna_file = ''
+                        protein_file = ''
             else:
-                print(f"File not found: {params_file}")
-                use_existing = 'n'
+                print(f"Parameters file not found: {params_file}")
+                loaded_params = None
         
         # Get input files if not loaded from parameters
+        if not dna_file:
+            dna_file = input("Enter path to DNA PDB file: ").strip()
         if not protein_file:
-            protein_file = input("\nEnter protein PDB file: ").strip()
+            protein_file = input("Enter path to Protein PDB file: ").strip()
         
-        # Check if protein file exists, if not, handle missing files
-        if not os.path.exists(protein_file):
-            print(f"Error: {protein_file} not found!")
+        if not os.path.exists(dna_file) or not os.path.exists(protein_file):
+            print("Error: One or both input files not found.")
+            return
             
-            # Check if it's a path issue from loaded parameters
-            if loaded_params and 'protein_file' in loaded_params:
-                print("\nThe protein file path from the parameters file doesn't exist.")
-                print("This might be because the files were moved or you're on a different machine.")
-                
-                # Try to find the file in current directory
-                protein_basename = os.path.basename(protein_file)
-                if os.path.exists(protein_basename):
-                    print(f"\nFound '{protein_basename}' in current directory.")
-                    use_current = input("Use this file? (y/n): ").strip().lower()
-                    if use_current == 'y':
-                        protein_file = protein_basename
-                    else:
-                        protein_file = input("Enter correct path to protein PDB file: ").strip()
-                else:
-                    # Ask for directory containing the files
-                    print("\nPlease provide the directory containing your protein and ligand files.")
-                    new_dir = input("Enter directory path (or press Enter to manually input file paths): ").strip()
-                    
-                    if new_dir:
-                        # Check if user entered a file path instead of directory
-                        if os.path.isfile(new_dir):
-                            print(f"\nYou entered a file path. Using: {new_dir}")
-                            protein_file = new_dir
-                        elif os.path.isdir(new_dir):
-                            # Try to find the protein file in the new directory
-                            potential_protein = os.path.join(new_dir, protein_basename)
-                            if os.path.exists(potential_protein):
-                                print(f"Found protein file: {potential_protein}")
-                                protein_file = potential_protein
-                            else:
-                                # List PDB files in the directory
-                                pdb_files = [f for f in os.listdir(new_dir) if f.endswith('.pdb')]
-                                if pdb_files:
-                                    print(f"\nFound {len(pdb_files)} PDB files in {new_dir}:")
-                                    for i, f in enumerate(pdb_files):
-                                        print(f"  {i+1}. {f}")
-                                    choice = input("\nSelect protein file by number (or press Enter to input manually): ").strip()
-                                    if choice.isdigit() and 1 <= int(choice) <= len(pdb_files):
-                                        protein_file = os.path.join(new_dir, pdb_files[int(choice)-1])
-                                    else:
-                                        protein_file = input("Enter full path to protein PDB file: ").strip()
-                                else:
-                                    protein_file = input("Enter full path to protein PDB file: ").strip()
-                            
-                            # Update ligand file path if it's also from loaded parameters
-                            if loaded_params and 'ligand_file' in loaded_params and ligand_file:
-                                ligand_basename = os.path.basename(ligand_file)
-                                potential_ligand = os.path.join(new_dir, ligand_basename)
-                                if os.path.exists(potential_ligand):
-                                    print(f"Found ligand file: {potential_ligand}")
-                                    ligand_file = potential_ligand
-                        else:
-                            print(f"\nPath not found: {new_dir}")
-                            protein_file = input("Enter full path to protein PDB file: ").strip()
-                    else:
-                        protein_file = input("Enter full path to protein PDB file: ").strip()
-            else:
-                protein_file = input("Enter correct path to protein PDB file: ").strip()
+        output_dir = input("Enter output directory name [flux_results_dna]: ").strip()
+        if not output_dir:
+            output_dir = "flux_results_dna"
+
+        # Parse files first to get atom counts
+        from fluxmd.utils.pdb_parser import PDBParser
+        parser = PDBParser()
+        dna_atoms = parser.parse(dna_file, is_dna=True)
+        protein_atoms = parser.parse(protein_file)
+        
+        if dna_atoms is None or protein_atoms is None:
+            print("Error parsing input files.")
+            return
             
-            # Final check
-            if not os.path.exists(protein_file):
-                print(f"Error: Still cannot find {protein_file}")
-                return
+        print(f"\nSystem size: {len(protein_atoms)} protein atoms, {len(dna_atoms)} DNA atoms")
         
-        if not ligand_file:
-            ligand_file = input("Enter ligand PDB file: ").strip()
+        # Get device and recommended parameters
+        device = get_device()
+        recommended = get_recommended_parameters(protein_atoms, dna_atoms, device)
         
-        # Similar handling for ligand file
-        if not os.path.exists(ligand_file):
-            print(f"Error: {ligand_file} not found!")
-            
-            if loaded_params and 'ligand_file' in loaded_params:
-                # Try to use the directory from protein file if it was updated
-                protein_dir = os.path.dirname(protein_file)
-                ligand_basename = os.path.basename(ligand_file)
-                potential_ligand = os.path.join(protein_dir, ligand_basename)
-                
-                if os.path.exists(potential_ligand):
-                    print(f"\nFound '{ligand_basename}' in the same directory as protein.")
-                    use_this = input("Use this file? (y/n): ").strip().lower()
-                    if use_this == 'y':
-                        ligand_file = potential_ligand
-                    else:
-                        ligand_file = input("Enter correct path to ligand file: ").strip()
-                else:
-                    # List potential ligand files
-                    ligand_extensions = ['.pdb', '.pdbqt', '.mol2', '.sdf']
-                    ligand_files = [f for f in os.listdir(protein_dir) 
-                                  if any(f.endswith(ext) for ext in ligand_extensions) 
-                                  and f != os.path.basename(protein_file)]
-                    
-                    if ligand_files:
-                        print(f"\nFound {len(ligand_files)} potential ligand files:")
-                        for i, f in enumerate(ligand_files):
-                            print(f"  {i+1}. {f}")
-                        choice = input("\nSelect ligand file by number (or press Enter to input manually): ").strip()
-                        if choice.isdigit() and 1 <= int(choice) <= len(ligand_files):
-                            ligand_file = os.path.join(protein_dir, ligand_files[int(choice)-1])
-                        else:
-                            ligand_file = input("Enter full path to ligand file: ").strip()
-                    else:
-                        ligand_file = input("Enter full path to ligand file: ").strip()
-            else:
-                ligand_file = input("Enter correct path to ligand file: ").strip()
-            
-            # Final check
-            if not os.path.exists(ligand_file):
-                print(f"Error: Still cannot find {ligand_file}")
-                return
-        
-        output_dir = input("Output directory (default 'flux_analysis_uma'): ").strip() or "flux_analysis_uma"
-        
-        # Continue with parameter confirmation if loaded
-        print("\nSIMULATION PARAMETERS")
-        
-        if use_existing == 'y' and loaded_params:
-            confirm = input("\nUse these parameters? (y/n): ").strip().lower()
+        # Check if we have loaded parameters and ask to use them
+        if loaded_params and use_existing == 'y':
+            confirm = input("\nUse loaded parameters? (y/n): ").strip().lower()
             if confirm == 'y':
                 # Use loaded parameters
-                n_steps = loaded_params.get('n_steps', 200)
-                n_iterations = loaded_params.get('n_iterations', 10)
-                n_approaches = loaded_params.get('n_approaches', 10)
-                approach_distance = loaded_params.get('approach_distance', 2.5)
+                n_iterations = loaded_params.get('n_iterations', recommended['n_iterations'])
+                n_approaches = loaded_params.get('n_approaches', recommended['n_approaches'])
+                n_steps = loaded_params.get('n_steps', recommended['n_steps'])
+                n_rotations = loaded_params.get('n_rotations', recommended['n_rotations'])
                 starting_distance = loaded_params.get('starting_distance', 20.0)
-                n_rotations = loaded_params.get('n_rotations', 36)
                 physiological_pH = loaded_params.get('physiological_pH', 7.4)
+                
+                print("\nUsing loaded parameters:")
+                print(f"  Number of iterations: {n_iterations}")
+                print(f"  Number of approaches: {n_approaches}")
+                print(f"  Steps per trajectory: {n_steps}")
+                print(f"  Rotations per position: {n_rotations}")
+                print(f"  Starting distance: {starting_distance} Å")
+                print(f"  Physiological pH: {physiological_pH}")
             else:
-                use_existing = 'n'  # Fall back to manual entry
+                loaded_params = None  # Fall through to manual selection
+        
+        # If not using loaded parameters, select analysis mode
+        if not loaded_params or confirm != 'y':
+            print("\nSelect analysis mode:")
+            print("1. Custom parameters (recommended)")
+            print("2. Quick test (minimal sampling)")
+            print("3. Standard analysis (balanced)")
+            print("4. Deep analysis (comprehensive)")
+            
+            mode = input("Choice [1]: ").strip() or "1"
+        
+            if mode == "2":  # Quick test
+                n_iterations = 2
+                n_approaches = 4
+                n_steps = 50
+                n_rotations = 12
+            elif mode == "3":  # Standard
+                n_iterations = recommended['n_iterations']
+                n_approaches = recommended['n_approaches']
+                n_steps = recommended['n_steps']
+                n_rotations = recommended['n_rotations']
+            elif mode == "4":  # Deep analysis
+                n_iterations = recommended['n_iterations'] * 2
+                n_approaches = min(20, recommended['n_approaches'] + 5)
+                n_steps = min(500, recommended['n_steps'] + 100)
+                n_rotations = min(72, recommended['n_rotations'] * 2)
+            else:  # Custom mode
+                print("\nSimulation Parameters (recommendations based on system size):")
+                n_iterations = int(input(f"  Number of iterations [{recommended['n_iterations']}]: ") or recommended['n_iterations'])
+                n_approaches = int(input(f"  Number of approach angles [{recommended['n_approaches']}]: ") or recommended['n_approaches'])
+                n_steps = int(input(f"  Steps per trajectory [{recommended['n_steps']}]: ") or recommended['n_steps'])
+                n_rotations = int(input(f"  Rotations per position [{recommended['n_rotations']}]: ") or recommended['n_rotations'])
+            
+            # Additional parameters
+            print("\nAdditional parameters:")
+            starting_distance = float(input("Starting distance in Å [20.0]: ") or 20.0)
+            physiological_pH = float(input("Physiological pH [7.4]: ") or 7.4)
+        
+        # Show analysis depth
+        total_configs = n_iterations * n_approaches * n_steps * n_rotations
+        print(f"\nTotal configurations to evaluate: {total_configs:,}")
+        
+        if total_configs < 100_000:
+            print("Analysis depth: Light")
+        elif total_configs < 1_000_000:
+            print("Analysis depth: Moderate")
+        elif total_configs < 10_000_000:
+            print("Analysis depth: Comprehensive")
         else:
-            if use_existing == 'y':
-                print("Failed to parse parameters file.")
-            use_existing = 'n'
-        
-        if use_existing != 'y':
-            # Manual parameter entry
-            print("\nEnter parameters manually (press Enter for defaults):\n")
-            
-            n_steps = input("Steps per trajectory (default 200): ").strip()
-            n_steps = int(n_steps) if n_steps else 200
-            
-            n_iterations = input("Number of iterations (default 10): ").strip()
-            n_iterations = int(n_iterations) if n_iterations else 10
-            
-            n_approaches = input("Number of approach angles (default 10): ").strip()
-            n_approaches = int(n_approaches) if n_approaches else 10
-            
-            starting_distance = input("Starting distance in Angstroms (default 20.0): ").strip()
-            starting_distance = float(starting_distance) if starting_distance else 20.0
-            
-            approach_distance = input("Distance step between approaches in Angstroms (default 2.5): ").strip()
-            approach_distance = float(approach_distance) if approach_distance else 2.5
-            
-            n_rotations = input("Rotations per position (default 36): ").strip()
-            n_rotations = int(n_rotations) if n_rotations else 36
-            
-            physiological_pH = input("pH for protonation states (default 7.4): ").strip()
-            physiological_pH = float(physiological_pH) if physiological_pH else 7.4
-        
-        # Ask about saving trajectories (default: yes)
-        save_trajectories_input = input("\nSave trajectory files? (Y/n): ").strip().lower()
-        save_trajectories = save_trajectories_input != 'n'  # Default to yes unless 'n' is entered
-        
-        # Ask about showing detailed interaction breakdown (default: yes)
-        show_interactions_input = input("Show detailed interaction breakdown? (Y/n): ").strip().lower()
-        show_interactions = show_interactions_input != 'n'  # Default to yes unless 'n' is entered
-        
-        # Show summary
-        print("\nUMA ANALYSIS CONFIGURATION:")
-        print(f"  Protein: {protein_file}")
-        print(f"  Ligand: {ligand_file}")
-        print(f"  Output: {output_dir}")
-        print(f"  Steps: {n_steps}")
-        print(f"  Iterations: {n_iterations}")
-        print(f"  Approaches: {n_approaches}")
-        print(f"  Starting distance: {starting_distance} Å")
-        print(f"  Approach distance: {approach_distance} Å")
-        print(f"  Rotations: {n_rotations}")
-        print(f"  pH: {physiological_pH}")
-        print(f"  Save trajectories: {'Yes' if save_trajectories else 'No'}")
-        print(f"  Show interaction details: {'Yes' if show_interactions else 'No'}")
-        
-        # Calculate total operations
-        total_frames = n_steps * n_approaches * n_iterations
-        print(f"\nTotal trajectory frames: {total_frames:,}")
-        
-        confirm = input("\nProceed with UMA-optimized analysis? (Y/n): ").strip().lower()
-        if confirm == 'n':
-            print("Analysis cancelled.")
-            return
-        
-        # Run fluxmd_uma as subprocess with parameters
-        import subprocess
-        cmd = [
-            sys.executable, "fluxmd_uma.py", 
-            protein_file, ligand_file, 
-            "-o", output_dir,
-            "-s", str(n_steps),
-            "-i", str(n_iterations),
-            "-a", str(n_approaches),
-            "-d", str(starting_distance),
-            "--approach-distance", str(approach_distance),
-            "-r", str(n_rotations),
-            "--ph", str(physiological_pH)
-        ]
-        
-        # Add save trajectories flag if requested
-        if save_trajectories:
-            cmd.append("--save-trajectories")
-        
-        # Add interaction details flag if requested
-        if show_interactions:
-            cmd.append("--interaction-details")
-        
-        subprocess.run(cmd)
-    elif choice == "3":
-        print_banner("SMILES TO PDB CONVERTER")
-        smiles = input("Enter SMILES string: ").strip()
-        if smiles:
-            name = input("Enter output name: ").strip() or "ligand"
-            
-            print("\nConversion options:")
-            print("1. NCI CACTUS (web service - fast but limited aromatic preservation)")
-            print("2. OpenBabel standard (local - basic PDB)")
-            print("3. OpenBabel PDBQT (local - BEST for aromatic preservation)")
-            
-            method = input("\nSelect method (1-3) [3]: ").strip() or "3"
-            
-            if method == "1":
-                convert_smiles_to_pdb_cactus(smiles, name)
-            elif method == "2":
-                convert_smiles_to_pdb_openbabel(smiles, name)
-            else:
-                # Use enhanced PDBQT method
-                convert_smiles_with_aromatics(smiles, name)
-    elif choice == "4":
-        print_banner("DNA SEQUENCE TO STRUCTURE")
-        print("Generate 3D B-DNA structure from sequence")
-        print("\nNote: This creates atomically-detailed B-DNA for protein-DNA interaction analysis")
-        print("Features:")
-        print("  - Proper sugar-phosphate backbone with all atoms")
-        print("  - Watson-Crick base pairing geometry")
-        print("  - Standard B-DNA helical parameters")
-        print("  - Complete connectivity information (CONECT records)")
-        
-        sequence = input("\nEnter DNA sequence (e.g., ATCGATCG): ").strip().upper()
-        
-        # Validate sequence
-        valid_bases = set('ATGC')
-        if not sequence:
-            print("Error: Empty sequence")
-            return
-        if not all(base in valid_bases for base in sequence):
-            print("Error: Sequence must contain only A, T, G, C")
-            print(f"Found invalid characters: {set(sequence) - valid_bases}")
-            return
-        
-        # Warn about sequence length
-        if len(sequence) < 4:
-            print("Warning: Very short sequences may not show proper helical structure")
-        elif len(sequence) > 100:
-            print(f"Warning: Long sequence ({len(sequence)} bp) will generate many atoms")
-            confirm = input("Continue? (y/n): ").strip().lower()
-            if confirm != 'y':
+            print("Analysis depth: Very comprehensive")
+            proceed = input("\n⚠️  This is a very comprehensive analysis. Continue? (y/n): ").lower()
+            if proceed != 'y':
+                print("Analysis cancelled.")
                 return
         
-        output_name = input("Enter output filename (default: dna_structure.pdb): ").strip()
-        if not output_name:
-            output_name = "dna_structure.pdb"
+        # Ask about trajectory visualization
+        save_trajectories = input("\nSave trajectory visualizations? (y/n) [y]: ").strip().lower()
+        save_trajectories = save_trajectories != 'n'  # Default to yes
         
-        # Ensure .pdb extension
-        if not output_name.endswith('.pdb'):
-            output_name += '.pdb'
-        
-        # Import the DNA builder
-        try:
-            from fluxmd.utils.dna_to_pdb import DNABuilder
-        except ImportError:
-            print("Error: Could not import DNA builder")
-            return
-        
-        print(f"\nGenerating B-DNA structure for: {sequence}")
-        print(f"Sequence length: {len(sequence)} bp")
-        print(f"Double helix will contain:")
-        print(f"  - {len(sequence) * 2} nucleotides total")
-        print(f"  - ~{len(sequence) * 35} atoms per strand")
-        print(f"  - Helix length: ~{len(sequence) * 3.38:.1f} Angstroms")
-        
-        try:
-            builder = DNABuilder()
-            builder.build_dna(sequence)
-            builder.write_pdb(output_name)
-            
-            print(f"\nStructure successfully written to: {output_name}")
-            print(f"  Total atoms: {len(builder.atoms)}")
-            print(f"  Base pairs: {len(sequence)}")
-            print(f"  Chains: A (5' to 3'), B (3' to 5')")
-            
-            # Provide usage tips
-            print("\nStructure details:")
-            print("  - Strand A: 5' to 3' direction")
-            print("  - Strand B: 3' to 5' direction (complementary)")
-            print("  - Standard B-DNA geometry (10.5 bp/turn)")
-            print("  - All atoms including hydrogens")
-            
-            print("\nUsage in FluxMD:")
-            print("  1. Use this DNA as the 'ligand' in workflow option 1")
-            print("  2. FluxMD will analyze protein-DNA interactions")
-            print("  3. High flux regions indicate DNA binding sites")
-            
-            print("\nVisualization tips:")
-            print("  pymol " + output_name)
-            print("  PyMOL commands:")
-            print("    show cartoon")
-            print("    set cartoon_nucleic_acid_mode, 4")
-            print("    color cyan, chain A")
-            print("    color yellow, chain B")
-            print("    show sticks, resn DG+DC+DA+DT")
-            print("    set stick_radius, 0.2")
-            
-            # Offer to generate a test protein-DNA complex
-            print("\nTip: For testing protein-DNA interactions:")
-            print("  - Use a DNA-binding protein (e.g., transcription factor)")
-            print("  - DNA groove widths: Major ~22Angstroms, Minor ~12Angstroms")
-            print("  - Typical protein-DNA interface: 10-20 base pairs")
-            
-        except Exception as e:
-            print(f"\nError generating DNA structure: {e}")
-            import traceback
-            traceback.print_exc()
-            print("\nTroubleshooting:")
-            print("  - Check sequence contains only ATGC")
-            print("  - Ensure write permissions in current directory")
-            print("  - Try a shorter test sequence first")
-        
+        # Call the core workflow function
+        from fluxmd.core.protein_dna_workflow import run_protein_dna_workflow
+        run_protein_dna_workflow(
+            dna_file=dna_file,
+            protein_file=protein_file,
+            output_dir=output_dir,
+            n_iterations=n_iterations,
+            n_steps=n_steps,
+            n_approaches=n_approaches,
+            starting_distance=starting_distance,
+            n_rotations=n_rotations,
+            physiological_pH=physiological_pH,
+            force_cpu=False,
+            save_trajectories=save_trajectories
+        )
+    except Exception as e:
+        print(f"\nAn error occurred during the Protein-DNA workflow: {e}")
+
+
+def display_main_menu():
+    """Display the main menu and return the user's choice"""
+    print_banner("FLUXMD - PROTEIN-LIGAND FLUX ANALYSIS")
+    
+    print("Welcome to FluxMD - GPU-accelerated binding site prediction")
+    print("\nOptions:")
+    print("1. Run complete workflow (standard)")
+    print("2. Run UMA-optimized workflow (zero-copy GPU, 100x faster)")
+    print("3. Convert SMILES to PDB (CACTUS with aromatics or OpenBabel)")
+    print("4. Generate DNA structure from sequence")
+    print("5. Protein-DNA Interaction Analysis (UMA)")
+    print("6. Exit")
+    print("="*80)
+    
+    choice = input("Enter your choice [1-6]: ").strip()
+    return choice
+
+
+def handle_main_menu(choice):
+    """Handle the user's choice and execute the corresponding workflow"""
+    if choice == "1":
+        run_complete_workflow()
+    elif choice == "2":
+        run_uma_workflow()
+    elif choice == "3":
+        run_smiles_converter()
+    elif choice == "4":
+        run_dna_generator()
     elif choice == "5":
-        print("\nThank you for using FluxMD!")
+        run_protein_dna_uma_workflow()
+    elif choice == "6":
+        print("\nExiting FluxMD. Goodbye!")
+        sys.exit()
     else:
         print("Invalid choice!")
         main()
+
+
+def main():
+    """Main interactive loop"""
+    while True:
+        choice = display_main_menu()
+        handle_main_menu(choice)
+        input("\nPress Enter to return to the main menu...")
+        # Clear screen for better UX
+        os.system('cls' if os.name == 'nt' else 'clear')
 
 
 if __name__ == "__main__":

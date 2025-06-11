@@ -56,9 +56,10 @@ class InteractionResult:
 class GPUAcceleratedInteractionCalculator:
     """Calculates non-covalent interactions for a given state on the GPU."""
 
-    def __init__(self, device=None, physiological_pH=7.4):
+    def __init__(self, device=None, physiological_pH=7.4, target_is_dna=False):
         self.device = device or get_device()
         self.physiological_pH = physiological_pH
+        self.target_is_dna = target_is_dna
         self.protonation_detector = ProtonationAwareInteractionDetector(pH=self.physiological_pH)
         
         # Interaction cutoffs
@@ -71,7 +72,35 @@ class GPUAcceleratedInteractionCalculator:
         }
         
         self.protein_properties = None
+        self.target_properties = None  # Generic name for protein or DNA
         self.intra_protein_vectors_gpu = None
+        
+        # DNA-specific properties
+        if self.target_is_dna:
+            self._init_dna_properties()
+
+    def _init_dna_properties(self):
+        """Initialize DNA-specific residue properties."""
+        # DNA base properties for interaction detection
+        self.DNA_DONORS = {
+            'DA': {'N6'},  # Adenine amino group
+            'DG': {'N1', 'N2'},  # Guanine amino and imino groups
+            'DC': {'N4'},  # Cytosine amino group
+            'DT': set()  # Thymine has no H-bond donors
+        }
+        
+        self.DNA_ACCEPTORS = {
+            'DA': {'N1', 'N3', 'N7'},  # Adenine nitrogens
+            'DG': {'O6', 'N3', 'N7'},  # Guanine carbonyl and nitrogens
+            'DC': {'O2', 'N3'},  # Cytosine carbonyl and nitrogen
+            'DT': {'O2', 'O4', 'N3'}  # Thymine carbonyls and nitrogen
+        }
+        
+        # All DNA bases have aromatic rings
+        self.DNA_AROMATIC = {'DA', 'DG', 'DC', 'DT'}
+        
+        # Phosphate backbone atoms (always acceptors due to negative charge)
+        self.DNA_BACKBONE_ACCEPTORS = {'OP1', 'OP2', 'O1P', 'O2P', "O3'", "O5'"}
 
     def set_intra_protein_vectors(self, intra_vectors_dict):
         """Store pre-computed intra-protein force field vectors on GPU."""
@@ -87,6 +116,122 @@ class GPUAcceleratedInteractionCalculator:
                     self.intra_protein_vectors_gpu[i] = torch.tensor(vector, device=self.device, dtype=torch.float32)
             
             print(f"   ✓ Loaded intra-protein vectors for {len(intra_vectors_dict)} residues onto GPU")
+
+    def precompute_target_properties_gpu(self, target_atoms: pd.DataFrame):
+        """Pre-computes target molecule properties (protein or DNA) and stores them on the GPU."""
+        if self.target_is_dna:
+            self._precompute_dna_properties(target_atoms)
+        else:
+            self.precompute_protein_properties(target_atoms)
+    
+    def precompute_mobile_properties_gpu(self, mobile_atoms: pd.DataFrame):
+        """Pre-computes mobile molecule properties (ligand or protein) and returns them as GPU tensors."""
+        if self.target_is_dna:
+            # When target is DNA, mobile is protein
+            return self._precompute_protein_properties_for_mobile(mobile_atoms)
+        else:
+            # When target is protein, mobile is ligand
+            return self.precompute_ligand_properties(mobile_atoms)
+            
+    def _precompute_dna_properties(self, dna_atoms: pd.DataFrame):
+        """Pre-computes DNA properties and stores them on the GPU."""
+        n_atoms = len(dna_atoms)
+        print(f"   Pre-computing properties for {n_atoms} DNA atoms on {self.device}...")
+        
+        properties = {
+            'coords': torch.tensor(dna_atoms[['x', 'y', 'z']].values, device=self.device, dtype=torch.float32),
+            'residue_ids': torch.tensor(dna_atoms.get('residue_id', dna_atoms.get('resSeq', range(n_atoms))).values,
+                                       device=self.device, dtype=torch.long),
+            'is_donor': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'is_acceptor': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'is_charged_pos': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'is_charged_neg': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'is_aromatic': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'formal_charges': torch.zeros(n_atoms, device=self.device, dtype=torch.float32),
+        }
+        
+        # Process each atom for DNA-specific properties
+        for i, (_, atom) in enumerate(dna_atoms.iterrows()):
+            resname = atom['resname']
+            atom_name = atom['name']
+            
+            # Check if it's a DNA base
+            if resname in self.DNA_AROMATIC:
+                # Mark aromatic for all base atoms
+                properties['is_aromatic'][i] = True
+                
+                # Check donors
+                if atom_name in self.DNA_DONORS.get(resname, set()):
+                    properties['is_donor'][i] = True
+                
+                # Check acceptors
+                if atom_name in self.DNA_ACCEPTORS.get(resname, set()):
+                    properties['is_acceptor'][i] = True
+            
+            # Check backbone atoms
+            if atom_name in self.DNA_BACKBONE_ACCEPTORS:
+                properties['is_acceptor'][i] = True
+                
+            # Phosphate oxygens are negatively charged
+            if atom_name in {'OP1', 'OP2', 'O1P', 'O2P'}:
+                properties['is_charged_neg'][i] = True
+                properties['formal_charges'][i] = -0.5  # Each oxygen carries partial charge
+        
+        self.target_properties = properties
+        self.protein_properties = properties  # Keep for compatibility
+        print("   ✓ DNA properties pre-computed and stored on GPU")
+        
+        # Debug output
+        print(f"\n   DNA Donor/Acceptor Statistics:")
+        print(f"     Total donors: {properties['is_donor'].sum().item()}")
+        print(f"     Total acceptors: {properties['is_acceptor'].sum().item()}")
+        print(f"     Charged negative (phosphates): {properties['is_charged_neg'].sum().item()}")
+        print(f"     Aromatic atoms: {properties['is_aromatic'].sum().item()}")
+    
+    def _precompute_protein_properties_for_mobile(self, protein_atoms: pd.DataFrame) -> Dict[str, torch.Tensor]:
+        """Pre-computes protein properties when protein is the mobile molecule (DNA is target)."""
+        # Reuse the existing protein property computation logic
+        # but return as a dictionary instead of storing
+        n_atoms = len(protein_atoms)
+        print(f"   Pre-computing properties for {n_atoms} protein atoms (mobile) on {self.device}...")
+        
+        properties = {
+            'coords': torch.tensor(protein_atoms[['x', 'y', 'z']].values, device=self.device, dtype=torch.float32),
+            'is_donor': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'is_acceptor': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'is_charged_pos': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'is_charged_neg': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'is_aromatic': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
+            'formal_charges': torch.zeros(n_atoms, device=self.device, dtype=torch.float32),
+        }
+        
+        # Process each atom for properties
+        for i, (_, atom) in enumerate(protein_atoms.iterrows()):
+            atom_dict = {
+                'resname': atom['resname'],
+                'name': atom['name'],
+                'element': atom.get('element', atom['name'][0]).upper(),
+                'x': atom['x'],
+                'y': atom['y'],
+                'z': atom['z'],
+                'chain': atom.get('chain', 'A'),
+                'resSeq': atom.get('residue_id', atom.get('resSeq', i)),
+                'atom_id': i
+            }
+            
+            pa_atom = self.protonation_detector.determine_atom_protonation(atom_dict)
+            properties['is_donor'][i] = pa_atom.can_donate_hbond
+            properties['is_acceptor'][i] = pa_atom.can_accept_hbond
+            properties['is_charged_pos'][i] = pa_atom.formal_charge > 0
+            properties['is_charged_neg'][i] = pa_atom.formal_charge < 0
+            properties['formal_charges'][i] = pa_atom.formal_charge
+            
+            # Mark aromatic residues
+            if atom['resname'] in ['PHE', 'TYR', 'TRP', 'HIS']:
+                properties['is_aromatic'][i] = True
+        
+        print("   ✓ Protein properties (mobile) pre-computed")
+        return properties
 
     def precompute_protein_properties(self, protein_atoms: pd.DataFrame):
         """Pre-computes protein properties and stores them on the GPU."""

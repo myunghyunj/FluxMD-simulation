@@ -20,5 +20,10 @@ def main_uma():
     import fluxmd_uma as uma_module
     uma_module.main()
 
+def main_protein_dna_uma():
+    """Main entry point for fluxmd-protein-dna-uma command"""
+    from fluxmd.core.protein_dna_uma import main as protein_dna_main
+    protein_dna_main()
+
 if __name__ == "__main__":
     main()

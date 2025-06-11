@@ -13,10 +13,11 @@ from ..gpu.gpu_accelerated_flux_uma import GPUAcceleratedInteractionCalculator, 
 from ..analysis.flux_analyzer_uma import TrajectoryFluxAnalyzer
 
 def save_iteration_data_uma(iteration_results, iteration_num, output_dir, n_approaches, 
-                           protein_atoms_df, ligand_atoms_df, gpu_calc, protein_file):
+                           protein_atoms_df, ligand_atoms_df, gpu_calc, protein_file, target_is_dna=False):
     """
     Save iteration data to CSV files matching CPU version output format.
     This ensures UMA version produces same output structure as CPU version.
+    Supports both protein-ligand and DNA-protein workflows.
     """
     import pandas as pd
     import numpy as np
@@ -75,34 +76,60 @@ def save_iteration_data_uma(iteration_results, iteration_num, output_dir, n_appr
                 inter_vec = inter_vectors[j]
                 itype = interaction_types[j]
                 
-                # Get atom info from protein dataframe
+                # Get atom info from target dataframe (protein or DNA)
                 atom_row = protein_atoms_df.iloc[protein_idx]
                 
                 # Create interaction record
-                interaction_record = {
-                    'protein_atom_id': protein_idx,
-                    'protein_residue_id': res_id,
-                    'residue_name': atom_row['resname'],
-                    'atom_name': atom_row['name'],
-                    'bond_type': type_names.get(itype, 'Unknown'),
-                    'bond_energy': energy,
-                    'vector_x': inter_vec[0],
-                    'vector_y': inter_vec[1],
-                    'vector_z': inter_vec[2],
-                    'distance': np.linalg.norm(inter_vec)
-                }
+                if target_is_dna:
+                    # For DNA target, adjust field names
+                    interaction_record = {
+                        'dna_atom_id': protein_idx,
+                        'dna_residue_id': res_id,
+                        'base_name': atom_row['resname'],  # DA, DT, DG, DC
+                        'atom_name': atom_row['name'],
+                        'bond_type': type_names.get(itype, 'Unknown'),
+                        'bond_energy': energy,
+                        'vector_x': inter_vec[0],
+                        'vector_y': inter_vec[1],
+                        'vector_z': inter_vec[2],
+                        'distance': np.linalg.norm(inter_vec)
+                    }
+                else:
+                    # Standard protein-ligand record
+                    interaction_record = {
+                        'protein_atom_id': protein_idx,
+                        'protein_residue_id': res_id,
+                        'residue_name': atom_row['resname'],
+                        'atom_name': atom_row['name'],
+                        'bond_type': type_names.get(itype, 'Unknown'),
+                        'bond_energy': energy,
+                        'vector_x': inter_vec[0],
+                        'vector_y': inter_vec[1],
+                        'vector_z': inter_vec[2],
+                        'distance': np.linalg.norm(inter_vec)
+                    }
                 
                 interaction_data_by_approach[approach_num].append(interaction_record)
                 
                 # Also collect for flux output
-                flux_output_data.append({
-                    'protein_atom_id': protein_idx,
-                    'protein_residue_id': res_id,
-                    'bond_energy': energy,
-                    'vector_x': inter_vec[0],
-                    'vector_y': inter_vec[1],
-                    'vector_z': inter_vec[2]
-                })
+                if target_is_dna:
+                    flux_output_data.append({
+                        'dna_atom_id': protein_idx,
+                        'dna_residue_id': res_id,
+                        'bond_energy': energy,
+                        'vector_x': inter_vec[0],
+                        'vector_y': inter_vec[1],
+                        'vector_z': inter_vec[2]
+                    })
+                else:
+                    flux_output_data.append({
+                        'protein_atom_id': protein_idx,
+                        'protein_residue_id': res_id,
+                        'bond_energy': energy,
+                        'vector_x': inter_vec[0],
+                        'vector_y': inter_vec[1],
+                        'vector_z': inter_vec[2]
+                    })
     
     # Save interaction CSV files by approach
     for approach_num in range(n_approaches):

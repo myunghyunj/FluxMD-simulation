@@ -53,7 +53,7 @@ python benchmarks/benchmark_uma.py
 
 ```bash
 # Clone repository
-git clone https://github.com/myunghyunj/FluxMD-simulation
+git clone https://github.com/yourusername/FluxMD.git
 cd FluxMD
 
 # Create conda environment (required for OpenBabel)
@@ -137,11 +137,12 @@ fluxmd-dna SEQUENCE [-o output.pdb]
 # Example: Generate 8-bp DNA structure
 fluxmd-dna ATCGATCG -o dna_structure.pdb
 ```
-- Creates Watson-Crick paired double helix
-- Uses crystallographic parameters ([Olson et al., 1998](https://www.pnas.org/doi/10.1073/pnas.95.19.11163))
-- Includes full atomic detail with backbone
-- Fun fact : B for B-DNA does not stand for binding DNA
-- Loading DNA in FluxMD is currently under work
+- Creates Watson-Crick paired double helix with proper hydrogen bonding alignment
+- Uses dinucleotide-specific twist and rise parameters ([Olson et al., 1998](https://www.pnas.org/doi/10.1073/pnas.95.19.11163))
+- Includes full atomic detail with sugar-phosphate backbone
+- Generates complete CONECT records manifest for all covalent bonds
+- Maintains accurate C1'-C1' distances (10.85 Å) for base pairs
+- Fun fact: B for B-DNA does not stand for binding DNA
 
 ## Underlying Science
 
@@ -149,7 +150,7 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
 - **Stochastic Trajectory Synthesis**: Ligands execute helical orbits via Brownian dynamics
   - **Temporal discretization**: 40 fs sampling interval satisfies Shannon-Nyquist criterion for intermolecular forces (DC-10 THz passband) while deliberately aliasing intramolecular vibrations (>25 THz)
   - **Overdamped regime**: Momentum relaxation (τ ≈ 10 fs) ensures Markovian dynamics; thermal bandwidth (kT/h ≈ 6.2 THz) resides comfortably below Nyquist frequency (12.5 THz)
-  - **Energy clipping**: [10 kcal/mol ceiling](https://pubs.acs.org/doi/pdf/10.1021/ja00124a002) prevents Lennard-Jones singularities at r→0 while preserving physiological interaction magnitudes (-5 to +10 kcal/mol operating range)
+  - **Energy clipping**: 10 kcal/mol ceiling prevents Lennard-Jones singularities at r→0 while preserving physiological interaction magnitudes (-5 to +10 kcal/mol operating range)
 
 - **Force field integration**: Combines static protein forces with dynamic interactions
   - Static forces pre-computed once for efficiency

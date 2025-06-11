@@ -12,7 +12,11 @@ import pandas as pd
 import torch
 import os
 from typing import List, Dict, Optional, Tuple
-from Bio.PDB import PDBParser
+try:
+    from Bio.PDB import PDBParser
+except ImportError:
+    # Fallback to our own PDB parser if BioPython not available
+    from ..utils.pdb_parser import PDBParser
 import matplotlib.pyplot as plt
 import seaborn as sns
 from ..gpu.gpu_accelerated_flux_uma import InteractionResult
@@ -20,18 +24,83 @@ from ..gpu.gpu_accelerated_flux_uma import InteractionResult
 class TrajectoryFluxAnalyzer:
     """Analyzes trajectory data to compute and visualize energy flux."""
 
-    def __init__(self, device: torch.device):
-        self.parser = PDBParser(QUIET=True)
+    def __init__(self, device: torch.device, target_is_dna: bool = False):
+        # Check if we're using BioPython or our custom parser
+        try:
+            from Bio.PDB import PDBParser as BioPDBParser
+            self.parser = BioPDBParser(QUIET=True)
+            self.using_biopython = True
+        except ImportError:
+            from ..utils.pdb_parser import PDBParser
+            self.parser = PDBParser()
+            self.using_biopython = False
+            
         self.device = device
+        self.target_is_dna = target_is_dna
         self.n_residues = 0
         self.residue_indices = []
         self.residue_names = []
+        self.base_types = []  # For DNA: A, T, G, C
 
-    def parse_protein_for_analysis(self, protein_pdb_file: str):
+    def parse_target_for_analysis(self, target_pdb_file: str):
         """Parses PDB to get residue information needed for analysis."""
-        print("\n1. Loading protein structure for analysis...")
-        structure = self.parser.get_structure('protein', protein_pdb_file)
+        if self.target_is_dna:
+            print("\n1. Loading DNA structure for analysis...")
+        else:
+            print("\n1. Loading protein structure for analysis...")
         
+        # Handle different parser APIs
+        if self.using_biopython:
+            structure = self.parser.get_structure('target', target_pdb_file)
+        else:
+            # Our custom parser returns a DataFrame directly
+            atoms_df = self.parser.parse(target_pdb_file, is_dna=self.target_is_dna)
+            if atoms_df is None:
+                print("Error parsing target file")
+                return
+            
+            # Convert DataFrame to structure-like format for compatibility
+            # We'll process the DataFrame directly instead
+            residue_info = {}
+            max_res_id = 0
+            
+            for _, atom in atoms_df.iterrows():
+                res_id = atom['resSeq']
+                res_name = atom['resname']
+                
+                # For DNA, check if it's a nucleotide
+                if self.target_is_dna:
+                    if res_name not in ['DA', 'DT', 'DG', 'DC', 'A', 'T', 'G', 'C']:
+                        continue  # Skip non-DNA residues
+                
+                max_res_id = max(max_res_id, res_id)
+                if res_id not in residue_info:
+                    residue_info[res_id] = res_name
+            
+            self.n_residues = max_res_id + 1
+            self.residue_indices = sorted(residue_info.keys())
+            self.residue_names = [residue_info[i] for i in self.residue_indices]
+            
+            # For DNA, extract base types
+            if self.target_is_dna:
+                self.base_types = []
+                for res_name in self.residue_names:
+                    if res_name in ['DA', 'A']:
+                        self.base_types.append('A')
+                    elif res_name in ['DT', 'T']:
+                        self.base_types.append('T')
+                    elif res_name in ['DG', 'G']:
+                        self.base_types.append('G')
+                    elif res_name in ['DC', 'C']:
+                        self.base_types.append('C')
+                    else:
+                        self.base_types.append('?')
+                print(f"   ✓ Found {len(self.residue_indices)} nucleotides. Analysis tensor size: {self.n_residues}")
+            else:
+                print(f"   ✓ Found {len(self.residue_indices)} residues. Analysis tensor size: {self.n_residues}")
+            return
+        
+        # BioPython parser case
         residue_info = {}
         max_res_id = 0
 
@@ -40,14 +109,38 @@ class TrajectoryFluxAnalyzer:
                 for residue in chain:
                     if residue.get_id()[0] == ' ':  # Skip heterogens
                         res_id = residue.get_id()[1]
+                        res_name = residue.get_resname()
+                        
+                        # For DNA, check if it's a nucleotide
+                        if self.target_is_dna:
+                            if res_name not in ['DA', 'DT', 'DG', 'DC', 'A', 'T', 'G', 'C']:
+                                continue  # Skip non-DNA residues
+                        
                         max_res_id = max(max_res_id, res_id)
                         if res_id not in residue_info:
-                            residue_info[res_id] = residue.get_resname()
+                            residue_info[res_id] = res_name
         
         self.n_residues = max_res_id + 1
         self.residue_indices = sorted(residue_info.keys())
         self.residue_names = [residue_info[i] for i in self.residue_indices]
-        print(f"   ✓ Found {len(self.residue_indices)} residues. Analysis tensor size: {self.n_residues}")
+        
+        # For DNA, extract base types
+        if self.target_is_dna:
+            self.base_types = []
+            for res_name in self.residue_names:
+                if res_name in ['DA', 'A']:
+                    self.base_types.append('A')
+                elif res_name in ['DT', 'T']:
+                    self.base_types.append('T')
+                elif res_name in ['DG', 'G']:
+                    self.base_types.append('G')
+                elif res_name in ['DC', 'C']:
+                    self.base_types.append('C')
+                else:
+                    self.base_types.append('?')
+            print(f"   ✓ Found {len(self.residue_indices)} nucleotides. Analysis tensor size: {self.n_residues}")
+        else:
+            print(f"   ✓ Found {len(self.residue_indices)} residues. Analysis tensor size: {self.n_residues}")
 
     def process_iterations_and_calculate_flux(self, 
                                             all_iteration_results: List[List[InteractionResult]], 
@@ -282,12 +375,12 @@ class TrajectoryFluxAnalyzer:
         
         return ci_lower, ci_upper
 
-    def visualize_trajectory_flux(self, flux_data: Dict, protein_name: str, output_dir: str):
+    def visualize_trajectory_flux(self, flux_data: Dict, target_name: str, output_dir: str):
         """Generate visualization of flux analysis results."""
-        plt.figure(figsize=(15, 8))
+        plt.figure(figsize=(15, 10))
         
         # Main flux plot
-        plt.subplot(2, 1, 1)
+        ax1 = plt.subplot(2, 1, 1)
         residue_indices = flux_data['res_indices']
         avg_flux = flux_data['avg_flux']
         ci_lower = flux_data['ci_lower']
@@ -305,11 +398,56 @@ class TrajectoryFluxAnalyzer:
         
         plt.scatter(sig_indices, sig_values, color='red', s=50, zorder=5, label='High Flux')
         
-        plt.xlabel('Residue Index')
-        plt.ylabel('Normalized Flux')
-        plt.title(f'{protein_name} - Energy Flux Analysis (UMA-Optimized)')
-        plt.legend()
-        plt.grid(True, alpha=0.3)
+        # Add base labels for DNA as a barcode on top axis
+        if self.target_is_dna and hasattr(self, 'base_types'):
+            # Create second x-axis on top for base labels
+            ax2 = ax1.twiny()
+            ax2.set_xlim(ax1.get_xlim())
+            
+            # Determine step size for readable labels
+            n_bases = len(residue_indices)
+            if n_bases <= 50:
+                step = 1
+            elif n_bases <= 100:
+                step = 2
+            elif n_bases <= 200:
+                step = 5
+            else:
+                step = 10
+            
+            # Set base labels on top axis
+            label_positions = residue_indices[::step]
+            label_bases = [self.base_types[i] if i < len(self.base_types) else '?' 
+                          for i in range(0, len(self.base_types), step)]
+            
+            ax2.set_xticks(label_positions)
+            ax2.set_xticklabels(label_bases)
+            ax2.set_xlabel('DNA Base', fontsize=10)
+            ax2.tick_params(axis='x', labelsize=8)
+            
+            # Add colored bars for different bases
+            base_colors = {'A': '#FF6B6B', 'T': '#4ECDC4', 'G': '#45B7D1', 'C': '#96CEB4'}
+            y_max = ax1.get_ylim()[1]
+            bar_height = y_max * 0.02
+            
+            for i, (idx, base) in enumerate(zip(residue_indices, self.base_types)):
+                if base in base_colors:
+                    ax1.axvspan(idx - 0.4, idx + 0.4, ymin=0.98, ymax=1.0, 
+                               color=base_colors[base], alpha=0.8, clip_on=False)
+            
+            # Add base type annotations for top residues
+            for i, (idx, val) in enumerate(zip(sig_indices[:10], sig_values[:10])):
+                pos = self.residue_indices.index(idx)
+                base = self.base_types[pos] if pos < len(self.base_types) else '?'
+                plt.annotate(f'{base}{idx}', (idx, val), xytext=(5, 5), 
+                           textcoords='offset points', fontsize=8)
+        
+        ax1.set_xlabel('Nucleotide Position' if self.target_is_dna else 'Residue Index')
+        ax1.set_ylabel('Normalized Flux')
+        title_type = 'DNA-Protein' if self.target_is_dna else 'Protein-Ligand'
+        ax1.set_title(f'{target_name} - {title_type} Energy Flux Analysis (UMA-Optimized)')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
         
         # Heatmap
         plt.subplot(2, 1, 2)
@@ -329,16 +467,16 @@ class TrajectoryFluxAnalyzer:
         plt.title('Flux Values Across All Iterations')
         
         plt.tight_layout()
-        output_file = os.path.join(output_dir, f'{protein_name}_trajectory_flux_analysis.png')
+        output_file = os.path.join(output_dir, f'{target_name}_trajectory_flux_analysis.png')
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
         plt.close()
         
         print(f"   Saved visualization to: {output_file}")
         
         # Also create a summary plot like CPU version
-        self.create_summary_plot(flux_data, protein_name, output_dir)
+        self.create_summary_plot(flux_data, target_name, output_dir)
     
-    def create_summary_plot(self, flux_data: Dict, protein_name: str, output_dir: str):
+    def create_summary_plot(self, flux_data: Dict, target_name: str, output_dir: str):
         """Create a summary visualization similar to CPU version."""
         plt.figure(figsize=(12, 6))
         
@@ -351,25 +489,46 @@ class TrajectoryFluxAnalyzer:
         top_values = [avg_flux[i] for i in sorted_idx if avg_flux[i] > 0]
         top_names = [flux_data['res_names'][i] for i in sorted_idx if avg_flux[i] > 0]
         
-        plt.bar(range(len(top_indices)), top_values, color='steelblue')
-        plt.xlabel('Residue')
+        # Create bars with colors for DNA bases
+        if self.target_is_dna and hasattr(self, 'base_types'):
+            base_colors = {'A': '#FF6B6B', 'T': '#4ECDC4', 'G': '#45B7D1', 'C': '#96CEB4'}
+            bar_colors = []
+            for i in sorted_idx[:len(top_indices)]:
+                base = self.base_types[i] if i < len(self.base_types) else '?'
+                bar_colors.append(base_colors.get(base, 'steelblue'))
+            plt.bar(range(len(top_indices)), top_values, color=bar_colors)
+        else:
+            plt.bar(range(len(top_indices)), top_values, color='steelblue')
+        
+        plt.xlabel('Nucleotide' if self.target_is_dna else 'Residue')
         plt.ylabel('Normalized Flux')
-        plt.title(f'{protein_name} - Top Binding Sites by Flux')
-        plt.xticks(range(len(top_indices)), 
-                   [f"{idx}\n{name}" for idx, name in zip(top_indices, top_names)], 
-                   rotation=45, ha='right')
+        plt.title(f'{target_name} - Top Binding Sites by Flux')
+        
+        # Create x-tick labels with base info for DNA
+        if self.target_is_dna and hasattr(self, 'base_types'):
+            x_labels = []
+            for i in sorted_idx[:len(top_indices)]:
+                idx = top_indices[sorted_idx.tolist().index(i)]
+                base = self.base_types[i] if i < len(self.base_types) else '?'
+                x_labels.append(f"{base}{idx}")
+            plt.xticks(range(len(top_indices)), x_labels, rotation=45, ha='right')
+        else:
+            plt.xticks(range(len(top_indices)), 
+                       [f"{idx}\n{name}" for idx, name in zip(top_indices, top_names)], 
+                       rotation=45, ha='right')
+        
         plt.tight_layout()
         
-        summary_file = os.path.join(output_dir, f'{protein_name}_flux_summary.png')
+        summary_file = os.path.join(output_dir, f'{target_name}_flux_summary.png')
         plt.savefig(summary_file, dpi=300, bbox_inches='tight')
         plt.close()
         
         print(f"   Saved summary plot to: {summary_file}")
 
-    def generate_summary_report(self, flux_data: Dict, protein_name: str, output_dir: str):
+    def generate_summary_report(self, flux_data: Dict, target_name: str, output_dir: str):
         """Generate a text summary of the flux analysis."""
         report_lines = [
-            f"FluxMD Analysis Report for {protein_name}",
+            f"FluxMD Analysis Report for {target_name}",
             f"Unified Memory Architecture (UMA) Optimized Pipeline",
             "=" * 60,
             f"\nTotal residues analyzed: {len(flux_data['res_indices'])}",
@@ -412,7 +571,7 @@ class TrajectoryFluxAnalyzer:
         ])
         
         # Save report
-        report_file = os.path.join(output_dir, f'{protein_name}_flux_report.txt')
+        report_file = os.path.join(output_dir, f'{target_name}_flux_report.txt')
         with open(report_file, 'w') as f:
             f.write('\n'.join(report_lines))
         
@@ -492,7 +651,7 @@ class TrajectoryFluxAnalyzer:
                             all_iteration_results: List[List[InteractionResult]],
                             intra_protein_vectors_gpu: torch.Tensor,
                             protein_pdb_file: str,
-                            protein_name: str,
+                            target_name: str,
                             output_dir: str):
         """
         Run the complete analysis pipeline with UMA-optimized GPU processing.
@@ -501,7 +660,7 @@ class TrajectoryFluxAnalyzer:
             all_iteration_results: Direct InteractionResult objects from GPU processing
             intra_protein_vectors_gpu: Pre-computed intra-protein vectors on GPU
             protein_pdb_file: Path to protein PDB file
-            protein_name: Name for output files
+            target_name: Name for output files
             output_dir: Output directory
         """
         # Parse protein structure
@@ -514,8 +673,8 @@ class TrajectoryFluxAnalyzer:
         )
         
         # Generate outputs
-        self.visualize_trajectory_flux(flux_data, protein_name, output_dir)
-        self.generate_summary_report(flux_data, protein_name, output_dir)
+        self.visualize_trajectory_flux(flux_data, target_name, output_dir)
+        self.generate_summary_report(flux_data, target_name, output_dir)
         self.save_processed_data(flux_data, output_dir)
         
         print("\n✓ Analysis complete. All results saved.")

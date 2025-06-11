@@ -237,9 +237,10 @@ class GPUAcceleratedInteractionCalculator:
     - Salt bridges: Includes actual charge magnitudes
     """
     
-    def __init__(self, device=None, physiological_pH=7.4):
+    def __init__(self, device=None, physiological_pH=7.4, target_is_dna=False):
         self.device = device or get_device()
-        self.physiological_pH = physiological_pH  # pH for protonation calculations
+        self.physiological_pH = physiological_pH
+        self.target_is_dna = target_is_dna
         self.protonation_detector = ProtonationAwareInteractionDetector(pH=self.physiological_pH)
         
         # Interaction cutoffs in Angstroms
@@ -283,41 +284,53 @@ class GPUAcceleratedInteractionCalculator:
         self.hierarchical_filter = HierarchicalDistanceFilter(self.device)
         
     def _init_residue_properties(self):
-        """Initialize residue property definitions"""
-        # H-bond donors - atoms that have hydrogen attached
-        self.DONORS = {
-            'ARG': ['NE', 'NH1', 'NH2'], 'ASN': ['ND2'], 'GLN': ['NE2'],
-            'HIS': ['ND1', 'NE2'], 'LYS': ['NZ'], 'SER': ['OG'],
-            'THR': ['OG1'], 'TRP': ['NE1'], 'TYR': ['OH'], 'CYS': ['SG']
-        }
-        
-        # H-bond acceptors - lone pair bearing atoms
-        self.ACCEPTORS = {
-            'ASP': ['OD1', 'OD2'], 'GLU': ['OE1', 'OE2'],
-            'ASN': ['OD1'], 'GLN': ['OE1'], 'HIS': ['ND1', 'NE2'],
-            'SER': ['OG'], 'THR': ['OG1'], 'TYR': ['OH'],
-            'MET': ['SD'], 'CYS': ['SG']
-        }
-        
-        # Also backbone acceptors (C=O)
-        self.BACKBONE_ACCEPTORS = ['O']  # Carbonyl oxygen
-        self.BACKBONE_DONORS = ['N']     # Amide nitrogen (if has H)
-        
-        self.CHARGED_POS = {
-            'ARG': ['CZ', 'NH1', 'NH2'], 'LYS': ['NZ'], 'HIS': ['CE1', 'ND1', 'NE2']
-        }
-        
-        self.CHARGED_NEG = {
-            'ASP': ['CG', 'OD1', 'OD2'], 'GLU': ['CD', 'OE1', 'OE2']
-        }
-        
-        self.AROMATIC = {
-            'PHE': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],
-            'TYR': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],
-            'TRP': ['CG', 'CD1', 'CD2', 'NE1', 'CE2', 'CE3', 'CZ2', 'CZ3', 'CH2'],
-            'HIS': ['CG', 'ND1', 'CD2', 'CE1', 'NE2']
-        }
-        
+        """Initialize residue property definitions based on target type"""
+        if self.target_is_dna:
+            # Properties for DNA bases
+            self.DONORS = {
+                'A': ['N6'], 'T': ['N3'], 'G': ['N1', 'N2'], 'C': ['N4']
+            }
+            self.ACCEPTORS = {
+                'A': ['N1', 'N3', 'N7'], 'T': ['O2', 'O4'], 'G': ['O6', 'N3', 'N7'], 'C': ['O2', 'N3']
+            }
+            self.AROMATIC = {
+                'A': ['N9', 'C8', 'N7', 'C5', 'C4', 'N3', 'C2', 'N1', 'C6'],
+                'G': ['N9', 'C8', 'N7', 'C5', 'C4', 'N3', 'C2', 'N1', 'C6'],
+                'C': ['N1', 'C2', 'N3', 'C4', 'C5', 'C6'],
+                'T': ['N1', 'C2', 'N3', 'C4', 'C5', 'C6']
+            }
+            self.CHARGED_POS = {}
+            self.CHARGED_NEG = {} # Phosphate groups handled separately
+            self.BACKBONE_ACCEPTORS = ['OP1', 'OP2', 'O5\'', 'O3\'', 'O4\'']
+            self.BACKBONE_DONORS = []
+        else:
+            # Properties for Proteins
+            self.DONORS = {
+                'ARG': ['NE', 'NH1', 'NH2'], 'ASN': ['ND2'], 'GLN': ['NE2'],
+                'HIS': ['ND1', 'NE2'], 'LYS': ['NZ'], 'SER': ['OG'],
+                'THR': ['OG1'], 'TRP': ['NE1'], 'TYR': ['OH'], 'CYS': ['SG']
+            }
+            self.ACCEPTORS = {
+                'ASP': ['OD1', 'OD2'], 'GLU': ['OE1', 'OE2'],
+                'ASN': ['OD1'], 'GLN': ['OE1'], 'HIS': ['ND1', 'NE2'],
+                'SER': ['OG'], 'THR': ['OG1'], 'TYR': ['OH'],
+                'MET': ['SD'], 'CYS': ['SG']
+            }
+            self.BACKBONE_ACCEPTORS = ['O']
+            self.BACKBONE_DONORS = ['N']
+            self.CHARGED_POS = {
+                'ARG': ['CZ', 'NH1', 'NH2'], 'LYS': ['NZ'], 'HIS': ['CE1', 'ND1', 'NE2']
+            }
+            self.CHARGED_NEG = {
+                'ASP': ['CG', 'OD1', 'OD2'], 'GLU': ['CD', 'OE1', 'OE2']
+            }
+            self.AROMATIC = {
+                'PHE': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],
+                'TYR': ['CG', 'CD1', 'CD2', 'CE1', 'CE2', 'CZ'],
+                'TRP': ['CG', 'CD1', 'CD2', 'NE1', 'CE2', 'CE3', 'CZ2', 'CZ3', 'CH2'],
+                'HIS': ['CG', 'ND1', 'CD2', 'CE1', 'NE2']
+            }
+
         # VDW radii in Angstroms
         self.VDW_RADII = {
             'H': 1.20, 'C': 1.70, 'N': 1.55, 'O': 1.52,
@@ -348,15 +361,25 @@ class GPUAcceleratedInteractionCalculator:
                     vector = intra_vectors_dict[res_key]
                     self.intra_protein_vectors_gpu[i] = torch.tensor(vector, device=self.device, dtype=torch.float32)
             
-            print(f"   ✓ Loaded intra-protein vectors for {len(intra_vectors_dict)} residues onto GPU")
+            print(f"   ✓ Loaded intra-molecule vectors for {len(intra_vectors_dict)} residues onto GPU")
     
-    def precompute_protein_properties_gpu(self, protein_atoms: pd.DataFrame) -> Dict[str, torch.Tensor]:
-        """Pre-compute all protein properties as GPU tensors with protonation awareness"""
-        n_atoms = len(protein_atoms)
+    def precompute_target_properties_gpu(self, target_atoms: pd.DataFrame) -> Dict[str, torch.Tensor]:
+        """Pre-compute all target properties as GPU tensors"""
+        return self._precompute_molecule_properties(target_atoms, is_target=True)
+
+    def precompute_mobile_properties_gpu(self, mobile_atoms: pd.DataFrame) -> Dict[str, torch.Tensor]:
+        """Pre-compute all mobile molecule properties as GPU tensors"""
+        return self._precompute_molecule_properties(mobile_atoms, is_target=False)
+
+    def _precompute_molecule_properties(self, atoms_df: pd.DataFrame, is_target: bool) -> Dict[str, torch.Tensor]:
+        """Generic property pre-computation for either target (DNA/protein) or mobile molecule."""
+        n_atoms = len(atoms_df)
+        molecule_type = "Target (DNA)" if self.target_is_dna and is_target else "Target (Protein)" if is_target else "Mobile"
         
-        print(f"   Pre-computing properties for {n_atoms} protein atoms on {self.device}...")
-        print(f"   Using pH {self.physiological_pH} for protonation state calculations")
-        
+        print(f"   Pre-computing properties for {n_atoms} {molecule_type} atoms on {self.device}...")
+        if not self.target_is_dna or not is_target:
+             print(f"   Using pH {self.physiological_pH} for protonation state calculations")
+
         # Initialize property tensors on GPU
         properties = {
             'coords': torch.zeros((n_atoms, 3), device=self.device, dtype=torch.float32),
@@ -385,7 +408,7 @@ class GPUAcceleratedInteractionCalculator:
         
         # First pass: identify all atoms and their properties
         atom_data = []
-        for i, (_, atom) in enumerate(protein_atoms.iterrows()):
+        for i, (_, atom) in enumerate(atoms_df.iterrows()):
             # Coordinates
             coords_list.append([atom['x'], atom['y'], atom['z']])
             
@@ -415,41 +438,44 @@ class GPUAcceleratedInteractionCalculator:
             if element == 'H':
                 properties['is_hydrogen'][i] = True
             
-            # Use protonation-aware detection for donor/acceptor assignment
-            atom_dict = {
-                'resname': res_name,
-                'name': atom_name,
-                'element': element,
-                'x': atom['x'],
-                'y': atom['y'],
-                'z': atom['z'],
-                'chain': atom.get('chain', 'A'),
-                'resSeq': res_id,
-                'atom_id': i
-            }
-            
-            # Get protonation-aware properties
-            pa_atom = self.protonation_detector.determine_atom_protonation(atom_dict)
-            
-            # Set donor/acceptor based on protonation state
-            if pa_atom.can_donate_hbond:
-                properties['is_donor'][i] = True
-            if pa_atom.can_accept_hbond:
-                properties['is_acceptor'][i] = True
-            
-            # Set charges based on protonation state
-            if pa_atom.formal_charge > 0:
-                properties['is_charged_pos'][i] = True
-            elif pa_atom.formal_charge < 0:
-                properties['is_charged_neg'][i] = True
-            
-            # Store actual charge value
-            properties['formal_charges'][i] = pa_atom.formal_charge
-            
-            # Backbone N can be donor if it has H (will check later)
-            if atom_name == 'N' and element == 'N':
-                properties['heavy_atom_bonds'][i] = {'element': 'N', 'has_H': False}
-            
+            if self.target_is_dna and is_target:
+                # Handle DNA properties
+                if res_name in self.DONORS and atom_name in self.DONORS[res_name]:
+                    properties['is_donor'][i] = True
+                if res_name in self.ACCEPTORS and atom_name in self.ACCEPTORS[res_name]:
+                    properties['is_acceptor'][i] = True
+                if atom_name in self.BACKBONE_ACCEPTORS:
+                    properties['is_acceptor'][i] = True
+                if atom['element'] == 'P':
+                     properties['formal_charges'][i] = -1.0 # Simplified charge for phosphate
+                     properties['is_charged_neg'][i] = True
+
+            else:
+                # Use protonation-aware detection for proteins
+                atom_dict = {
+                    'resname': res_name,
+                    'name': atom_name,
+                    'element': element,
+                    'x': atom['x'],
+                    'y': atom['y'],
+                    'z': atom['z'],
+                    'chain': atom.get('chain', 'A'),
+                    'resSeq': res_id,
+                    'atom_id': i
+                }
+                pa_atom = self.protonation_detector.determine_atom_protonation(atom_dict)
+                if pa_atom.can_donate_hbond:
+                    properties['is_donor'][i] = True
+                if pa_atom.can_accept_hbond:
+                    properties['is_acceptor'][i] = True
+                if pa_atom.formal_charge > 0:
+                    properties['is_charged_pos'][i] = True
+                elif pa_atom.formal_charge < 0:
+                    properties['is_charged_neg'][i] = True
+                properties['formal_charges'][i] = pa_atom.formal_charge
+                if atom_name == 'N' and element == 'N':
+                    properties['heavy_atom_bonds'][i] = {'element': 'N', 'has_H': False}
+
             # Track aromatic atoms for ring calculation
             if res_name in self.AROMATIC and atom_name in self.AROMATIC[res_name]:
                 properties['is_aromatic'][i] = True
@@ -531,294 +557,18 @@ class GPUAcceleratedInteractionCalculator:
                                   f"center: {center.shape} ({center.numel()} elements), "
                                   f"normal: {normal.shape} ({normal.numel()} elements)")
                 except Exception as e:
-                    print(f"     Warning: Failed to process aromatic ring for residue {res_id}: {e}")
+                    print(f"     Error processing aromatic ring {res_id}: {e}")
         
-        # Convert aromatic lists to tensors with proper error handling
+        # Convert aromatic properties to tensors
         if properties['aromatic_centers']:
-            try:
-                # Ensure all centers and normals have the correct dimensions
-                valid_indices = []
-                for i, (center, normal) in enumerate(zip(properties['aromatic_centers'],
-                                                        properties['aromatic_normals'])):
-                    if center.numel() == 3 and normal.numel() == 3:
-                        valid_indices.append(i)
-                    else:
-                        print(f"     Error: Aromatic ring {i} has invalid tensor size - "
-                              f"center: {center.numel()} elements, normal: {normal.numel()} elements")
-                
-                if valid_indices:
-                    properties['aromatic_centers'] = torch.stack([properties['aromatic_centers'][i]
-                                                                 for i in valid_indices])
-                    properties['aromatic_normals'] = torch.stack([properties['aromatic_normals'][i]
-                                                                 for i in valid_indices])
-                    properties['aromatic_residues'] = torch.tensor([properties['aromatic_residues'][i]
-                                                                   for i in valid_indices],
-                                                                  device=self.device, dtype=torch.long)
-                else:
-                    raise ValueError("No valid aromatic rings after filtering")
-                    
-            except Exception as e:
-                print(f"     ⚠️  Error stacking aromatic tensors: {e}")
-                properties['aromatic_centers'] = torch.zeros((0, 3), device=self.device)
-                properties['aromatic_normals'] = torch.zeros((0, 3), device=self.device)
-                properties['aromatic_residues'] = torch.zeros(0, device=self.device, dtype=torch.long)
+            properties['aromatic_centers'] = torch.stack(properties['aromatic_centers'])
+            properties['aromatic_normals'] = torch.stack(properties['aromatic_normals'])
+        
+        if is_target:
+            self.protein_properties = properties # Keep variable name for simplicity
         else:
-            properties['aromatic_centers'] = torch.zeros((0, 3), device=self.device)
-            properties['aromatic_normals'] = torch.zeros((0, 3), device=self.device)
-            properties['aromatic_residues'] = torch.zeros(0, device=self.device, dtype=torch.long)
+            self.ligand_properties = properties
         
-        # Print summary
-        n_donors = properties['is_donor'].sum().item()
-        n_acceptors = properties['is_acceptor'].sum().item()
-        n_hydrogens = properties['is_hydrogen'].sum().item()
-        
-        print(f"   ✓ Properties computed:")
-        print(f"     - {n_donors} H-bond donors")
-        print(f"     - {n_acceptors} H-bond acceptors")
-        print(f"     - {n_hydrogens} hydrogen atoms")
-        print(f"     - {len(properties['aromatic_centers'])} aromatic rings successfully processed")
-        
-        self.protein_properties = properties
-        return properties
-    
-    def precompute_ligand_properties_gpu(self, ligand_atoms: pd.DataFrame) -> Dict[str, torch.Tensor]:
-        """Pre-compute ligand properties on GPU with protonation awareness"""
-        n_atoms = len(ligand_atoms)
-        
-        print(f"   Pre-computing properties for {n_atoms} ligand atoms on {self.device}...")
-        print(f"   Using pH {self.physiological_pH} for ligand protonation states")
-        
-        # Initialize property tensors
-        properties = {
-            'coords': torch.zeros((n_atoms, 3), device=self.device, dtype=torch.float32),
-            'has_donor': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
-            'has_acceptor': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
-            'likely_pos': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
-            'likely_neg': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
-            'likely_aromatic': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
-            'vdw_radii': torch.zeros(n_atoms, device=self.device, dtype=torch.float32),
-            'is_hydrogen': torch.zeros(n_atoms, device=self.device, dtype=torch.bool),
-            'formal_charges': torch.zeros(n_atoms, device=self.device, dtype=torch.float32),  # NEW: Track actual charges
-            'aromatic_centers': [],
-            'aromatic_normals': [],
-            'connectivity': {}  # Store atom connectivity
-        }
-        
-        coords_list = []
-        vdw_radii_list = []
-        potential_aromatic_atoms = []
-        atom_data = []
-        
-        # First pass: collect all atom data
-        for i, (_, atom) in enumerate(ligand_atoms.iterrows()):
-            coords_list.append([atom['x'], atom['y'], atom['z']])
-            
-            # Get element with robust fallback
-            element = str(atom.get('element', '')).strip().upper()
-            if not element:
-                atom_name = str(atom.get('name', '')).strip().upper()
-                # Try to extract element from atom name
-                if atom_name[:2] in ['CL', 'BR']:
-                    element = atom_name[:2]
-                elif atom_name and atom_name[0] in ['C', 'N', 'O', 'S', 'P', 'H', 'F']:
-                    element = atom_name[0]
-                else:
-                    element = 'C'  # Default to carbon
-                    print(f"     Warning: Unknown element for {atom_name}, defaulting to C")
-            
-            atom_name = str(atom.get('name', '')).upper()
-            
-            # Store atom data
-            atom_data.append({
-                'index': i,
-                'name': atom_name,
-                'element': element,
-                'coords': [atom['x'], atom['y'], atom['z']]
-            })
-            
-            # VDW radius
-            vdw_radii_list.append(self.VDW_RADII.get(element, self.VDW_RADII['default']))
-            
-            # Mark hydrogens
-            if element == 'H':
-                properties['is_hydrogen'][i] = True
-            
-            # Use protonation-aware detection for ligand atoms
-            atom_dict = {
-                'name': atom_name,
-                'element': element,
-                'x': atom['x'],
-                'y': atom['y'],
-                'z': atom['z'],
-                'atom_id': i
-            }
-            
-            # Get protonation-aware properties
-            pa_atom = self.protonation_detector.process_ligand_atom(atom_dict)
-            
-            # Set donor/acceptor based on protonation state
-            if pa_atom.can_donate_hbond:
-                properties['has_donor'][i] = True
-            if pa_atom.can_accept_hbond:
-                properties['has_acceptor'][i] = True
-            
-            # Set charges based on protonation state
-            if pa_atom.formal_charge > 0:
-                properties['likely_pos'][i] = True
-            elif pa_atom.formal_charge < 0:
-                properties['likely_neg'][i] = True
-            
-            # Store actual charge value
-            properties['formal_charges'][i] = pa_atom.formal_charge
-            
-            # Aromatic detection - include O and S for heteroaromatic systems
-            # Common heteroaromatic rings: furan (O), thiophene (S), pyrrole (N)
-            if element in ['C', 'N', 'O', 'S']:
-                properties['likely_aromatic'][i] = True
-                potential_aromatic_atoms.append({
-                    'index': i,
-                    'coord': [atom['x'], atom['y'], atom['z']],
-                    'name': atom_name,
-                    'element': element
-                })
-        
-        # Second pass: determine connectivity and identify true donors
-        coords_array = np.array(coords_list)
-        
-        # Build connectivity graph based on distances
-        for i, atom in enumerate(atom_data):
-            properties['connectivity'][i] = {
-                'bonds': [],
-                'has_H': False,
-                'bond_count': 0
-            }
-            
-            for j, other in enumerate(atom_data):
-                if i != j:
-                    dist = np.linalg.norm(np.array(atom['coords']) - np.array(other['coords']))
-                    
-                    # Typical bond distances
-                    max_bond_dist = 1.7  # Most single bonds
-                    if atom['element'] == 'H' or other['element'] == 'H':
-                        max_bond_dist = 1.3  # H bonds are shorter
-                    
-                    if dist < max_bond_dist:
-                        properties['connectivity'][i]['bonds'].append(j)
-                        if other['element'] == 'H':
-                            properties['connectivity'][i]['has_H'] = True
-        
-        # Third pass: identify true donors (heavy atoms with H attached)
-        for i, atom in enumerate(atom_data):
-            if atom['element'] != 'H':  # Heavy atom
-                # Check if it has H attached
-                if properties['connectivity'][i]['has_H']:
-                    # This heavy atom has H attached
-                    if atom['element'] in ['N', 'O', 'S']:
-                        properties['has_donor'][i] = True
-            else:  # This is a hydrogen
-                # Hydrogen itself can be a donor
-                properties['has_donor'][i] = True
-        
-        # Convert to tensors
-        properties['coords'] = torch.tensor(coords_list, device=self.device, dtype=torch.float32)
-        properties['vdw_radii'] = torch.tensor(vdw_radii_list, device=self.device, dtype=torch.float32)
-        
-        # Detect ligand aromatic rings (improved to handle small rings)
-        if len(potential_aromatic_atoms) >= 3:  # Lowered threshold - can detect partial rings
-            try:
-                # Simple clustering for aromatic rings
-                aromatic_coords = [a['coord'] for a in potential_aromatic_atoms]
-                aromatic_coords_tensor = torch.tensor(aromatic_coords, device=self.device, dtype=torch.float32)
-                
-                # Use distance-based clustering with larger cutoff for heteroatoms
-                distances = torch.cdist(aromatic_coords_tensor, aromatic_coords_tensor)
-                
-                # Find connected components (atoms within 1.7 Å to include C-S bonds)
-                connected = distances < 1.7
-                
-                # Look for ring patterns (3-7 connected atoms)
-                n_connected = torch.sum(connected, dim=1)
-                
-                # Find potential ring centers - even with 3 connected atoms
-                if torch.any(n_connected >= 3):
-                    # For very small rings (3-4 atoms), still try to detect them
-                    # This handles partial aromatic systems and heteroaromatic rings
-                    # Common cases: furan (5 atoms), thiophene (5), imidazole (5), partial benzene (3-4)
-                    center = aromatic_coords_tensor.mean(dim=0)
-                    
-                    if center.shape == torch.Size([3]):
-                        # Calculate normal
-                        centered = aromatic_coords_tensor - center
-                        
-                        if centered.shape[0] >= 3:
-                            try:
-                                _, _, vh = torch.linalg.svd(centered.T, full_matrices=False)
-                                # Get the eigenvector corresponding to smallest singular value
-                                # vh has shape [3, 3], we want the last column
-                                normal = vh[:, -1]  # Last column
-                                
-                                if normal.numel() == 3:
-                                    normal = normal.reshape(3)  # Ensure 1D tensor
-                                    properties['aromatic_centers'].append(center.reshape(3))
-                                    properties['aromatic_normals'].append(normal)
-                            except Exception as e:
-                                print(f"     Warning: SVD failed for ligand aromatic ring: {e}")
-                        
-            except Exception as e:
-                print(f"     Warning: Failed to process ligand aromatic rings: {e}")
-        
-        # Convert aromatic lists to tensors
-        if properties['aromatic_centers']:
-            try:
-                # Validate shapes before stacking
-                valid_centers = []
-                valid_normals = []
-                
-                for center, normal in zip(properties['aromatic_centers'], properties['aromatic_normals']):
-                    if center.numel() == 3 and normal.numel() == 3:
-                        valid_centers.append(center.reshape(3))
-                        valid_normals.append(normal.reshape(3))
-                
-                if valid_centers:
-                    properties['aromatic_centers'] = torch.stack(valid_centers)
-                    properties['aromatic_normals'] = torch.stack(valid_normals)
-                else:
-                    properties['aromatic_centers'] = torch.zeros((0, 3), device=self.device)
-                    properties['aromatic_normals'] = torch.zeros((0, 3), device=self.device)
-                    
-            except Exception as e:
-                print(f"     ⚠️  GPU tensor stacking failed for ligand: {e}")
-                properties['aromatic_centers'] = torch.zeros((0, 3), device=self.device)
-                properties['aromatic_normals'] = torch.zeros((0, 3), device=self.device)
-        else:
-            properties['aromatic_centers'] = torch.zeros((0, 3), device=self.device)
-            properties['aromatic_normals'] = torch.zeros((0, 3), device=self.device)
-        
-        # Print summary of detected properties
-        n_donors = properties['has_donor'].sum().item()
-        n_acceptors = properties['has_acceptor'].sum().item()
-        n_hydrogens = properties['is_hydrogen'].sum().item()
-        
-        print(f"   ✓ Ligand properties computed:")
-        print(f"     Elements found: {ligand_atoms['element'].value_counts().to_dict() if 'element' in ligand_atoms else 'N/A'}")
-        print(f"     H-bond donors: {n_donors} (including {n_hydrogens} H atoms)")
-        print(f"     H-bond acceptors: {n_acceptors}")
-        print(f"     Likely positive charges: {properties['likely_pos'].sum().item()}")
-        print(f"     Likely negative charges: {properties['likely_neg'].sum().item()}")
-        print(f"     Aromatic atoms detected: {properties['likely_aromatic'].sum().item()} (C, N, O, S)")
-        print(f"     Aromatic rings found: {len(properties['aromatic_centers'])}")
-        
-        # Diagnostic information for failed aromatic detection
-        if properties['likely_aromatic'].sum().item() >= 3 and len(properties['aromatic_centers']) == 0:
-            print(f"\n     ⚠️  Aromatic detection failed despite {properties['likely_aromatic'].sum().item()} aromatic atoms")
-            print(f"     Possible issues:")
-            print(f"     - Atoms may not be properly connected (check bond distances)")
-            print(f"     - Ring might be non-planar or distorted")
-            print(f"     - Consider using the robust ring detection algorithm")
-        elif len(properties['aromatic_centers']) > 0:
-            print(f"     ✓ Successfully detected {len(properties['aromatic_centers'])} aromatic ring(s)!")
-        
-        self.ligand_properties = properties
         return properties
     
     def _detect_hbonds_with_angles_gpu(self,
