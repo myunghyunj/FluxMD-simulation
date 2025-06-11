@@ -41,7 +41,7 @@ graph TD
     
     %% Analysis Pipeline
     Forces --> |Standard| CSV[Write CSV Files]
-    CSV --> FluxCalc[Calculate Flux<br/>Φᵢ = ⟨|E̅ᵢ|⟩·Cᵢ·(1+τᵢ)]
+    CSV --> FluxCalc[Calculate Flux<br/>Phi = |E|·C·(1+tau)]
     
     Forces --> |UMA| Tensors[GPU Tensors]
     Tensors --> FluxCalc
