@@ -260,6 +260,8 @@ def _save_dna_parameters(params_file, dna_file, protein_file, output_dir, **kwar
         f.write(f"  Number of approaches: {kwargs.get('n_approaches', 10)}\n")
         f.write(f"  Steps per approach: {kwargs.get('n_steps', 200)}\n")
         f.write(f"  Starting distance: {kwargs.get('starting_distance', 20.0)} Å\n")
+        if kwargs.get('trajectory_step_size'):
+            f.write(f"  Trajectory step size: {kwargs.get('trajectory_step_size')} Å\n")
         f.write(f"  Rotations per position: {kwargs.get('n_rotations', 36)}\n")
         f.write(f"  Physiological pH: {kwargs.get('physiological_pH', 7.4)}\n")
         f.write(f"  Force CPU: {kwargs.get('force_cpu', False)}\n")

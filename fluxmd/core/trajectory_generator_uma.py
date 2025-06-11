@@ -167,7 +167,8 @@ def run_single_iteration_uma(self, iteration_num, protein_atoms_df, ligand_atoms
                              starting_distance, n_steps, n_approaches, n_rotations,
                              output_dir, gpu_calc=None, approach_angles=None,
                              ca_coords=None, ligand_mw=None, approach_distance=2.5,
-                             save_trajectories=False, n_iterations=None):
+                             save_trajectories=False, n_iterations=None,
+                             trajectory_step_size=None):
     """
     Run a single iteration with UMA-optimized GPU processing.
     Returns raw GPU InteractionResult objects instead of writing files.
@@ -220,7 +221,8 @@ def run_single_iteration_uma(self, iteration_num, protein_atoms_df, ligand_atoms
         trajectory, times = self.generate_cocoon_trajectory(
             ca_coords, ligand_coords, ligand_atoms_df,
             ligand_mw, n_steps=n_steps, dt=dt,
-            target_distance=initial_distance
+            target_distance=initial_distance,
+            trajectory_step_size=trajectory_step_size
         )
         
         # Check if collision statistics are available
@@ -482,7 +484,8 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
                              n_steps=200, n_iterations=10, n_approaches=10,
                              starting_distance=20.0, n_rotations=36,
                              use_gpu=True, physiological_pH=7.4,
-                             save_trajectories=False, approach_distance=2.5):
+                             save_trajectories=False, approach_distance=2.5,
+                             trajectory_step_size=None):
     """
     Orchestrates the entire analysis with UMA-optimized GPU workflow.
     Keeps everything in GPU memory from start to finish.
@@ -508,7 +511,8 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
         output_dir, protein_file, ligand_file,
         n_steps, n_iterations, n_approaches,
         starting_distance, n_rotations, physiological_pH,
-        device.type, save_trajectories, approach_distance
+        device.type, save_trajectories, approach_distance,
+        trajectory_step_size
     )
     
     # Parse structures
@@ -580,7 +584,8 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
             ca_coords=ca_coords, ligand_mw=ligand_mw,
             save_trajectories=save_trajectories,
             approach_distance=approach_distance,
-            n_iterations=n_iterations
+            n_iterations=n_iterations,
+            trajectory_step_size=trajectory_step_size
         )
         
         all_iteration_results.append(iteration_results)
@@ -825,7 +830,8 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
 def _save_parameters_uma(self, output_dir, protein_file, ligand_file,
                         n_steps, n_iterations, n_approaches,
                         starting_distance, n_rotations, physiological_pH,
-                        device_type, save_trajectories=False, approach_distance=2.5):
+                        device_type, save_trajectories=False, approach_distance=2.5,
+                        trajectory_step_size=None):
     """Save simulation parameters for UMA run in standard format."""
     import pandas as pd
     import os
@@ -856,6 +862,8 @@ def _save_parameters_uma(self, output_dir, protein_file, ligand_file,
         f.write(f"Starting distance: {starting_distance} Angstroms\n")
         f.write(f"Distance range: ~5-{starting_distance * 2.5:.0f} Angstroms (free variation)\n")
         f.write(f"Rotations per position: {n_rotations}\n")
+        if trajectory_step_size is not None:
+            f.write(f"Trajectory step size: {trajectory_step_size} Angstroms\n")
         f.write(f"Total steps per iteration: {n_steps * n_approaches}\n")
         f.write(f"Total rotations sampled: {n_steps * n_approaches * n_rotations}\n")
         f.write("\n")

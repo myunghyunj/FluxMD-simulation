@@ -342,42 +342,310 @@ class ProteinLigandFluxAnalyzer:
         
         return D_angstrom_fs
     
+    def analyze_molecular_geometry(self, coords):
+        """
+        Analyze molecular geometry using PCA to determine shape type.
+        Returns shape classification and geometric parameters.
+        """
+        # Calculate center of mass
+        center = np.mean(coords, axis=0)
+        centered_coords = coords - center
+        
+        # Handle small molecules
+        if len(coords) < 10:
+            return {
+                'shape_type': 'small',
+                'center': center,
+                'principal_axes': np.eye(3),
+                'eigenvalues': np.ones(3),
+                'dimensions': np.ones(3) * 10.0,
+                'aspect_ratios': (1.0, 1.0, 1.0)
+            }
+        
+        # Compute covariance matrix and PCA
+        try:
+            cov_matrix = np.cov(centered_coords.T)
+            eigenvalues, eigenvectors = np.linalg.eig(cov_matrix)
+            
+            # Sort by eigenvalue (largest first)
+            idx = eigenvalues.argsort()[::-1]
+            eigenvalues = eigenvalues[idx]
+            eigenvectors = eigenvectors[:, idx]
+            
+            # Calculate dimensions along principal axes
+            projected = centered_coords @ eigenvectors
+            dimensions = np.array([
+                np.ptp(projected[:, 0]),  # Range along major axis
+                np.ptp(projected[:, 1]),  # Range along middle axis
+                np.ptp(projected[:, 2])   # Range along minor axis
+            ])
+            
+            # Calculate aspect ratios
+            eps = 1e-6
+            aspect_ratio_1 = dimensions[0] / (dimensions[1] + eps)
+            aspect_ratio_2 = dimensions[0] / (dimensions[2] + eps)
+            aspect_ratio_3 = dimensions[1] / (dimensions[2] + eps)
+            
+            # Classify shape
+            if aspect_ratio_1 > 3.0 and aspect_ratio_2 > 3.0:
+                shape_type = 'linear'  # DNA, fibrous proteins
+            elif aspect_ratio_1 < 2.0 and aspect_ratio_2 < 2.0:
+                shape_type = 'globular'  # Most proteins
+            elif aspect_ratio_1 > 3.0 and aspect_ratio_3 < 2.0:
+                shape_type = 'planar'  # Sheet-like
+            else:
+                shape_type = 'irregular'
+            
+            return {
+                'shape_type': shape_type,
+                'center': center,
+                'principal_axes': eigenvectors,
+                'eigenvalues': eigenvalues,
+                'dimensions': dimensions,
+                'aspect_ratios': (aspect_ratio_1, aspect_ratio_2, aspect_ratio_3)
+            }
+            
+        except np.linalg.LinAlgError:
+            # Fallback for degenerate cases
+            return {
+                'shape_type': 'irregular',
+                'center': center,
+                'principal_axes': np.eye(3),
+                'eigenvalues': np.ones(3),
+                'dimensions': np.ones(3) * 20.0,
+                'aspect_ratios': (1.0, 1.0, 1.0)
+            }
+    
+    def calculate_surface_distance(self, point, coords):
+        """
+        Calculate distance from point to nearest surface atom.
+        Much more appropriate for linear molecules than center distance.
+        """
+        distances = cdist([point], coords)[0]
+        return np.min(distances)
+    
     def generate_cocoon_trajectory(self, protein_coords, ligand_coords, ligand_atoms,
                                   molecular_weight, n_steps=100, dt=40,
-                                  target_distance=35.0):
+                                  target_distance=35.0, trajectory_step_size=None,
+                                  approach_angle=0.0):
         """
-        Generate cocoon-style trajectory that winds around protein like thread
-        FIXED: Allow closer approaches for H-bond detection
+        Generate adaptive cocoon trajectory based on molecular geometry.
+        Automatically detects linear molecules (DNA) and uses appropriate method.
+        
+        Args:
+            approach_angle: Starting angle offset (radians) for this approach
         """
+        # Analyze target geometry
+        geometry = self.analyze_molecular_geometry(protein_coords)
+        
+        print(f"\n   Molecular geometry analysis:")
+        print(f"     Shape type: {geometry['shape_type']}")
+        print(f"     Dimensions: {geometry['dimensions'][0]:.1f} x {geometry['dimensions'][1]:.1f} x {geometry['dimensions'][2]:.1f} Å")
+        print(f"     Aspect ratios: {geometry['aspect_ratios'][0]:.1f}:{geometry['aspect_ratios'][1]:.1f}:{geometry['aspect_ratios'][2]:.1f}")
+        
         # Calculate diffusion coefficient
         D = self.calculate_diffusion_coefficient(molecular_weight)
-        step_size = np.sqrt(2 * D * dt)
         
-        # Increase step size for more visible motion
-        step_size *= 5.0
-        
-        # Find center and principal axes of protein
-        protein_center = np.mean(protein_coords, axis=0)
-        
-        # Calculate protein's principal axes using PCA
-        centered_coords = protein_coords - protein_center
-        
-        if len(protein_coords) < 3:
-            print(f"  ⚠️  Warning: Only {len(protein_coords)} protein atoms found.")
-            principal_axes = np.eye(3)
+        if trajectory_step_size is not None:
+            # Use user-defined step size
+            step_size = trajectory_step_size
+            print(f"     Using user-defined step size: {step_size:.1f} Å")
         else:
-            try:
-                cov_matrix = np.cov(centered_coords.T)
-                eigenvalues, eigenvectors = np.linalg.eig(cov_matrix)
-                idx = eigenvalues.argsort()[::-1]
-                principal_axes = eigenvectors[:, idx]
-            except np.linalg.LinAlgError:
-                print("  ⚠️  Warning: Cannot compute principal axes. Using default orientation.")
-                principal_axes = np.eye(3)
+            # Calculate from diffusion
+            step_size = np.sqrt(2 * D * dt)
+            # Increase step size for more visible motion
+            step_size *= 5.0
+            print(f"     Calculated step size: {step_size:.1f} Å (from diffusion)")
         
-        # Initialize spherical coordinates for winding motion
-        theta = np.random.uniform(0, 2 * np.pi)
-        phi = np.random.uniform(np.pi/4, 3*np.pi/4)
+        # Choose trajectory generation method based on shape
+        if geometry['shape_type'] == 'linear':
+            print(f"     → Using cylindrical trajectory for linear molecule")
+            return self.generate_linear_cocoon_trajectory(
+                protein_coords, ligand_coords, ligand_atoms,
+                molecular_weight, n_steps, dt, target_distance,
+                geometry, step_size, approach_angle
+            )
+        else:
+            print(f"     → Using spherical trajectory for {geometry['shape_type']} molecule")
+            return self.generate_spherical_cocoon_trajectory(
+                protein_coords, ligand_coords, ligand_atoms,
+                molecular_weight, n_steps, dt, target_distance,
+                geometry, step_size, approach_angle
+            )
+        
+    def generate_linear_cocoon_trajectory(self, protein_coords, ligand_coords, ligand_atoms,
+                                        molecular_weight, n_steps, dt, target_distance,
+                                        geometry, step_size, approach_angle=0.0):
+        """
+        Generate non-biasing hovering cocoon trajectory for linear molecules.
+        
+        This method ensures complete, unbiased coverage of linear molecules (DNA, fibrils)
+        by implementing:
+        - Bi-directional starting positions (alternating ends)
+        - Multiple full-length traversals
+        - Uniform angular distribution
+        - Stochastic hovering with no preferred regions
+        
+        Args:
+            approach_angle: Starting angle offset for helical trajectory
+        """
+        center = geometry['center']
+        axes = geometry['principal_axes']
+        dimensions = geometry['dimensions']
+        
+        # Major axis is the first principal component
+        major_axis = axes[:, 0]
+        minor_axis_1 = axes[:, 1]
+        minor_axis_2 = axes[:, 2]
+        
+        # Linear molecule parameters
+        length = dimensions[0]
+        radius = max(dimensions[1], dimensions[2]) / 2
+        
+        print(f"     Linear molecule: length={length:.1f} Å, radius={radius:.1f} Å")
+        
+        trajectory = []
+        times = []
+        
+        # Non-biasing trajectory parameters
+        n_helical_turns = 3.0  # Complete helical turns for full coverage
+        n_axial_traversals = 2.5  # Number of full-length traversals
+        
+        # Determine starting end based on approach angle
+        # This ensures bi-directional coverage without bias
+        approach_idx = int(approach_angle / (np.pi / 2))  # 0, 1, 2, or 3
+        start_from_negative = (approach_idx % 2) == 1  # Alternate starting ends
+        
+        print(f"     Approach {approach_idx + 1}: Starting from {'negative' if start_from_negative else 'positive'} Z end")
+        
+        for i in range(n_steps):
+            t = i / (n_steps - 1)  # Normalized time [0, 1]
+            
+            # Non-biasing axial position with multiple traversals
+            # Use cosine for smooth back-and-forth motion
+            if start_from_negative:
+                # Start from -Z, traverse to +Z and back
+                z_phase = np.pi  # 180° phase shift
+            else:
+                # Start from +Z, traverse to -Z and back
+                z_phase = 0
+            
+            # Multiple traversals ensure complete coverage
+            z_normalized = np.cos(2 * np.pi * t * n_axial_traversals + z_phase)
+            z_position = z_normalized * (length / 2)
+            
+            # Helical angle with continuous rotation for uniform coverage
+            theta = approach_angle + t * n_helical_turns * 2 * np.pi
+            
+            # Non-biasing radial distance with stochastic hovering
+            r_base = radius + target_distance
+            
+            # Hovering oscillations with multiple frequency components
+            # This creates a more complex, non-repetitive pattern
+            r_hover = 0.0
+            r_hover += 8.0 * np.sin(2 * np.pi * t * 4.3)  # Primary oscillation
+            r_hover += 5.0 * np.sin(2 * np.pi * t * 7.1)  # Secondary frequency
+            r_hover += 3.0 * np.sin(2 * np.pi * t * 11.7)  # Tertiary frequency
+            
+            # Add stochastic component for true hovering behavior
+            r_hover += np.random.normal(0, 2.0)  # Random hovering
+            
+            # Periodic close approaches for comprehensive sampling
+            # Use prime numbers to avoid repetitive patterns
+            if (i % 13) < 2 or (i % 17) < 2:
+                r_hover -= 12.0  # Close approach for interaction sampling
+            
+            r = r_base + r_hover
+            r = max(radius + 2.0, r)  # Maintain minimum distance
+            
+            # Convert cylindrical to Cartesian in local frame
+            x_local = r * np.cos(theta)
+            y_local = r * np.sin(theta)
+            z_local = z_position
+            
+            # Transform to world coordinates using principal axes
+            local_pos = x_local * minor_axis_1 + y_local * minor_axis_2 + z_local * major_axis
+            world_pos = center + local_pos
+            
+            # Enhanced Brownian motion for hovering behavior
+            # Larger component perpendicular to DNA axis for better lateral exploration
+            brownian_radial = np.random.randn() * step_size * 0.5
+            brownian_axial = np.random.randn() * step_size * 0.3
+            brownian_tangential = np.random.randn() * step_size * 0.4
+            
+            # Apply Brownian motion in cylindrical components
+            r += brownian_radial
+            theta += brownian_tangential / r  # Angular displacement
+            z_position += brownian_axial
+            
+            # Recalculate position with Brownian perturbations
+            x_local = r * np.cos(theta)
+            y_local = r * np.sin(theta)
+            z_local = z_position
+            
+            # Transform to world coordinates
+            local_pos = x_local * minor_axis_1 + y_local * minor_axis_2 + z_local * major_axis
+            world_pos = center + local_pos
+            
+            # Check collision
+            test_coords = ligand_coords + (world_pos - ligand_coords.mean(axis=0))
+            
+            if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                trajectory.append(world_pos)
+                times.append(i * dt)
+            else:
+                # Try backing off
+                for r_adjust in np.linspace(2, 10, 5):
+                    r_test = r + r_adjust
+                    x_test = r_test * np.cos(theta)
+                    y_test = r_test * np.sin(theta)
+                    local_test = x_test * minor_axis_1 + y_test * minor_axis_2 + z_local * major_axis
+                    world_test = center + local_test
+                    test_coords = ligand_coords + (world_test - ligand_coords.mean(axis=0))
+                    
+                    if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                        trajectory.append(world_test)
+                        times.append(i * dt)
+                        break
+        
+        trajectory = np.array(trajectory)
+        times = np.array(times[:len(trajectory)])
+        
+        # Calculate surface distances (not center distances)
+        if len(trajectory) > 0:
+            surface_distances = []
+            for pos in trajectory:
+                min_dist = self.calculate_surface_distance(pos, protein_coords)
+                surface_distances.append(min_dist)
+            
+            surface_distances = np.array(surface_distances)
+            
+            print(f"\n   Trajectory distance statistics:")
+            print(f"     Min distance from surface: {np.min(surface_distances):.1f} Å")
+            print(f"     Max distance from surface: {np.max(surface_distances):.1f} Å")
+            print(f"     Mean distance from surface: {np.mean(surface_distances):.1f} Å")
+            print(f"     Close approaches (<3.5Å): {np.sum(surface_distances < 3.5)} frames")
+            print(f"     H-bond range (<3.5Å): {100 * np.sum(surface_distances < 3.5) / len(surface_distances):.1f}% of frames")
+        
+        return trajectory, times
+    
+    def generate_spherical_cocoon_trajectory(self, protein_coords, ligand_coords, ligand_atoms,
+                                           molecular_weight, n_steps, dt, target_distance,
+                                           geometry, step_size, approach_angle=0.0):
+        """
+        Original spherical cocoon trajectory for globular molecules.
+        Enhanced with surface distance calculations.
+        
+        Args:
+            approach_angle: Starting angle offset for spherical trajectory
+        """
+        protein_center = geometry['center']
+        principal_axes = geometry['principal_axes']
+        
+        # Initialize spherical coordinates for winding motion with approach-specific angle
+        # Use approach_angle to ensure different starting positions
+        theta = approach_angle
+        phi = np.pi/2 + 0.3 * np.sin(approach_angle)  # Vary phi based on approach
         
         # Initial distance with more variation allowed
         current_radius = target_distance + np.max(cdist([protein_center], protein_coords)[0])
@@ -499,15 +767,19 @@ class ProteinLigandFluxAnalyzer:
         trajectory = np.array(trajectory)
         times = np.array(times[:len(trajectory)])
         
-        # Print distance statistics for debugging
+        # Calculate surface distances (improved method)
         if len(trajectory) > 0:
-            distances_to_center = np.linalg.norm(trajectory - protein_center, axis=1)
-            protein_radius = np.max(cdist([protein_center], protein_coords)[0])
-            surface_distances = distances_to_center - protein_radius
+            surface_distances = []
+            for pos in trajectory:
+                min_dist = self.calculate_surface_distance(pos, protein_coords)
+                surface_distances.append(min_dist)
+            
+            surface_distances = np.array(surface_distances)
             
             print(f"\n   Trajectory distance statistics:")
             print(f"     Min distance from surface: {np.min(surface_distances):.1f} Å")
             print(f"     Max distance from surface: {np.max(surface_distances):.1f} Å")
+            print(f"     Mean distance from surface: {np.mean(surface_distances):.1f} Å")
             print(f"     Close approaches (<3.5Å): {np.sum(surface_distances < 3.5)} frames")
             print(f"     H-bond range (<3.5Å): {100 * np.sum(surface_distances < 3.5) / len(surface_distances):.1f}% of frames")
         
@@ -1371,23 +1643,46 @@ class ProteinLigandFluxAnalyzer:
         ax1.yaxis.pane.fill = False
         ax1.zaxis.pane.fill = False
         
-        # Distance from protein backbone over trajectory
+        # Z-axis coverage for linear molecules (DNA)
         ax2 = fig.add_subplot(222)
-        min_distances = []
-        for pos in trajectory:
-            distances = cdist([pos], ca_coords)[0]
-            min_distances.append(np.min(distances))
         
-        # Calculate expected target distance (should be roughly constant for cocoon)
-        target_distance = np.mean(min_distances)
+        # Check if this is a linear molecule by looking at backbone extent
+        backbone_extent = np.ptp(ca_coords, axis=0)
+        is_linear = np.max(backbone_extent) / np.min(backbone_extent) > 3.0
         
-        ax2.plot(range(len(trajectory)), min_distances, 'b-', linewidth=2, label='Actual distance')
-        ax2.axhline(y=np.mean(min_distances), color='g', linestyle='--', linewidth=2,
-                   label=f'Mean: {np.mean(min_distances):.1f} Å')
-        ax2.fill_between(range(len(trajectory)), min_distances, alpha=0.3, color='lightblue')
+        if is_linear:
+            # For linear molecules, show Z-axis position over time
+            # Find principal axis (assume it's Z for simplicity)
+            z_positions = trajectory[:, 2]
+            z_min, z_max = ca_coords[:, 2].min(), ca_coords[:, 2].max()
+            
+            ax2.plot(range(len(trajectory)), z_positions, 'b-', linewidth=2, alpha=0.8)
+            ax2.axhline(y=z_min, color='r', linestyle='--', alpha=0.5, label='DNA ends')
+            ax2.axhline(y=z_max, color='r', linestyle='--', alpha=0.5)
+            ax2.fill_between(range(len(trajectory)), z_min, z_max, alpha=0.2, color='lightgray', label='DNA region')
+            ax2.set_ylabel('Z Position (Å)', fontsize=12, fontweight='bold')
+            ax2.set_title('Axial Coverage (DNA Length)', fontsize=14, fontweight='bold')
+            
+            # Add coverage percentage
+            z_coverage = (np.ptp(z_positions) / (z_max - z_min)) * 100
+            ax2.text(0.95, 0.95, f'Coverage: {z_coverage:.1f}%', 
+                    transform=ax2.transAxes, ha='right', va='top',
+                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+        else:
+            # For globular molecules, show distance variation
+            min_distances = []
+            for pos in trajectory:
+                distances = cdist([pos], ca_coords)[0]
+                min_distances.append(np.min(distances))
+            
+            ax2.plot(range(len(trajectory)), min_distances, 'b-', linewidth=2, label='Actual distance')
+            ax2.axhline(y=np.mean(min_distances), color='g', linestyle='--', linewidth=2,
+                       label=f'Mean: {np.mean(min_distances):.1f} Å')
+            ax2.fill_between(range(len(trajectory)), min_distances, alpha=0.3, color='lightblue')
+            ax2.set_ylabel('Distance to Backbone (Å)', fontsize=12, fontweight='bold')
+            ax2.set_title('Winding Distance Variation', fontsize=14, fontweight='bold')
+        
         ax2.set_xlabel('Trajectory Step', fontsize=12, fontweight='bold')
-        ax2.set_ylabel('Distance to Backbone (Å)', fontsize=12, fontweight='bold')
-        ax2.set_title('Winding Distance Variation', fontsize=14, fontweight='bold')
         ax2.legend(fontsize=11)
         ax2.grid(True, alpha=0.2, color='gray', linewidth=0.5)
         ax2.spines['top'].set_visible(False)
@@ -1417,27 +1712,36 @@ class ProteinLigandFluxAnalyzer:
         ax3.spines['top'].set_visible(False)
         ax3.spines['right'].set_visible(False)
         
-        # XZ projection (side view) with smoothed backbone
+        # XZ projection (side view) - critical for linear molecules
         ax4 = fig.add_subplot(224)
         # Protein backbone projection (smoothed)
         ax4.plot(smooth_backbone[:, 0], smooth_backbone[:, 2], 'k-', linewidth=2,
                 alpha=0.4, label='Backbone', solid_capstyle='round')
         
-        # Trajectory path
+        # Trajectory path with coverage indication
         for i in range(len(trajectory) - 1):
             ax4.plot(trajectory[i:i+2, 0], trajectory[i:i+2, 2],
                     color=colors[i], linewidth=2, alpha=0.7, solid_capstyle='round')
         
-        ax4.scatter(trajectory[0, 0], trajectory[0, 2], s=150, c='green', marker='o',
-                   edgecolors='darkgreen', linewidth=3, zorder=5)
+        # Highlight starting position based on approach
+        start_marker_color = 'green' if trajectory[0, 2] > 0 else 'cyan'
+        ax4.scatter(trajectory[0, 0], trajectory[0, 2], s=150, c=start_marker_color, marker='o',
+                   edgecolors='black', linewidth=3, zorder=5, label=f'Start ({"top" if trajectory[0, 2] > 0 else "bottom"})')
         ax4.scatter(trajectory[-1, 0], trajectory[-1, 2], s=150, c='red', marker='o',
-                   edgecolors='darkred', linewidth=3, zorder=5)
+                   edgecolors='darkred', linewidth=3, zorder=5, label='End')
+        
+        # Add shaded regions to show DNA extent
+        if is_linear:
+            z_min, z_max = ca_coords[:, 2].min(), ca_coords[:, 2].max()
+            x_min, x_max = ax4.get_xlim()
+            ax4.axhspan(z_min, z_max, alpha=0.1, color='gray', label='DNA region')
+        
         ax4.set_xlabel('X (Å)', fontsize=12, fontweight='bold')
         ax4.set_ylabel('Z (Å)', fontsize=12, fontweight='bold')
-        ax4.set_title('XZ Projection', fontsize=14, fontweight='bold')
+        ax4.set_title('XZ Projection (Side View)', fontsize=14, fontweight='bold')
         ax4.axis('equal')
         ax4.grid(True, alpha=0.2, color='gray', linewidth=0.5)
-        ax4.legend(fontsize=11)
+        ax4.legend(fontsize=11, loc='best')
         ax4.spines['top'].set_visible(False)
         ax4.spines['right'].set_visible(False)
         
@@ -1456,11 +1760,12 @@ class ProteinLigandFluxAnalyzer:
     def run_single_iteration(self, protein_file, ligand_file, output_dir,
                            n_steps, n_approaches, approach_distance,
                            starting_distance, iteration_num, use_gpu=False,
-                           n_rotations=36, n_jobs=-1):
+                           n_rotations=36, n_jobs=-1, trajectory_step_size=None):
         """Run a single iteration of the flux analysis with cocoon trajectories
         
         Args:
             n_rotations: Number of rotations to try at each trajectory position
+            trajectory_step_size: User-defined step size in Angstroms (optional)
         """
         print(f"\n{'='*60}")
         print(f"Iteration {iteration_num}")
@@ -1549,13 +1854,18 @@ class ProteinLigandFluxAnalyzer:
                 for approach_idx in range(n_approaches):
                     # Calculate initial distance for this approach (will vary during trajectory)
                     initial_distance = starting_distance - approach_idx * approach_distance
-                    print(f"   Approach {approach_idx + 1}/{n_approaches}: Initial {initial_distance:.1f} Å")
                     
-                    # Generate winding trajectory
+                    # Calculate unique angle for this approach
+                    approach_angle = (2 * np.pi * approach_idx) / n_approaches
+                    print(f"   Approach {approach_idx + 1}/{n_approaches}: Initial {initial_distance:.1f} Å, Angle {np.degrees(approach_angle):.1f}°")
+                    
+                    # Generate winding trajectory with unique angle
                     trajectory, times = self.generate_cocoon_trajectory(
-                        ca_coords, ligand_coords, ligand_atoms,
+                        protein_coords, ligand_coords, ligand_atoms,
                         ligand_mw, n_steps=n_steps, dt=40,
-                        target_distance=initial_distance
+                        target_distance=initial_distance,
+                        trajectory_step_size=trajectory_step_size,
+                        approach_angle=approach_angle
                     )
                     all_gpu_trajectories.append(trajectory)
                     
@@ -1688,13 +1998,19 @@ class ProteinLigandFluxAnalyzer:
                 
                 # Calculate initial distance for this approach (will vary during trajectory)
                 initial_distance = starting_distance - approach_idx * approach_distance
-                print(f"  Initial distance: {initial_distance:.1f} Å (will vary 5-{initial_distance * 2.5:.0f} Å)")
                 
-                # Generate winding trajectory with free distance variation
+                # Calculate unique angle for this approach
+                approach_angle = (2 * np.pi * approach_idx) / n_approaches
+                print(f"  Initial distance: {initial_distance:.1f} Å (will vary 5-{initial_distance * 2.5:.0f} Å)")
+                print(f"  Starting angle: {np.degrees(approach_angle):.1f}°")
+                
+                # Generate winding trajectory with unique angle
                 trajectory, times = self.generate_cocoon_trajectory(
-                    ca_coords, ligand_coords, ligand_atoms,
+                    protein_coords, ligand_coords, ligand_atoms,
                     ligand_mw, n_steps=n_steps, dt=40,
-                    target_distance=initial_distance
+                    target_distance=initial_distance,
+                    trajectory_step_size=trajectory_step_size,
+                    approach_angle=approach_angle
                 )
                 
                 all_trajectories.append(trajectory)
@@ -1927,11 +2243,13 @@ class ProteinLigandFluxAnalyzer:
     def run_complete_analysis(self, protein_file, ligand_file, output_dir,
                             n_steps=100, n_iterations=3, n_approaches=5,
                             approach_distance=2.5, starting_distance=35,
-                            n_jobs=-1, use_gpu=False, n_rotations=36):
+                            n_jobs=-1, use_gpu=False, n_rotations=36,
+                            trajectory_step_size=None):
         """Run complete flux analysis with cocoon trajectories
         
         Args:
             n_rotations: Number of rotations to sample at each trajectory position
+            trajectory_step_size: User-defined step size in Angstroms (optional)
         """
         print("\n" + "="*80)
         print("PROTEIN-LIGAND FLUX ANALYSIS - COCOON TRAJECTORY MODE")
@@ -1971,7 +2289,8 @@ class ProteinLigandFluxAnalyzer:
                 protein_file, ligand_file, output_dir,
                 n_steps, n_approaches, approach_distance,
                 starting_distance, iteration + 1, use_gpu,
-                n_rotations=n_rotations, n_jobs=n_jobs
+                n_rotations=n_rotations, n_jobs=n_jobs,
+                trajectory_step_size=trajectory_step_size
             )
             
             iteration_time = time.time() - iteration_start
