@@ -444,39 +444,35 @@ class TrajectoryFluxAnalyzer:
                         # Calculate magnitudes
                         magnitudes = np.linalg.norm(smoothed_tensor, axis=1)
                         
-                        # Calculate rate of change
+                        # Calculate temporal component using variance method (matching GPU/UMA)
                         if len(magnitudes) > 1:
-                            if len(magnitudes) >= 5:
-                                window_length = min(5, len(magnitudes))
-                                if window_length % 2 == 0:
-                                    window_length -= 1
-                                if window_length >= 3:
-                                    mag_derivative = savgol_filter(magnitudes,
-                                                                 window_length=window_length,
-                                                                 polyorder=min(2, window_length-1),
-                                                                 deriv=1)
-                                else:
-                                    mag_derivative = np.gradient(magnitudes)
-                            else:
-                                mag_derivative = np.gradient(magnitudes)
+                            # Extract energies for this residue
+                            energies = res_interactions['bond_energy'].values
                             
-                            rate_of_change = np.sqrt(np.mean(mag_derivative**2))
+                            # Calculate variance and mean
+                            energy_variance = np.var(energies)
+                            mean_energy = np.mean(np.abs(energies))
+                            
+                            # Temporal factor: normalized standard deviation
+                            if mean_energy > 1e-10:
+                                rate_of_change = np.sqrt(energy_variance) / mean_energy
+                            else:
+                                rate_of_change = 0.0
                         else:
                             rate_of_change = 0
                         
-                        # Calculate directional consistency
+                        # Calculate directional consistency (coherence) matching GPU/UMA
                         if len(smoothed_tensor) > 1:
-                            norms = np.linalg.norm(smoothed_tensor, axis=1, keepdims=True)
-                            normalized = smoothed_tensor / (norms + 1e-10)
+                            # Coherence = ||∑F⃗|| / ∑||F⃗||
+                            sum_vectors = np.sum(smoothed_tensor, axis=0)
+                            sum_magnitudes = np.sum(np.linalg.norm(smoothed_tensor, axis=1))
                             
-                            mean_direction = np.mean(normalized, axis=0)
-                            mean_direction = mean_direction / (np.linalg.norm(mean_direction) + 1e-10)
-                            
-                            consistencies = [np.dot(v, mean_direction) for v in normalized]
-                            directional_consistency = np.mean(consistencies)
-                            directional_consistency = (directional_consistency + 1) / 2
+                            if sum_magnitudes > 1e-10:
+                                directional_consistency = np.linalg.norm(sum_vectors) / sum_magnitudes
+                            else:
+                                directional_consistency = 0.0
                         else:
-                            directional_consistency = 0.5
+                            directional_consistency = 0.0
                         
                         # Calculate flux
                         mean_magnitude = np.mean(magnitudes)
@@ -787,7 +783,7 @@ class TrajectoryFluxAnalyzer:
                    color='red', s=50, zorder=5, label='High Flux')
         
         ax2.set_xlabel('Residue Index')
-        ax2.set_ylabel('Absolute Flux (kcal/mol/Å)')
+        ax2.set_ylabel('Absolute Flux (kcal/mol·Å)')
         ax2.set_title(f'{protein_name} - Absolute Energy Flux')
         ax2.legend()
         ax2.grid(True, alpha=0.3)
