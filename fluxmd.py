@@ -618,7 +618,7 @@ def run_complete_workflow():
     
     if use_existing != 'y':
         # Manual parameter entry
-        print("\nEnter parameters manually (press Enter for defaults):")
+        print("\nEnter parameters manually (press Enter for defaults)")
         n_steps = int(input("Steps per approach (default 100): ") or "100")
         n_iterations = int(input("Number of iterations (default 100): ") or "100")
         n_approaches = int(input("Number of approaches (default 5): ") or "5")
@@ -853,6 +853,8 @@ def run_complete_workflow():
         f.write(f"Starting distance: {starting_distance} Angstroms\n")
         f.write(f"Distance range: ~5-{starting_distance * 2.5:.0f} Angstroms (free variation)\n")
         f.write(f"Rotations per position: {n_rotations}\n")
+        if 'trajectory_step_size' in locals():
+            f.write(f"Trajectory step size: {trajectory_step_size} Angstroms\n")
         f.write(f"Total steps per iteration: {n_steps * n_approaches}\n")
         f.write(f"Total rotations sampled: {n_steps * n_approaches * n_rotations}\n")
         f.write("\n")
@@ -881,10 +883,24 @@ def run_complete_workflow():
     
     try:
         # Run trajectory analysis with cocoon mode
+        analysis_kwargs = {
+            'n_steps': n_steps,
+            'n_iterations': n_iterations,
+            'n_approaches': n_approaches,
+            'approach_distance': approach_distance,
+            'starting_distance': starting_distance,
+            'n_jobs': n_jobs,
+            'use_gpu': use_gpu,
+            'n_rotations': n_rotations
+        }
+        
+        # Add trajectory_step_size if it was defined
+        if 'trajectory_step_size' in locals():
+            analysis_kwargs['trajectory_step_size'] = trajectory_step_size
+            
         iteration_data = trajectory_analyzer.run_complete_analysis(
-            protein_file, ligand_file, output_dir, n_steps, n_iterations,
-            n_approaches, approach_distance, starting_distance,
-            n_jobs=n_jobs, use_gpu=use_gpu, n_rotations=n_rotations
+            protein_file, ligand_file, output_dir,
+            **analysis_kwargs
         )
         
         if iteration_data is None:
@@ -1181,7 +1197,7 @@ def run_uma_workflow():
     
     if use_existing != 'y':
         # Manual parameter entry
-        print("\nEnter parameters manually (press Enter for defaults):\n")
+        print("\nEnter parameters manually (press Enter for defaults)\n")
         
         n_steps = input("Steps per trajectory (default 200): ").strip()
         n_steps = int(n_steps) if n_steps else 200
