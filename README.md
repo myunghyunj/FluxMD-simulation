@@ -3,7 +3,7 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-Recent Updates (Jun 11, 2025) : Added FluxMD for DNA (to validate logic universality), Replaced Simplified Physics to [RSF15](https://pubs.acs.org/doi/10.1021/acs.jctc.7b00125)
+Recent Updates (Jun 11, 2025) : Added FluxMD for DNA (to validate logic universality), Replaced Simplified Physics to [RSF15](https://pubs.acs.org/doi/10.1021/acs.jctc.7b00125), Added example protein sets in /Examples
 
 **FluxMD** maps binding interfaces between two biomolecules by tracing the flow of interaction energy. Unlike traditional docking, which samples static conformers, FluxMD follows dynamic energy flux as molecules orbit and engage, exposing regions where forces perturbate. Intrinsically optimized from physics-level to signal-processing code for modern chip architectures—i.e. GPU, UMA—FluxMD enables accelerated high-throughput screening of molecular dynamics. The method applies to protein–protein and protein–ligand systems, with support for protein–nucleic acid interactions underway. Each run produces a **stress barcode**, a reproducible energy signature unique to the molecular pair.
 
