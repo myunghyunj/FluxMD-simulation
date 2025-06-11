@@ -993,24 +993,20 @@ def run_complete_workflow():
         print("3. Compare the flux reports to identify different binding preferences")
 
 
+def run_uma_workflow():
+    """Wrapper for the UMA workflow"""
+    print_banner("UMA-OPTIMIZED WORKFLOW")
+    print("This uses zero-copy GPU processing for maximum performance.")
+    print("Best for Apple Silicon Macs and systems with unified memory.\n")
     
-    print("Welcome to FluxMD - GPU-accelerated binding site prediction")
-    print("\nOptions:")
-    print("1. Run complete workflow (standard)")
-    print("2. Run UMA-optimized workflow (zero-copy GPU, 100x faster)")
-    print("3. Convert SMILES to PDB (CACTUS with aromatics or OpenBabel)")
-    print("4. Generate DNA structure from sequence")
-    print("5. Exit")
+    # Initialize variables
+    protein_file = None
+    ligand_file = None
+    loaded_params = None
     
-    choice = input("\nEnter choice (1-5): ").strip()
+    # Ask if user wants to use existing parameters first
+    use_existing = input("Load parameters from existing simulation? (y/n): ").strip().lower()
     
-    if choice == "1":
-        run_complete_workflow()
-    elif choice == "2":
-        # Run UMA-optimized workflow
-        print_banner("UMA-OPTIMIZED WORKFLOW")
-        print("This uses zero-copy GPU processing for maximum performance.")
-        print("Best for Apple Silicon Macs and systems with unified memory.\n")
     if use_existing == 'y':
         params_file = input("Enter path to simulation_parameters.txt: ").strip()
         if os.path.exists(params_file):

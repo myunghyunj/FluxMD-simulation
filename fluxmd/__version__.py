@@ -1,6 +1,6 @@
 """Version information for FluxMD"""
 
-__version__ = "1.0.2"
+__version__ = "1.1.0"
 __version_info__ = tuple(int(i) for i in __version__.split("."))
 __author__ = "Myunghyun Jeong"
 __email__ = "mhjonathan@gm.gist.ac.kr"
