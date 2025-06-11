@@ -299,6 +299,7 @@ conda install -c conda-forge openbabel
 - Use standard pipeline for proteins >100K atoms
 - Reduce batch size in GPU settings
 - Use recovery scripts if analysis crashes
+- Not recommended to run more than two runs of DNA-protein simulations (unless memory > 128 GB)
 
 ### No Interactions Detected
 - Check ligand format (needs HETATM records)
