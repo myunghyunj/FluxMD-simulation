@@ -409,6 +409,35 @@ def run_single_iteration_uma(self, iteration_num, protein_atoms_df, ligand_atoms
                     f.write(f"  Distances < 5.0Å (salt bridge range): {np.sum(distances_array < 5.0)} ({100 * np.sum(distances_array < 5.0) / len(distances_array):.1f}%)\n")
                 else:
                     f.write("  No distance data available\n")
+                
+                # Add thermodynamic summary
+                f.write("\nTHERMODYNAMIC SUMMARY:\n")
+                f.write("  Energy Capping: ±10 kcal/mol\n")
+                f.write("  Purpose: Prevents numerical singularities while preserving physiological relevance\n")
+                f.write("  Justification:\n")
+                f.write("    - Physiological energy scale: -5 to +10 kcal/mol\n")
+                f.write("    - Capping at ±10 allows capture of high-energy transitions\n")
+                f.write("    - Prevents 1/r singularities at close contact\n")
+                f.write("    - Maintains numerical stability for GPU calculations\n")
+                
+                # Calculate how many energies were capped
+                if all_energies:
+                    capped_high = np.sum(energies_array >= 9.9)  # Close to +10
+                    capped_low = np.sum(energies_array <= -9.9)  # Close to -10
+                    total_capped = capped_high + capped_low
+                    capped_percentage = (total_capped / len(energies_array)) * 100
+                    
+                    f.write(f"\n  Capping Statistics:\n")
+                    f.write(f"    Energies capped at +10: {capped_high} ({(capped_high/len(energies_array)*100):.1f}%)\n")
+                    f.write(f"    Energies capped at -10: {capped_low} ({(capped_low/len(energies_array)*100):.1f}%)\n")
+                    f.write(f"    Total capped: {total_capped} ({capped_percentage:.1f}%)\n")
+                    
+                    # Energy distribution analysis
+                    physiological_range = np.sum((energies_array >= -5) & (energies_array <= 5))
+                    extended_range = np.sum((energies_array >= -10) & (energies_array <= 10))
+                    f.write(f"\n  Energy Distribution:\n")
+                    f.write(f"    Within physiological range (-5 to +5): {physiological_range} ({(physiological_range/len(energies_array)*100):.1f}%)\n")
+                    f.write(f"    Within extended range (-10 to +10): {extended_range} ({(extended_range/len(energies_array)*100):.1f}%)\n")
         
         # Save trajectory data as CSV for this iteration
         trajectory_data_file = os.path.join(iter_dir, 'trajectory_data.csv')
