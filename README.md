@@ -11,26 +11,54 @@
 
 ```mermaid
 graph TD
-    Start[fluxmd Menu] -->|1| Standard[Standard Workflow]
-    Standard --> Load1[Load protein PDB/CIF/mmCIF]
-    Standard --> Load2[Load ligand or SMILES]
-    Load2 -->|SMILES| Convert[Convert to PDB via CACTUS/OpenBabel]
-    Standard --> Trajectory[Generate winding trajectories]
-    Trajectory --> Forces[Calculate force interactions]
-    Forces --> Analysis[Compute energy flux]
-    Analysis --> Output[Generate visualizations & reports]
-
-    Start -->|2| UMA[UMA-Optimized Workflow]
-    UMA --> GPU[Unified memory GPU pipeline]
-    GPU --> Direct[Direct tensor operations]
-    Direct --> Fast[Optimized analysis]
-
-    Start -->|3| SMILES[SMILES to PDB Converter]
-    SMILES --> CACTUS[NCI CACTUS web service]
-    SMILES --> OpenBabel[OpenBabel fallback]
+    %% Entry Points
+    CLI[Command Line] --> fluxmd[fluxmd Interactive]
+    CLI --> fluxmd_uma[fluxmd-uma Direct]
+    CLI --> fluxmd_dna[fluxmd-dna]
     
-    Start -->|4| DNA[DNA Structure Generator]
-    DNA --> Builder[B-DNA double helix builder]
+    %% Interactive Menu
+    fluxmd --> |Option 1| Standard[Standard Pipeline]
+    fluxmd --> |Option 2| UMA[UMA Pipeline]
+    fluxmd --> |Option 3| SMILES[SMILES Converter]
+    fluxmd --> |Option 4| DNA[DNA Generator]
+    
+    %% Input Processing
+    Standard --> Parse1[Parse Protein<br/>PDB/CIF/mmCIF]
+    Standard --> Parse2[Parse Ligand<br/>PDB/SMILES]
+    UMA --> Parse1
+    UMA --> Parse2
+    fluxmd_uma --> Parse1
+    fluxmd_uma --> Parse2
+    
+    Parse2 -->|SMILES| CACTUS[CACTUS API]
+    CACTUS -->|Fallback| OpenBabel[OpenBabel]
+    
+    %% Core Processing
+    Parse1 --> IntraForces[Calculate Intra-protein<br/>Forces with REF15]
+    Parse2 --> Trajectory[Generate Helical<br/>Trajectories]
+    IntraForces --> Forces[Calculate Inter-molecular<br/>Forces with REF15]
+    Trajectory --> Forces
+    
+    %% Analysis Pipeline
+    Forces --> |Standard| CSV[Write CSV Files]
+    CSV --> FluxCalc[Calculate Flux<br/>Φᵢ = ⟨|E̅ᵢ|⟩·Cᵢ·(1+τᵢ)]
+    
+    Forces --> |UMA| Tensors[GPU Tensors]
+    Tensors --> FluxCalc
+    
+    FluxCalc --> Bootstrap[Bootstrap Analysis<br/>1000 iterations]
+    Bootstrap --> Results[Generate Results]
+    
+    %% Output
+    Results --> Report[Flux Report<br/>.txt]
+    Results --> Data[Processed Data<br/>.csv]
+    Results --> Viz[Visualization<br/>.png]
+    
+    %% DNA Pipeline
+    DNA --> Sequence[DNA Sequence]
+    fluxmd_dna --> Sequence
+    Sequence --> BForm[Generate B-DNA<br/>Double Helix]
+    BForm --> PDB[Output PDB with<br/>CONECT Records]
 ```
 
 ## Quick Start
@@ -112,122 +140,55 @@ Options:
 ```
 
 ### 3. SMILES to PDB Converter (via `fluxmd` Option 3)
-Convert chemical structures from SMILES notation to 3D PDB format:
-```bash
-# Interactive mode
-fluxmd
-# Select option 3, enter SMILES (e.g., "c1ccccc1" for benzene)
-```
-
-**Features:**
-- **Primary method**: NCI CACTUS web service
-  - Preserves aromatic bond information
-  - Generates proper 3D coordinates with planarity
-  - Creates both PDB and SDF files (SDF retains aromaticity)
-  - *Note: CACTUS SDF to PDB conversion has been modified in this FluxMD module to properly preserve aromatic bond orders in CONECT records*
-- **Fallback method**: OpenBabel (local, when offline)
-  - Basic 3D structure generation
-  - May have limitations with complex aromatics
+- **Primary**: NCI CACTUS web service (preserves aromaticity)
+- **Fallback**: OpenBabel (local, basic 3D generation)
 
 ### 4. `fluxmd-dna` - DNA Structure Generator
-Generate accurate B-DNA double helix structures:
 ```bash
-fluxmd-dna SEQUENCE [-o output.pdb]
-
-# Example: Generate 8-bp DNA structure
 fluxmd-dna ATCGATCG -o dna_structure.pdb
 ```
-- Creates Watson-Crick paired double helix with proper hydrogen bonding alignment
-- Uses dinucleotide-specific twist and rise parameters ([Olson et al., 1998](https://www.pnas.org/doi/10.1073/pnas.95.19.11163))
-- Includes full atomic detail with sugar-phosphate backbone
-- Generates complete CONECT records manifest for all covalent bonds
-- Maintains accurate C1'-C1' distances (10.85 Å) for base pairs
-- Fun fact: B for B-DNA does not stand for binding DNA
+- B-DNA double helix with accurate geometry ([Olson et al., 1998](https://www.pnas.org/doi/10.1073/pnas.95.19.11163))
+- Complete atomic detail including sugar-phosphate backbone
+- CONECT records for all covalent bonds
 
-## Underlying Science
+## Technical Implementation
 
-### Physics-Based Analysis
-- **Stochastic Trajectory Synthesis**: Ligands execute helical orbits via Brownian dynamics
-  - **Temporal discretization**: 40 fs sampling interval satisfies Shannon-Nyquist criterion for intermolecular forces (DC-10 THz passband) while deliberately aliasing intramolecular vibrations (>25 THz)
-  - **Overdamped regime**: Momentum relaxation (τ ≈ 10 fs) ensures Markovian dynamics; thermal bandwidth (kT/h ≈ 6.2 THz) resides comfortably below Nyquist frequency (12.5 THz)
-  - **Energy clipping**: 10 kcal/mol ceiling prevents Lennard-Jones singularities at r→0 while preserving physiological interaction magnitudes (-5 to +10 kcal/mol operating range)
+### Physics Foundation
+- **Trajectory Synthesis**: Helical orbits via Brownian dynamics with 40 fs temporal discretization
+- **Energy Function**: Rosetta REF15 with all major terms (fa_atr, fa_rep, fa_sol, fa_elec, hbond)
+- **Energy Bounds**: ±10 kcal/mol cap prevents singularities while preserving physiological range
+- **pH Awareness**: Henderson-Hasselbalch for dynamic protonation states (default pH 7.4)
 
-- **Force field integration**: Combines static protein forces with dynamic interactions
-  - Static forces pre-computed once for efficiency
-  - Dynamic forces calculated at each trajectory point
-  - Chip-friendly smoothed potential functions prevent singularities
-- **Protonation awareness**: pH-dependent charges via Henderson-Hasselbalch
-  - Dynamic pKa calculations for ionizable residues
-  - pH-responsive hydrogen bonding networks
-  - Physiological pH 7.4 default with adjustable settings
-- **Complete interaction types**: H-bonds, salt bridges, π-π stacking, π-cation, VDW
-  - Each interaction uses optimized mathematical formulations
-  - Smooth differentiable functions for numerical stability
-  - Hardware-accelerated vector operations
+### Computational Architecture
+- **GPU Acceleration**: Automatic detection of Apple MPS or NVIDIA CUDA
+- **Memory Optimization**: 
+  - Force field parameters in L1 cache
+  - Protein chunks sized to GPU shared memory
+  - Zero-copy operations on UMA systems
+- **Adaptive Algorithms**:
+  - Direct computation (<1M atom pairs)
+  - Spatial hashing (1M-100M pairs)
+  - Hierarchical filtering (>100M pairs)
 
-### Energetics & Thermodynamics
-- **Energy capping**: Maximum 10 kcal/mol prevents singularities at r→0
-  - Represents tight molecular translocation/overlap scenarios
-  - Enables analysis of repulsive binding rejection
-  - Critical for identifying both attractive and repulsive sites
-- **Statistical energy landscape**: Mean, std, min flux values reveal binding character
-  - Negative flux: Attractive binding sites (favorable ΔG)
-  - Positive flux: Repulsive regions (unfavorable ΔG)
-  - Standard deviation: Binding site flexibility/specificity
-- **Gibbs free energy interpretation**: 
-  - Flux magnitude correlates with -TΔS (entropic contribution)
-  - Directional consistency reflects ΔH (enthalpic contribution)
-  - Combined analysis approximates binding ΔG landscapes
-  - Further elaboration needed to correlate Flux and Gibbs Free Energy. Currently, energetics print out provided per iterations.
+### REF15 Energy Details
+- **Atom Typing**: 167 Rosetta atom types with automatic PDB mapping
+- **Energy Terms**:
+  - Lennard-Jones (fa_atr/fa_rep): 6Å/4.5Å cutoffs with switching functions
+  - Solvation (fa_sol): Lazaridis-Karplus implicit solvent model
+  - Electrostatics (fa_elec): Distance-dependent dielectric (ε = 10r)
+  - H-bonds (hbond): Orientation-dependent scoring
+- **Intelligent Sampling**: Surface property analysis guides trajectory generation
+- **Energy Modes**: `simplified` (fast), `ref15` (default), `ref15_fast` (GPU-optimized)
 
-### Modern Chip Friendly Software Engineered
-- **Automatic optimization**: Detects Apple Silicon MPS or NVIDIA CUDA
-- **Pipeline-specific approaches**:
-  - Standard GPU pipeline: Uses spatial hashing for medium systems (1M-100M atom pairs)
-  - UMA pipeline: Direct distance matrix calculation via torch.cdist
-- **Smart selection**: Benchmarks actual performance to choose GPU vs CPU
-- **Spatial hashing** (standard GPU pipeline only):
-  - Automatic algorithm selection based on system size
-  - Hash table with linked-list collision handling
-  - Batch query support for parallel neighbor lookups
+### Statistical Framework
+- **Bootstrap Analysis**: 1000 iterations for confidence intervals
+- **Significance Testing**: P-values for binding site identification
+- **Flux Metric**: Φᵢ = ⟨|E̅ᵢ|⟩ · Cᵢ · (1 + τᵢ)
+  - E̅ᵢ: Combined force vector
+  - Cᵢ: Directional consistency
+  - τᵢ: Temporal variation
 
-### Statistical Validation
-- **Bootstrap analysis**: 1000 iterations for confidence intervals
-- **P-value calculation**: Identifies statistically significant sites
-- **Flux ranking**: Quantitative binding site prioritization
 
-## Physics-to-Chip Optimization
-
-FluxMD's physics engine is architected from first principles to exploit modern chip capabilities:
-
-### Parallelized Force Field Architecture
-- **Embarrassingly parallel force calculations**: Each atom-atom interaction computed independently, mapping 1:1 to GPU cores
-- **Warp-aligned neighbor lists**: Interaction pairs grouped in multiples of 32 (NVIDIA) or 32/64 (Apple Silicon) for optimal SIMD execution
-- **Coalesced memory access**: Atomic coordinates stored in structure-of-arrays format for vectorized loads
-
-### Memory Hierarchy Optimization
-- **L1 cache residency**: Force field parameters (<1KB) pinned in fastest cache
-- **Shared memory tiling**: Protein chunks sized to GPU shared memory (48KB on modern GPUs)
-- **Texture memory**: Distance lookup tables leverage specialized interpolation hardware
-
-### Algorithmic-Hardware Co-design
-- **Spatial hashing**: Hash table size tuned to GPU L2 cache (4-40MB depending on architecture)
-- **Distance cutoffs**: Aligned to GPU thread block dimensions (typically 10-15Å maps to 256-512 threads)
-- **Unified Memory Architecture (UMA)**: Zero-copy tensor operations eliminate CPU-GPU transfer bottleneck
-
-### Physics Kernels
-Each interaction type is a specialized GPU kernel:
-- **Electrostatics**: Vectorized Coulomb calculations using fast reciprocal square root
-- **Van der Waals**: Lennard-Jones with lookup tables in texture memory
-- **Hydrogen bonds**: Angle-dependent terms computed via dot products (hardware accelerated)
-- **π-interactions**: Aromatic ring centroids cached in shared memory
-
-### Chip-Specific Optimizations
-- **Apple Silicon (M1/M2/M3)**: Leverages unified memory for direct tensor operations via Metal Performance Shaders
-- **NVIDIA GPUs**: Uses Tensor Cores for mixed-precision force accumulation
-- **x86 AVX-512**: Fallback vectorized CPU path for non-GPU systems
-
-This physics-first design achieves >100x speedup by ensuring every calculation maps efficiently to silicon.
 
 ## Input/Output
 
@@ -255,68 +216,22 @@ results/
 
 ## Performance
 
-### Standard vs UMA Pipeline
+| Pipeline | File I/O | Memory | Best For |
+|----------|----------|---------|----------|
+| Standard (`fluxmd`) | CSV files | Lower | Debugging, compatibility |
+| UMA (`fluxmd-uma`) | In-memory | Higher | Production, large systems |
 
-| Pipeline | File I/O | Speed | Memory | Best For |
-|----------|----------|-------|---------|----------|
-| Standard (`fluxmd`) | Yes (CSV) | 1x | Low | Compatibility, debugging |
-| UMA (`fluxmd-uma`) | None | Optimized | High | Production, large datasets |
-
-### Benchmark Results (Apple M1 Pro)
-```
-Processing 5M interactions:
-- Standard pipeline: 115 seconds
-- GPU optimized: 0.9 seconds  
-- UMA optimized: 0.4 seconds
-```
-
-### When to Use Each Version
-- **Standard**: Small molecules, debugging, cross-platform compatibility
-- **UMA**: Large proteins, high-throughput screening, Apple Silicon systems (prepare icepacks!)
+- **Standard**: Cross-platform compatibility, easier debugging
+- **UMA**: Optimized for unified memory architectures (Apple Silicon)
 
 ## How It Works
 
-### Analysis Pipeline
+1. **Trajectory Generation**: Ligand spirals around protein (5-50 Å range, 36 rotations/position)
+2. **Force Calculation**: REF15 energy function computes static (intra-protein) and dynamic (protein-ligand) forces
+3. **Flux Analysis**: Combines forces to calculate flux metric Φᵢ = ⟨|E̅ᵢ|⟩ · Cᵢ · (1 + τᵢ)
+4. **Statistical Validation**: Bootstrap analysis identifies significant binding sites (p < 0.05)
 
-1. **Trajectory Generation**
-   - Ligand spirals around protein like thread on a spool
-   - Samples 5-50 Å distance range with oscillatory motion
-   - 36 rotations tested at each position
-
-2. **Force Calculation**
-   - Static intra-protein forces (pre-computed once)
-   - Dynamic protein-ligand interactions at each trajectory point
-   - pH-dependent protonation states affect charges and H-bonds
-   - Neighbor search approaches:
-     - **Standard GPU pipeline**: Adaptive optimization based on system size
-       - Small systems (<1M pairs): Direct GPU computation
-       - Medium systems (1M-100M pairs): Spatial hashing with O(1) lookups
-       - Large systems (>100M pairs): Octree + hierarchical distance filtering
-     - **UMA pipeline**: Direct distance matrix via torch.cdist for all system sizes
-
-3. **Flux Analysis**  
-   - Combines force vectors at each residue
-   - Calculates directional consistency and temporal variation
-   - Bootstrap statistics over multiple iterations
-
-4. **Binding Site Identification**
-   - High flux regions indicate energy convergence
-   - Statistical significance via p-values
-   - Ranked list of potential binding sites
-
-### Theory
-
-FluxMD calculates energy flux Φᵢ for each residue:
-
-**Φᵢ = ⟨|E̅ᵢ|⟩ · Cᵢ · (1 + τᵢ)**
-
-Where:
-- **E̅ᵢ**: Combined force vector (static + dynamic)
-- **⟨|E̅ᵢ|⟩**: Mean force magnitude
-- **Cᵢ**: Directional consistency  
-- **τᵢ**: Temporal fluctuation
-
-High flux indicates energy convergence—where protein forces align with ligand interactions to create thermodynamic sinkholes.
+High flux indicates energy convergence where forces align to create favorable binding environments.
 
 ## Usage Examples
 
@@ -391,7 +306,7 @@ conda install -c conda-forge openbabel
 ## Citation
 
 ```bibtex
-@software{fluxmd2024,
+@software{fluxmd2025,
   title={FluxMD: Biophysical Cartography for Biomolecular Energy Dynamics},
   author={Myunghyun Jeong},
   year={-},

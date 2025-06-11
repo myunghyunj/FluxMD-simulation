@@ -12,6 +12,8 @@ import logging
 from Bio.PDB.Atom import Atom
 from Bio.PDB.Residue import Residue
 from fluxmd.core.energy_config import ENERGY_BOUNDS
+from fluxmd.core.ref15_energy import get_ref15_calculator, AtomContext
+from fluxmd.core.rosetta_atom_types import get_atom_typer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -52,6 +54,10 @@ class ProtonationAwareInteractionDetector:
     
     def __init__(self, pH: float = 7.4):
         self.pH = pH
+        
+        # Initialize REF15 calculator
+        self.ref15_calculator = get_ref15_calculator(pH)
+        self.atom_typer = get_atom_typer()
         
         # Protonation rules with donor/acceptor swapping
         self.residue_protonation_rules = {
@@ -111,13 +117,13 @@ class ProtonationAwareInteractionDetector:
             }
         }
         
-        # Cutoffs
+        # REF15 switching function cutoffs
         self.cutoffs = {
-            'hbond': 3.5,
-            'salt_bridge': 5.0,
-            'pi_pi': 4.5,
-            'pi_cation': 6.0,
-            'vdw': 5.0
+            'hbond': 3.3,      # REF15 H-bond cutoff
+            'salt_bridge': 6.0, # REF15 electrostatic cutoff
+            'pi_pi': 4.5,      # Keep original for pi-stacking
+            'pi_cation': 6.0,  # Extended for cation-pi
+            'vdw': 6.0         # REF15 LJ cutoff
         }
         
         # VDW radii
@@ -290,98 +296,127 @@ class ProtonationAwareInteractionDetector:
     def detect_all_interactions(self, protein_atom: Dict, ligand_atom: Dict,
                               distance: float) -> List[Dict]:
         """
-        Detect all interactions with proper protonation awareness.
-        Key: Check H-bonds in BOTH directions!
+        Detect all interactions using REF15 energy function.
         """
+        # Skip if too far
+        if distance > 6.0:
+            return []
+            
         # Convert to protonation-aware atoms
         p_atom = self.determine_atom_protonation(protein_atom)
         l_atom = self.process_ligand_atom(ligand_atom)
         
+        # Create REF15 atom contexts
+        protein_context = self._create_ref15_context(protein_atom, p_atom)
+        ligand_context = self._create_ref15_context(ligand_atom, l_atom)
+        
+        # Calculate REF15 energy
+        total_energy = self.ref15_calculator.calculate_interaction_energy(
+            protein_context, ligand_context, distance, detailed=True
+        )
+        
+        # Get energy components
+        components = self.ref15_calculator.last_energy_components
+        
         interactions = []
         
-        # 1. H-bonds - CHECK BOTH DIRECTIONS!
-        if distance <= self.cutoffs['hbond']:
-            # Protein donor -> Ligand acceptor
+        # Map REF15 components to FluxMD interaction types
+        if 'hbond' in components and components['hbond'] < -0.5:
+            # Determine H-bond direction
             if p_atom.can_donate_hbond and l_atom.can_accept_hbond:
-                energy = -5.0 * np.exp(-((distance - 2.8) / 0.5) ** 2)
-                if p_atom.formal_charge != 0 or l_atom.formal_charge != 0:
-                    energy *= 1.5  # Stronger for charged groups
-                interactions.append({
-                    'type': 'HBond',
-                    'energy': energy,
-                    'donor': 'protein',
-                    'acceptor': 'ligand'
-                })
+                donor, acceptor = 'protein', 'ligand'
+            elif l_atom.can_donate_hbond and p_atom.can_accept_hbond:
+                donor, acceptor = 'ligand', 'protein'
+            else:
+                donor, acceptor = 'unknown', 'unknown'
+                
+            interactions.append({
+                'type': 'HBond',
+                'energy': components['hbond'],
+                'donor': donor,
+                'acceptor': acceptor
+            })
             
-            # Ligand donor -> Protein acceptor (REVERSED!)
-            if l_atom.can_donate_hbond and p_atom.can_accept_hbond:
-                energy = -5.0 * np.exp(-((distance - 2.8) / 0.5) ** 2)
-                if p_atom.formal_charge != 0 or l_atom.formal_charge != 0:
-                    energy *= 1.5
-                interactions.append({
-                    'type': 'HBond',
-                    'energy': energy,
-                    'donor': 'ligand',
-                    'acceptor': 'protein'
-                })
-        
-        # 2. Salt bridges - requires opposite charges
-        if distance <= self.cutoffs['salt_bridge']:
+        # Electrostatics (salt bridges)
+        if 'fa_elec' in components and abs(components['fa_elec']) > 1.0:
             if p_atom.formal_charge * l_atom.formal_charge < 0:
-                energy = self._calculate_salt_bridge_energy(p_atom.formal_charge, l_atom.formal_charge, distance)
                 interactions.append({
                     'type': 'Salt Bridge',
-                    'energy': energy
+                    'energy': components['fa_elec']
                 })
-        
-        # 3. π-cation
+                
+        # Pi-cation (special case not in standard REF15)
         if distance <= self.cutoffs['pi_cation']:
-            if p_atom.is_aromatic and l_atom.formal_charge > 0:
+            if (p_atom.is_aromatic and l_atom.formal_charge > 0) or \
+               (l_atom.is_aromatic and p_atom.formal_charge > 0):
+                # Use simplified pi-cation energy
                 energy = -3.0 * np.exp(-((distance - 3.5) / 1.5) ** 2)
                 interactions.append({'type': 'Pi-Cation', 'energy': energy})
-            elif l_atom.is_aromatic and p_atom.formal_charge > 0:
-                energy = -3.0 * np.exp(-((distance - 3.5) / 1.5) ** 2)
-                interactions.append({'type': 'Pi-Cation', 'energy': energy})
-        
-        # 4. π-π stacking
+                
+        # Pi-stacking (special case)
         if distance <= self.cutoffs['pi_pi']:
             if p_atom.is_aromatic and l_atom.is_aromatic:
-                # Simplified - would need ring geometry for accurate calculation
+                # Use simplified pi-stacking energy
                 energy = -3.5 * np.exp(-((distance - 3.8) / 1.5) ** 2)
-                # Adjust for electron density differences
                 density_diff = abs(p_atom.aromatic_electron_density - l_atom.aromatic_electron_density)
                 energy *= (1.0 + 0.5 * density_diff)
                 interactions.append({'type': 'Pi-Stacking', 'energy': energy})
-        
-        # 5. Van der Waals (default for close contacts)
-        if distance <= self.cutoffs['vdw'] and not interactions:
-            sigma = (p_atom.effective_vdw_radius + l_atom.effective_vdw_radius) / 2
-            r_ratio = sigma / distance
-            energy = 0.4 * (r_ratio**12 - r_ratio**6)
-            energy = np.clip(energy, -1.0, 10.0)
-            interactions.append({'type': 'Van der Waals', 'energy': energy})
-        
+                
+        # Van der Waals (from LJ terms)
+        lj_energy = components.get('fa_atr', 0.0) + components.get('fa_rep', 0.0)
+        if abs(lj_energy) > 0.1 or not interactions:
+            interactions.append({
+                'type': 'Van der Waals',
+                'energy': np.clip(lj_energy, ENERGY_BOUNDS['vdw']['min'], ENERGY_BOUNDS['vdw']['max'])
+            })
+            
+        # Apply energy bounds to all interactions
+        for interaction in interactions:
+            interaction['energy'] = np.clip(
+                interaction['energy'],
+                ENERGY_BOUNDS['default']['min'],
+                ENERGY_BOUNDS['default']['max']
+            )
+            
         return interactions
+        
+    def _create_ref15_context(self, atom_dict: Dict, pa_atom: ProtonationAwareAtom) -> AtomContext:
+        """Create REF15 AtomContext from atom data"""
+        # Enhance atom_dict with connectivity info for typing
+        enhanced_dict = atom_dict.copy()
+        enhanced_dict['formal_charge'] = pa_atom.formal_charge
+        enhanced_dict['is_aromatic'] = pa_atom.is_aromatic
+        
+        context = self.ref15_calculator.create_atom_context(enhanced_dict)
+        
+        # Override with protonation-aware properties
+        context.formal_charge = pa_atom.formal_charge
+        context.is_donor = pa_atom.can_donate_hbond
+        context.is_acceptor = pa_atom.can_accept_hbond
+        context.is_aromatic = pa_atom.is_aromatic
+        
+        return context
 
-    def _calculate_salt_bridge_energy(self, charge1: float, charge2: float, distance: float, epsilon_r: float = 80.0) -> float:
-        """Calculates salt bridge energy using a simplified Coulomb's model."""
-        # Simplified Coulomb's law, capped for stability
-        # Using a dielectric constant for water
-        # Note: This is a simplified model. A more accurate model would use distance-dependent dielectric.
-        if distance == 0:
-            return 0
+    def _calculate_salt_bridge_energy(self, charge1: float, charge2: float, distance: float) -> float:
+        """Legacy method - kept for compatibility. REF15 handles this internally."""
+        # Create dummy contexts for REF15 calculation
+        atom1_context = AtomContext(
+            atom_type='Nlys',  # Dummy charged type
+            coords=np.array([0, 0, 0]),
+            formal_charge=charge1
+        )
+        atom2_context = AtomContext(
+            atom_type='OOC',  # Dummy charged type
+            coords=np.array([distance, 0, 0]),
+            formal_charge=charge2
+        )
         
-        # Conversion factor to get kcal/mol
-        # q1*q2 / (epsilon_r * r) is in elementary charge units.
-        # 1.60218e-19 C/e, 1 cal = 4.184 J, Avogadro = 6.022e23
-        # (1.60218e-19)^2 * (6.022e23 / 4.184) / (4 * pi * 8.854e-12 * 1e-10) -> conversion factor
-        conversion_factor = 332.0637 
+        # Use REF15 electrostatic calculation
+        energy = self.ref15_calculator._calculate_electrostatic_energy(
+            atom1_context, atom2_context, distance
+        )
         
-        energy = (conversion_factor * charge1 * charge2) / (epsilon_r * distance)
-        
-        # Cap the energy to prevent singularities at very close distances
-        energy = max(energy, ENERGY_BOUNDS['salt_bridge']['min'])
-        return energy
+        return np.clip(energy, ENERGY_BOUNDS['salt_bridge']['min'], ENERGY_BOUNDS['salt_bridge']['max'])
 
     def _calculate_vdw_energy(self, res1: Residue, res2: Residue) -> float:
         # Placeholder for VdW calculation if needed within this class,

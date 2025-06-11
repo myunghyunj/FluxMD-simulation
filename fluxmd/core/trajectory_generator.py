@@ -31,6 +31,9 @@ warnings.filterwarnings('ignore')
 # Import intra-protein interaction calculator
 from .intra_protein_interactions import IntraProteinInteractions
 from .protonation_aware_interactions import calculate_interactions_with_protonation
+from .intelligent_cocoon_sampler import IntelligentCocoonSampler
+from .ref15_energy import get_ref15_calculator
+from .energy_config import DEFAULT_ENERGY_FUNCTION
 
 # Import utils
 from ..utils.pdb_parser import PDBParser
@@ -133,7 +136,7 @@ class ProteinLigandFluxAnalyzer:
     Main class to orchestrate the flux analysis, from trajectory generation
     to interaction calculation and data processing.
     """
-    def __init__(self, protein_file: str, ligand_file: str, output_dir: str, target_is_dna: bool = False):
+    def __init__(self, protein_file: str, ligand_file: str, output_dir: str, target_is_dna: bool = False, energy_function: str = None):
         self.protein_file = protein_file
         self.ligand_file = ligand_file
         self.output_dir = output_dir
@@ -156,6 +159,17 @@ class ProteinLigandFluxAnalyzer:
         
         # Initialize physiological pH
         self.physiological_pH = 7.4
+        
+        # Initialize energy function
+        self.energy_function = energy_function or DEFAULT_ENERGY_FUNCTION
+        if self.energy_function.startswith('ref15'):
+            print(f"\n   Using REF15 energy function")
+            self.ref15_calculator = get_ref15_calculator(self.physiological_pH)
+            self.intelligent_sampler = None  # Will be initialized after protein loading
+        else:
+            print(f"\n   Using legacy energy function")
+            self.ref15_calculator = None
+            self.intelligent_sampler = None
         
         # Initialize residue property definitions
         self.init_residue_properties()

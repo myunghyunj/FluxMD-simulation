@@ -12,6 +12,8 @@ import logging
 from itertools import combinations
 from .protonation_aware_interactions import ProtonationAwareInteractionDetector
 from fluxmd.core.energy_config import ENERGY_BOUNDS
+from fluxmd.core.ref15_energy import get_ref15_calculator, AtomContext
+from fluxmd.core.rosetta_atom_types import get_atom_typer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,19 +33,26 @@ class IntraProteinInteractions:
         self.structure = structure
         self.physiological_pH = physiological_pH
         self.protonation_detector = ProtonationAwareInteractionDetector(pH=self.physiological_pH)
+        
+        # Initialize REF15 components
+        self.ref15_calculator = get_ref15_calculator(physiological_pH)
+        self.atom_typer = get_atom_typer()
+        
         self.residues = []
         self.residue_atoms = {}  # residue_id -> list of atoms
         self.residue_coords = {}  # residue_id -> array of coordinates
+        self.residue_atom_contexts = {}  # residue_id -> list of AtomContexts
         
         self._extract_residues()
+        self._prepare_ref15_contexts()
         
-        # Interaction parameters
+        # REF15 cutoffs with switching functions
         self.cutoffs = {
-            'hbond': 3.5,
-            'salt_bridge': 4.0,
-            'pi_pi': 4.5,  # Proper pi-stacking cutoff (was 7.0)
-            'pi_cation': 6.0,
-            'vdw': 5.0
+            'hbond': 3.3,      # REF15 H-bond cutoff
+            'salt_bridge': 6.0, # REF15 electrostatic cutoff
+            'pi_pi': 4.5,      # Keep for special pi-stacking
+            'pi_cation': 6.0,  # Extended for cation-pi
+            'vdw': 6.0         # REF15 LJ cutoff
         }
         
         # Atom type classifications
@@ -82,6 +91,33 @@ class IntraProteinInteractions:
                         residue_count += 1
         
         logger.info(f"Extracted {residue_count} residues from protein")
+        
+    def _prepare_ref15_contexts(self):
+        """Pre-compute REF15 atom contexts for all residues"""
+        logger.info("Preparing REF15 atom contexts...")
+        
+        for res_id, atoms in self.residue_atoms.items():
+            contexts = []
+            residue = self.residues[0]['residue']  # Get residue object
+            
+            for i, atom in enumerate(atoms):
+                # Create atom dict for REF15
+                atom_dict = {
+                    'name': atom.name,
+                    'element': atom.element if atom.element else atom.name[0],
+                    'resname': atom.get_parent().get_resname(),
+                    'x': atom.coord[0],
+                    'y': atom.coord[1],
+                    'z': atom.coord[2],
+                    'resSeq': atom.get_parent().get_id()[1],
+                    'chain': atom.get_parent().get_parent().get_id()
+                }
+                
+                # Create context
+                context = self.ref15_calculator.create_atom_context(atom_dict)
+                contexts.append(context)
+                
+            self.residue_atom_contexts[res_id] = contexts
     
     def calculate_all_interactions(self) -> Dict[str, np.ndarray]:
         """
@@ -192,25 +228,55 @@ class IntraProteinInteractions:
             else:
                 continue
             
-            # Calculate all applicable interaction energies
-            energy = 0.0
+            # Use REF15 to calculate interaction energy
+            # Get pre-computed contexts if available
+            context1 = None
+            context2 = None
             
-            # 1. Van der Waals (always present)
-            if distance <= self.cutoffs['vdw']:
-                vdw_energy = self._calculate_vdw_energy(distance)
-                energy += vdw_energy
+            if res1['id'] in self.residue_atom_contexts:
+                contexts1 = self.residue_atom_contexts[res1['id']]
+                if idx1 < len(contexts1):
+                    context1 = contexts1[idx1]
+                    
+            if res2['id'] in self.residue_atom_contexts:
+                contexts2 = self.residue_atom_contexts[res2['id']]
+                if idx2 < len(contexts2):
+                    context2 = contexts2[idx2]
+                    
+            # Fallback to creating contexts
+            if context1 is None:
+                atom1_dict = {
+                    'name': atom1.name,
+                    'element': atom1.element if atom1.element else atom1.name[0],
+                    'resname': res1['resname'],
+                    'x': atom1.coord[0],
+                    'y': atom1.coord[1],
+                    'z': atom1.coord[2],
+                    'resSeq': res1['resnum'],
+                    'chain': res1['chain']
+                }
+                context1 = self.ref15_calculator.create_atom_context(atom1_dict)
+                
+            if context2 is None:
+                atom2_dict = {
+                    'name': atom2.name,
+                    'element': atom2.element if atom2.element else atom2.name[0],
+                    'resname': res2['resname'],
+                    'x': atom2.coord[0],
+                    'y': atom2.coord[1],
+                    'z': atom2.coord[2],
+                    'resSeq': res2['resnum'],
+                    'chain': res2['chain']
+                }
+                context2 = self.ref15_calculator.create_atom_context(atom2_dict)
+                
+            # Calculate REF15 energy
+            energy = self.ref15_calculator.calculate_interaction_energy(
+                context1, context2, distance
+            )
             
-            # 2. Hydrogen bonds
-            if distance <= self.cutoffs['hbond']:
-                if self._can_form_hbond(atom1, atom2):
-                    hbond_energy = self._calculate_hbond_energy(distance)
-                    energy += hbond_energy
-            
-            # 3. Salt bridges
-            if distance <= self.cutoffs['salt_bridge']:
-                if self._can_form_salt_bridge(atom1, atom2, res1['resname'], res2['resname']):
-                    salt_energy = self._calculate_salt_bridge_energy(distance)
-                    energy += salt_energy
+            # Apply energy bounds
+            energy = np.clip(energy, ENERGY_BOUNDS['default']['min'], ENERGY_BOUNDS['default']['max'])
             
             # Add force contribution
             force = unit_vector * energy
@@ -301,29 +367,26 @@ class IntraProteinInteractions:
                 (resname2 in self.aromatic_residues and resname1 in cation_residues))
     
     def _calculate_vdw_energy(self, distance: float) -> float:
-        """Lennard-Jones potential"""
-        if distance == 0:
-            return 0
-        sigma = 3.5  # Å
-        epsilon = 0.1  # kcal/mol
-        r6 = (sigma / distance) ** 6
-        energy = 4 * epsilon * (r6 * r6 - r6)
-        return max(min(energy, ENERGY_BOUNDS['vdw']['max']), ENERGY_BOUNDS['vdw']['min'])  # Cap to reasonable range
+        """Legacy VDW - REF15 handles this internally"""
+        # Create dummy contexts for backward compatibility
+        context1 = AtomContext('CH3', np.zeros(3))
+        context2 = AtomContext('CH3', np.array([distance, 0, 0]))
+        e_atr, e_rep = self.ref15_calculator._calculate_lj_energy(context1, context2, distance)
+        return np.clip(e_atr + e_rep, ENERGY_BOUNDS['vdw']['min'], ENERGY_BOUNDS['vdw']['max'])
     
     def _calculate_hbond_energy(self, distance: float) -> float:
-        """Hydrogen bond energy"""
-        if distance == 0:
-            return 0
-        optimal = 2.8  # Å
-        strength = -5.0  # kcal/mol
-        return strength * np.exp(-((distance - optimal) / 0.5) ** 2)
+        """Legacy H-bond - REF15 handles this internally"""
+        # Create dummy contexts
+        context1 = AtomContext('Nbb', np.zeros(3), is_donor=True)
+        context2 = AtomContext('OCbb', np.array([distance, 0, 0]), is_acceptor=True)
+        return self.ref15_calculator._calculate_hbond_energy_simple(context1, context2, distance)
     
     def _calculate_salt_bridge_energy(self, distance: float) -> float:
-        """Electrostatic energy for salt bridge"""
-        if distance == 0:
-            return 0
-        k_electrostatic = 332.0  # kcal*Å/mol*e^2
-        return -k_electrostatic / distance  # Attractive
+        """Legacy salt bridge - REF15 handles this internally"""
+        # Create dummy contexts
+        context1 = AtomContext('Nlys', np.zeros(3), formal_charge=1.0)
+        context2 = AtomContext('OOC', np.array([distance, 0, 0]), formal_charge=-1.0)
+        return self.ref15_calculator._calculate_electrostatic_energy(context1, context2, distance)
     
     def _calculate_pi_pi_force(self, res1: dict, res2: dict) -> np.ndarray:
         """Calculate pi-pi stacking force between aromatic residues"""

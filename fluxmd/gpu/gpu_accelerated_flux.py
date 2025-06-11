@@ -237,20 +237,44 @@ class GPUAcceleratedInteractionCalculator:
     - Salt bridges: Includes actual charge magnitudes
     """
     
-    def __init__(self, device=None, physiological_pH=7.4, target_is_dna=False):
+    def __init__(self, device=None, physiological_pH=7.4, target_is_dna=False, energy_function=None):
         self.device = device or get_device()
         self.physiological_pH = physiological_pH
         self.target_is_dna = target_is_dna
         self.protonation_detector = ProtonationAwareInteractionDetector(pH=self.physiological_pH)
         
+        # Initialize energy function
+        self.energy_function = energy_function or DEFAULT_ENERGY_FUNCTION
+        self.use_ref15 = self.energy_function.startswith('ref15')
+        
+        if self.use_ref15:
+            print(f"   Initializing REF15 GPU calculator on {self.device}")
+            self.ref15_calculator = get_ref15_gpu_calculator(self.device)
+            self.protein_ref15_arrays = None
+            self.ligand_ref15_arrays = None
+        else:
+            self.ref15_calculator = None
+        
         # Interaction cutoffs in Angstroms
-        self.cutoffs = {
-            'hbond': 3.5,      # H-bond distance cutoff (heavy atom to heavy atom)
-            'salt_bridge': 5.0,
-            'pi_pi': 4.5,  # Proper pi-stacking cutoff (was 7.0)
-            'pi_cation': 6.0,
-            'vdw': 5.0
-        }
+        if self.use_ref15:
+            # REF15 cutoffs with switching functions
+            from ..core.energy_config import REF15_SWITCHES
+            self.cutoffs = {
+                'hbond': REF15_SWITCHES['hbond']['end'],       # 3.3 Å
+                'salt_bridge': REF15_SWITCHES['fa_elec']['end'], # 6.0 Å  
+                'pi_pi': 4.5,  # Keep original for special pi-stacking
+                'pi_cation': 6.0,
+                'vdw': REF15_SWITCHES['fa_atr']['end']         # 6.0 Å
+            }
+        else:
+            # Legacy cutoffs
+            self.cutoffs = {
+                'hbond': 3.5,      # H-bond distance cutoff (heavy atom to heavy atom)
+                'salt_bridge': 5.0,
+                'pi_pi': 4.5,  # Proper pi-stacking cutoff
+                'pi_cation': 6.0,
+                'vdw': 5.0
+            }
         
         # H-bond geometric criteria
         self.hbond_angle_cutoff = 120.0  # degrees (D-H...A angle)

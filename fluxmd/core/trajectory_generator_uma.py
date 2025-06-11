@@ -642,15 +642,16 @@ def run_complete_analysis_uma(self, protein_file, ligand_file, output_dir,
                 iter_dir = os.path.join(output_dir, f'iteration_{i + 1}')
                 
                 # Calculate flux for this iteration only
-                # TrajectoryFluxAnalyzer is already imported at the top
-                iter_flux_analyzer = TrajectoryFluxAnalyzer(device=device)
+                # Import the UMA version of TrajectoryFluxAnalyzer
+                from ..analysis.flux_analyzer_uma import TrajectoryFluxAnalyzer as TrajectoryFluxAnalyzerUMA
+                iter_flux_analyzer = TrajectoryFluxAnalyzerUMA(device=device, target_is_dna=False)
                 
                 # Process single iteration data
                 single_iter_results = [iteration_results]
                 
                 # Run simplified flux calculation for this iteration
                 try:
-                    iter_flux_analyzer.parse_protein_for_analysis(protein_file)
+                    iter_flux_analyzer.parse_target_for_analysis(protein_file)
                     iter_flux_data = iter_flux_analyzer.process_iterations_and_calculate_flux(
                         single_iter_results,
                         gpu_calc.intra_protein_vectors_gpu
@@ -864,7 +865,6 @@ def _save_parameters_uma(self, output_dir, protein_file, ligand_file,
         f.write(f"GPU acceleration: {'ENABLED' if device_type != 'cpu' else 'DISABLED'}\n")
         if device_type != 'cpu':
             f.write(f"GPU device: {device_type}\n")
-        f.write(f"Optimization: Zero-copy GPU processing (UMA)\n")
         f.write(f"Trajectory visualization: {'ENABLED' if save_trajectories else 'DISABLED'}\n")
         f.write("\n")
         f.write("OUTPUT DIRECTORY\n")

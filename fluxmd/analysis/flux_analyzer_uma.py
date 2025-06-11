@@ -565,9 +565,7 @@ class TrajectoryFluxAnalyzer:
             "-" * 30,
             f"Mean flux: {np.mean(avg_flux):.4f} ± {np.std(avg_flux):.4f}",
             f"Median flux: {np.median(avg_flux):.4f}",
-            f"Non-zero residues: {np.sum(avg_flux > 0)} ({np.sum(avg_flux > 0)/len(avg_flux)*100:.1f}%)",
-            "\nOptimization: Zero-copy GPU processing with scatter operations",
-            "Performance: ~100x speedup over file I/O based pipeline"
+            f"Non-zero residues: {np.sum(avg_flux > 0)} ({np.sum(avg_flux > 0)/len(avg_flux)*100:.1f}%)"
         ])
         
         # Save report
@@ -664,7 +662,7 @@ class TrajectoryFluxAnalyzer:
             output_dir: Output directory
         """
         # Parse protein structure
-        self.parse_protein_for_analysis(protein_pdb_file)
+        self.parse_target_for_analysis(protein_pdb_file)
         
         # Process iterations and calculate flux
         flux_data = self.process_iterations_and_calculate_flux(

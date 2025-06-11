@@ -335,7 +335,9 @@ def main():
     
     # Initialize analyzer
     print("\nInitializing FluxMD analyzer...")
-    analyzer = ProteinLigandFluxAnalyzer(physiological_pH=args.ph)
+    analyzer = ProteinLigandFluxAnalyzer(args.protein, args.ligand, args.output, target_is_dna=False)
+    # Set physiological pH
+    analyzer.physiological_pH = args.ph
     
     # Monkey-patch the UMA methods using proper method binding
     import types

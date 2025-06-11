@@ -690,7 +690,7 @@ class TrajectoryFluxAnalyzer:
         df_data = {
             id_col: res_indices,
             res_col: res_names,
-            chain_col: [f"Chain {chain}" for chain in [residue.get_id()[0] for residue in structure[0][0]]],
+            chain_col: ['A'] * len(res_indices),  # Default to chain A for now
             'average_flux': avg_flux,
             'std_flux': std_flux,
             'avg_derivatives': avg_derivatives,
@@ -712,6 +712,9 @@ class TrajectoryFluxAnalyzer:
         # Create DataFrame
         self.flux_data = pd.DataFrame(df_data)
         
+        # Store all_flux_data for visualization
+        self.all_flux_data = all_flux_data
+        
         # Bootstrap validation
         n_significant = sum(1 for stats in bootstrap_stats.values() if stats['is_significant'])
         print(f"   ✓ Bootstrap complete: {n_significant}/{len(res_indices)} residues significant (p<0.05)")
@@ -719,11 +722,8 @@ class TrajectoryFluxAnalyzer:
         return self.flux_data
     
     def visualize_trajectory_flux(self, flux_data, protein_name, output_dir):
-        """Create comprehensive flux visualization with statistical significance"""
-        fig = plt.figure(figsize=(15, 8))
-        
-        # === Panel 1: Flux profile with confidence intervals ===
-        ax1 = fig.add_subplot(2, 1, 1)
+        """Create comprehensive flux visualization with both normalized and absolute flux"""
+        fig = plt.figure(figsize=(20, 16))
         
         res_indices = np.array(flux_data['protein_residue_id'])
         avg_flux = flux_data['average_flux']
@@ -740,8 +740,20 @@ class TrajectoryFluxAnalyzer:
             ci_lower = avg_flux - std_flux
             ci_upper = avg_flux + std_flux
         
-        # Plot with confidence intervals
-        ax1.plot(res_indices, avg_flux, 'b-', linewidth=2, label='Average Flux')
+        # Calculate absolute flux (non-normalized)
+        flux_matrix = np.array(self.all_flux_data)  # Shape: [n_iterations, n_residues]
+        
+        # Get max flux for normalization
+        max_flux = np.max(avg_flux)
+        absolute_flux = avg_flux * max_flux  # Convert back to absolute values
+        absolute_ci_lower = ci_lower * max_flux
+        absolute_ci_upper = ci_upper * max_flux
+        
+        # === Panel 1: Normalized Flux profile ===
+        ax1 = fig.add_subplot(2, 2, 1)
+        
+        # Plot normalized flux with confidence intervals
+        ax1.plot(res_indices, avg_flux, 'b-', linewidth=2, label='Normalized Flux')
         ax1.fill_between(res_indices, ci_lower, ci_upper,
                         alpha=0.3, color='blue', label='95% CI')
         
@@ -755,33 +767,76 @@ class TrajectoryFluxAnalyzer:
                    color='red', s=50, zorder=5, label='High Flux')
         
         ax1.set_xlabel('Residue Index')
-        ax1.set_ylabel('Normalized Flux')
-        ax1.set_title(f'{protein_name} - Energy Flux Analysis')
+        ax1.set_ylabel('Normalized Flux (0-1)')
+        ax1.set_title(f'{protein_name} - Normalized Energy Flux')
         ax1.legend()
         ax1.grid(True, alpha=0.3)
+        ax1.set_ylim([0, 1.05])
         
-        # === Panel 2: Heatmap of flux values across iterations ===
-        ax2 = fig.add_subplot(2, 1, 2)
+        # === Panel 2: Absolute Flux profile ===
+        ax2 = fig.add_subplot(2, 2, 2)
         
-        flux_matrix = np.array(flux_data['all_flux'])  # Shape: [n_iterations, n_residues]
+        # Plot absolute flux with confidence intervals
+        ax2.plot(res_indices, absolute_flux, 'g-', linewidth=2, label='Absolute Flux')
+        ax2.fill_between(res_indices, absolute_ci_lower, absolute_ci_upper,
+                        alpha=0.3, color='green', label='95% CI')
         
-        # Downsample if too many residues for clear visualization
-        if flux_matrix.shape[1] > 200:
-            step = flux_matrix.shape[1] // 200
-            flux_matrix = flux_matrix[:, ::step]
-            x_labels = res_indices[::step]
-        else:
-            x_labels = res_indices
-        
-        # Create heatmap using seaborn
-        sns.heatmap(flux_matrix, 
-                    cmap='YlOrRd', 
-                    cbar_kws={'label': 'Flux Value'},
-                    ax=ax2)
+        # Mark high-flux residues
+        high_flux_absolute = absolute_flux[high_flux_mask]
+        ax2.scatter(high_flux_indices, high_flux_absolute,
+                   color='red', s=50, zorder=5, label='High Flux')
         
         ax2.set_xlabel('Residue Index')
-        ax2.set_ylabel('Iteration')
-        ax2.set_title('Flux Values Across All Iterations')
+        ax2.set_ylabel('Absolute Flux (kcal/mol/Å)')
+        ax2.set_title(f'{protein_name} - Absolute Energy Flux')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+        
+        # === Panel 3: Normalized flux heatmap ===
+        ax3 = fig.add_subplot(2, 2, 3)
+        
+        # Normalize flux matrix to 0-1
+        normalized_matrix = flux_matrix / np.max(flux_matrix)
+        
+        # Downsample if too many residues for clear visualization
+        if normalized_matrix.shape[1] > 200:
+            step = normalized_matrix.shape[1] // 200
+            normalized_matrix_plot = normalized_matrix[:, ::step]
+            x_labels = res_indices[::step]
+        else:
+            normalized_matrix_plot = normalized_matrix
+            x_labels = res_indices
+        
+        # Create normalized heatmap
+        sns.heatmap(normalized_matrix_plot, 
+                    cmap='YlOrRd', 
+                    cbar_kws={'label': 'Normalized Flux (0-1)'},
+                    ax=ax3,
+                    vmin=0, vmax=1)
+        
+        ax3.set_xlabel('Residue Index')
+        ax3.set_ylabel('Iteration')
+        ax3.set_title('Normalized Flux Across Iterations')
+        
+        # === Panel 4: Absolute flux heatmap ===
+        ax4 = fig.add_subplot(2, 2, 4)
+        
+        # Use original flux matrix for absolute values
+        if flux_matrix.shape[1] > 200:
+            step = flux_matrix.shape[1] // 200
+            flux_matrix_plot = flux_matrix[:, ::step]
+        else:
+            flux_matrix_plot = flux_matrix
+        
+        # Create absolute heatmap
+        sns.heatmap(flux_matrix_plot, 
+                    cmap='YlOrRd', 
+                    cbar_kws={'label': 'Absolute Flux (kcal/mol/Å)'},
+                    ax=ax4)
+        
+        ax4.set_xlabel('Residue Index')
+        ax4.set_ylabel('Iteration')
+        ax4.set_title('Absolute Flux Across Iterations')
         
         plt.tight_layout()
         
@@ -840,8 +895,6 @@ class TrajectoryFluxAnalyzer:
             f.write(f"Mean flux: {np.mean(avg_flux):.4f} ± {np.std(avg_flux):.4f}\n")
             f.write(f"Median flux: {np.median(avg_flux):.4f}\n")
             f.write(f"Non-zero residues: {np.sum(avg_flux > 0)} ({np.sum(avg_flux > 0)/len(avg_flux)*100:.1f}%)\n")
-            f.write("\nOptimization: Zero-copy GPU processing with scatter operations\n")
-            f.write("Performance: ~100x speedup over file I/O based pipeline\n")
         
         print(f"   ✓ Saved report to: {report_file}")
         
@@ -974,8 +1027,6 @@ class TrajectoryFluxAnalyzer:
             f.write(f"Mean flux: {np.mean(avg_flux):.4f} ± {np.std(avg_flux):.4f}\n")
             f.write(f"Median flux: {np.median(avg_flux):.4f}\n")
             f.write(f"Non-zero residues: {np.sum(avg_flux > 0)} ({np.sum(avg_flux > 0)/len(avg_flux)*100:.1f}%)\n")
-            f.write("\nOptimization: Zero-copy GPU processing with scatter operations\n")
-            f.write("Performance: ~100x speedup over file I/O based pipeline\n")
         
         print(f"   ✓ Saved analysis report to: {report_file}")
 
