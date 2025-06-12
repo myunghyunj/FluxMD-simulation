@@ -1,17 +1,17 @@
 import os
 import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-
 import hashlib
-import json
 import numpy as np
-import torch
 import pandas as pd
-import pytest
+import torch
+
+# Allow running tests without installing the package
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from fluxmd.core.trajectory_generator import ProteinLigandFluxAnalyzer
 
-SEED = 13_37
+SEED = 1337
+EXPECTED_HASH = "40376662bb4c2077183a7bf006a98823c165b74f40be2a1eb496a19c92cafd51"
 
 
 def _hash(tensor: torch.Tensor) -> str:
@@ -42,22 +42,15 @@ def simple_trajectory_generator(device: str = "cpu") -> torch.Tensor:
         max_distance=5.0,
         max_attempts=1,
     )
-    return torch.tensor(np.linalg.norm(traj, axis=1))
+    return torch.tensor(np.linalg.norm(traj, axis=1), dtype=torch.float64, device=device)
 
 
-def test_flux_hash_stable(device, tmp_path):
+def test_flux_hash_stable(device):
     torch.manual_seed(SEED)
+    np.random.seed(SEED)
     torch.use_deterministic_algorithms(True)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
 
     flux = simple_trajectory_generator(device)
-
-    golden_file = tmp_path / "golden_hash.json"
-    h = _hash(flux)
-    if golden_file.exists() and not bool(
-        getattr(pytest, "config", None) and pytest.config.getoption("--update-golden")
-    ):
-        assert json.load(golden_file.open())["hash"] == h
-    else:
-        json.dump({"hash": h}, golden_file.open("w"))
+    assert _hash(flux) == EXPECTED_HASH
