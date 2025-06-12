@@ -142,7 +142,7 @@ Options:
 ```
 
 ### 3. SMILES to PDB Converter (via `fluxmd` Option 3)
-- **Primary**: NCI CACTUS web service (preserves aromaticity)
+- **Primary**: NCI CACTUS web service (tuned to preserve aromaticity)
 - **Fallback**: OpenBabel (local, basic 3D generation)
 
 ### 4. `fluxmd-dna` - DNA Structure Generator
