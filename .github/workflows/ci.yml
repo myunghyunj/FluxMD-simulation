@@ -1,0 +1,40 @@
+name: FluxMD-CI
+
+on: [push, pull_request]
+
+jobs:
+  matrix-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14]
+        torch: ["2.2.0"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: |
+          pip install '.[cpu,test]'
+          python - <<'PY'
+import torch, platform, sys
+backend = "mps" if platform.machine()=="arm64" and sys.platform=="darwin" else "cpu"
+print("Selected backend:", backend)
+PY
+      - name: Run unit tests
+        run: pytest -q
+
+  gpu-test:
+    runs-on: [self-hosted, gpu]
+    container: nvidia/cuda:12.4.0-runtime-ubuntu22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps & GPU build
+        run: |
+          apt-get update && apt-get install -y build-essential
+          pip install '.[gpu,test]'
+      - name: Run deterministic test
+        run: pytest tests/test_determinism.py::test_flux_hash_stable
