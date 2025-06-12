@@ -473,21 +473,102 @@ class ProteinLigandFluxAnalyzer:
                 geometry, step_size, approach_angle
             )
         
+    def determine_dna_trajectory_mode(self, protein_coords, dna_coords, dna_geometry):
+        """
+        Determine the appropriate trajectory mode based on protein and DNA sizes.
+        
+        Returns:
+            str: One of 'spiral', 'groove_following', 'sliding', 'docking', 'hybrid'
+        """
+        # Calculate protein size
+        protein_center = np.mean(protein_coords, axis=0)
+        protein_radius = np.max(np.linalg.norm(protein_coords - protein_center, axis=1))
+        
+        # DNA dimensions from geometry
+        dna_radius = max(dna_geometry['dimensions'][1], dna_geometry['dimensions'][2]) / 2
+        dna_length = dna_geometry['dimensions'][0]
+        
+        # Determine appropriate mode based on size ratio
+        size_ratio = protein_radius / dna_radius
+        
+        print(f"\n   Trajectory mode selection:")
+        print(f"     Protein radius: {protein_radius:.1f} Å")
+        print(f"     DNA radius: {dna_radius:.1f} Å")
+        print(f"     Size ratio: {size_ratio:.2f}")
+        
+        if size_ratio < 1.5:
+            # Small peptides can spiral around DNA
+            mode = 'spiral'
+            print(f"     Selected mode: SPIRAL (small peptide)")
+        elif size_ratio < 3.0:
+            # Medium proteins should follow grooves
+            mode = 'groove_following'
+            print(f"     Selected mode: GROOVE FOLLOWING (medium protein)")
+        elif size_ratio < 5.0:
+            # Larger proteins slide along DNA
+            mode = 'sliding'
+            print(f"     Selected mode: SLIDING (large protein)")
+        else:
+            # Very large proteins use docking approach
+            mode = 'docking'
+            print(f"     Selected mode: DOCKING (very large protein)")
+        
+        return mode
+    
     def generate_linear_cocoon_trajectory(self, protein_coords, ligand_coords, ligand_atoms,
                                         molecular_weight, n_steps, dt, target_distance,
                                         geometry, step_size, approach_angle=0.0):
         """
-        Generate non-biasing hovering cocoon trajectory for linear molecules.
+        Generate adaptive trajectory for DNA based on protein size.
         
-        This method ensures complete, unbiased coverage of linear molecules (DNA, fibrils)
-        by implementing:
-        - Bi-directional starting positions (alternating ends)
-        - Multiple full-length traversals
-        - Uniform angular distribution
-        - Stochastic hovering with no preferred regions
+        This method automatically selects the appropriate trajectory type:
+        - Spiral: For small peptides that can wrap around DNA
+        - Groove following: For medium proteins that fit in grooves
+        - Sliding: For large proteins that slide along DNA
+        - Docking: For very large proteins
+        
+        IMPORTANT: In DNA-protein workflow context:
+        - protein_coords = DNA coordinates (the target)
+        - ligand_coords = protein coordinates (the mobile molecule)
         
         Args:
-            approach_angle: Starting angle offset for helical trajectory
+            approach_angle: Starting angle offset for trajectory
+        """
+        # Determine trajectory mode
+        # CRITICAL: In DNA-protein workflow, the naming is reversed:
+        # - protein_coords = DNA (the target)
+        # - ligand_coords = protein (the mobile molecule)
+        # So we pass ligand_coords as protein and protein_coords as DNA
+        mode = self.determine_dna_trajectory_mode(ligand_coords, protein_coords, geometry)
+        
+        # Call appropriate trajectory generator
+        if mode == 'spiral':
+            return self.generate_spiral_trajectory(
+                protein_coords, ligand_coords, ligand_atoms, molecular_weight,
+                n_steps, dt, target_distance, geometry, step_size, approach_angle
+            )
+        elif mode == 'groove_following':
+            return self.generate_groove_following_trajectory(
+                protein_coords, ligand_coords, ligand_atoms, molecular_weight,
+                n_steps, dt, target_distance, geometry, step_size, approach_angle
+            )
+        elif mode == 'sliding':
+            return self.generate_sliding_trajectory(
+                protein_coords, ligand_coords, ligand_atoms, molecular_weight,
+                n_steps, dt, target_distance, geometry, step_size, approach_angle
+            )
+        else:  # docking
+            return self.generate_docking_trajectory(
+                protein_coords, ligand_coords, ligand_atoms, molecular_weight,
+                n_steps, dt, target_distance, geometry, step_size, approach_angle
+            )
+    
+    def generate_spiral_trajectory(self, protein_coords, ligand_coords, ligand_atoms,
+                                 molecular_weight, n_steps, dt, target_distance,
+                                 geometry, step_size, approach_angle=0.0):
+        """
+        Improved spiral trajectory with true helical motion along DNA axis.
+        Creates a nail/screw-like trajectory that progresses steadily along DNA.
         """
         center = geometry['center']
         axes = geometry['principal_axes']
@@ -502,83 +583,438 @@ class ProteinLigandFluxAnalyzer:
         length = dimensions[0]
         radius = max(dimensions[1], dimensions[2]) / 2
         
-        print(f"     Linear molecule: length={length:.1f} Å, radius={radius:.1f} Å")
+        # Get actual DNA bounds in world coordinates
+        # Project all DNA coords onto major axis to find true extent
+        dna_projections = [(coord - center).dot(major_axis) for coord in protein_coords]
+        z_min_local = min(dna_projections)
+        z_max_local = max(dna_projections)
+        actual_length = z_max_local - z_min_local
+        
+        # Debug: Print center and geometry info
+        print(f"     DNA center (from geometry): {center}")
+        print(f"     DNA actual bounds on major axis: [{z_min_local:.1f}, {z_max_local:.1f}] Å")
+        print(f"     DNA actual length: {actual_length:.1f} Å (geometry length: {length:.1f} Å)")
+        print(f"     DNA radius: {radius:.1f} Å")
+        print(f"     Approach angle: {approach_angle:.2f} radians ({np.degrees(approach_angle):.1f}°)")
         
         trajectory = []
         times = []
         
-        # Non-biasing trajectory parameters
-        n_helical_turns = 3.0  # Complete helical turns for full coverage
-        n_axial_traversals = 2.5  # Number of full-length traversals
+        # TRUE SPIRAL PARAMETERS - like a screw thread
+        n_helical_turns = 8.0  # Total number of complete rotations along DNA
+        pitch = actual_length / n_helical_turns  # Distance along axis per rotation
         
-        # Determine starting end based on approach angle
-        # This ensures bi-directional coverage without bias
+        # Add per-approach random state for reproducible but unique trajectories
+        approach_random_state = np.random.RandomState(int(approach_angle * 1000) % 2**32)
+        
+        print(f"     TRUE HELICAL parameters: {n_helical_turns} turns")
+        print(f"     Pitch: {pitch:.1f} Å per turn")
+        print(f"     Angular velocity: {n_helical_turns * 360 / n_steps:.1f}°/step")
+        
+        # Determine starting end and direction based on approach angle
         approach_idx = int(approach_angle / (np.pi / 2))  # 0, 1, 2, or 3
         start_from_negative = (approach_idx % 2) == 1  # Alternate starting ends
+        reverse_direction = (approach_idx >= 2)  # Reverse spiral direction for approaches 2,3
+        
+        # Add random variation to initial angle
+        angle_variation = approach_random_state.uniform(-np.pi/4, np.pi/4)  # ±45° variation
+        initial_theta = approach_angle + angle_variation
         
         print(f"     Approach {approach_idx + 1}: Starting from {'negative' if start_from_negative else 'positive'} Z end")
+        print(f"     Spiral direction: {'counter-clockwise' if not reverse_direction else 'clockwise'}")
+        print(f"     Initial angle: {np.degrees(initial_theta):.1f}°")
         
-        for i in range(n_steps):
-            t = i / (n_steps - 1)  # Normalized time [0, 1]
-            
-            # Non-biasing axial position with multiple traversals
-            # Use cosine for smooth back-and-forth motion
+        # Calculate actual surface distance for proper hovering distance
+        sample_angles = np.linspace(0, 2*np.pi, 8, endpoint=False)
+        surface_distances = []
+        for ang in sample_angles:
+            test_point = center + radius * (np.cos(ang) * minor_axis_1 + np.sin(ang) * minor_axis_2)
+            min_dist = self.calculate_surface_distance(test_point, protein_coords)
+            surface_distances.append(min_dist)
+        
+        actual_surface_radius = np.median(surface_distances)
+        print(f"     Actual surface radius: {actual_surface_radius:.1f} Å")
+        
+        # Track collision statistics
+        collision_count = 0
+        successful_points = 0
+        
+        # ADAPTIVE Z-PROGRESSION: Track actual Z progress, not time-based
+        z_progress = 0.0  # Current progress along DNA (0 to 1)
+        z_step_base = 1.0 / n_steps  # Base step size for Z progression
+        consecutive_failures = 0  # Track consecutive collision failures
+        max_consecutive_failures = 10  # Force progression after this many failures
+        
+        # Track last successful Z position to ensure progression
+        last_successful_z_local = z_min_local if start_from_negative else z_max_local
+        
+        i = 0
+        while i < n_steps and z_progress < 0.99:  # Continue until we cover the DNA
+            # Calculate current Z position based on actual progress
             if start_from_negative:
-                # Start from -Z, traverse to +Z and back
-                z_phase = np.pi  # 180° phase shift
+                z_local = z_min_local + z_progress * actual_length
             else:
-                # Start from +Z, traverse to -Z and back
-                z_phase = 0
+                z_local = z_max_local - z_progress * actual_length
             
-            # Multiple traversals ensure complete coverage
-            z_normalized = np.cos(2 * np.pi * t * n_axial_traversals + z_phase)
-            z_position = z_normalized * (length / 2)
+            # Calculate helical angle based on Z progress (not time)
+            angle_progress = z_progress * n_helical_turns * 2 * np.pi
+            if reverse_direction:
+                theta = initial_theta - angle_progress
+            else:
+                theta = initial_theta + angle_progress
             
-            # Helical angle with continuous rotation for uniform coverage
-            theta = approach_angle + t * n_helical_turns * 2 * np.pi
+            # Radial distance with controlled variations
+            r_base = actual_surface_radius + target_distance
             
-            # Non-biasing radial distance with stochastic hovering
-            r_base = radius + target_distance
+            # Add radial variations for realistic motion
+            # 1. Small oscillations to simulate breathing motion
+            r_oscillation = 3.0 * np.sin(2 * np.pi * t * 5.3 + approach_angle)
             
-            # Hovering oscillations with multiple frequency components
-            # This creates a more complex, non-repetitive pattern
-            r_hover = 0.0
-            r_hover += 8.0 * np.sin(2 * np.pi * t * 4.3)  # Primary oscillation
-            r_hover += 5.0 * np.sin(2 * np.pi * t * 7.1)  # Secondary frequency
-            r_hover += 3.0 * np.sin(2 * np.pi * t * 11.7)  # Tertiary frequency
+            # 2. Random hovering motion
+            r_random = approach_random_state.normal(0, 2.0)
             
-            # Add stochastic component for true hovering behavior
-            r_hover += np.random.normal(0, 2.0)  # Random hovering
+            # 3. Periodic close approaches for interaction sampling
+            close_approach = 0.0
+            approach_frequency = 0.15  # 15% of the time
+            if approach_random_state.random() < approach_frequency:
+                close_approach = -min(10.0, target_distance * 0.3)  # Approach closer
             
-            # Periodic close approaches for comprehensive sampling
-            # Use prime numbers to avoid repetitive patterns
-            if (i % 13) < 2 or (i % 17) < 2:
-                r_hover -= 12.0  # Close approach for interaction sampling
+            # Combine all radial components
+            r = r_base + r_oscillation + r_random + close_approach
+            r = max(actual_surface_radius + 2.0, r)  # Maintain minimum distance
             
-            r = r_base + r_hover
-            r = max(radius + 2.0, r)  # Maintain minimum distance
+            # Add small random perturbations to make trajectory more realistic
+            theta_noise = approach_random_state.normal(0, 0.05)  # Small angular noise
+            z_noise = approach_random_state.normal(0, pitch * 0.02)  # Small axial noise
+            
+            theta_final = theta + theta_noise
+            z_local_final = z_local + z_noise
             
             # Convert cylindrical to Cartesian in local frame
-            x_local = r * np.cos(theta)
-            y_local = r * np.sin(theta)
-            z_local = z_position
+            x_local = r * np.cos(theta_final)
+            y_local = r * np.sin(theta_final)
+            
+            # Keep z_local separate for clarity
+            z_position = z_local_final
             
             # Transform to world coordinates using principal axes
+            local_pos = x_local * minor_axis_1 + y_local * minor_axis_2 + z_position * major_axis
+            world_pos = center + local_pos
+            
+            # Check collision
+            test_coords = ligand_coords + (world_pos - ligand_coords.mean(axis=0))
+            
+            if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                trajectory.append(world_pos)
+                times.append(i * dt)
+                successful_points += 1
+                consecutive_failures = 0  # Reset failure counter
+                last_successful_z_local = z_local  # Update last successful Z
+                
+                # Advance Z-progress after successful point
+                z_progress += z_step_base
+            else:
+                collision_count += 1
+                consecutive_failures += 1
+                point_added = False
+                
+                # Strategy 1: Try backing off radially
+                for r_adjust in np.linspace(2, 10, 5):
+                    r_test = r + r_adjust
+                    x_test = r_test * np.cos(theta_final)
+                    y_test = r_test * np.sin(theta_final)
+                    local_test = x_test * minor_axis_1 + y_test * minor_axis_2 + z_position * major_axis
+                    world_test = center + local_test
+                    test_coords = ligand_coords + (world_test - ligand_coords.mean(axis=0))
+                    
+                    if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                        trajectory.append(world_test)
+                        times.append(i * dt)
+                        successful_points += 1
+                        consecutive_failures = 0
+                        last_successful_z_local = z_local
+                        z_progress += z_step_base
+                        point_added = True
+                        break
+                
+                # Strategy 2: If radial backoff failed, try small Z adjustments
+                if not point_added:
+                    for z_adjust in [-pitch*0.1, pitch*0.1, -pitch*0.2, pitch*0.2]:
+                        z_test = z_position + z_adjust
+                        local_test = x_local * minor_axis_1 + y_local * minor_axis_2 + z_test * major_axis
+                        world_test = center + local_test
+                        test_coords = ligand_coords + (world_test - ligand_coords.mean(axis=0))
+                        
+                        if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                            trajectory.append(world_test)
+                            times.append(i * dt)
+                            successful_points += 1
+                            consecutive_failures = 0
+                            # Still advance Z even with adjustment
+                            z_progress += z_step_base
+                            point_added = True
+                            break
+                
+                # Strategy 3: Force Z progression if stuck
+                if not point_added and consecutive_failures >= max_consecutive_failures:
+                    # Force progression by jumping ahead
+                    z_progress += z_step_base * 3  # Triple step to escape stuck region
+                    consecutive_failures = 0
+                    print(f"     WARNING: Forced Z-progression at z_progress={z_progress:.3f}")
+            
+            i += 1
+        
+        trajectory = np.array(trajectory)
+        times = np.array(times[:len(trajectory)])
+        
+        # Print statistics
+        print(f"\n   ADAPTIVE SPIRAL trajectory statistics:")
+        print(f"     Total iterations: {i}")
+        print(f"     Successful points: {successful_points}")
+        print(f"     Collisions handled: {collision_count}")
+        print(f"     Z-progress achieved: {z_progress*100:.1f}%")
+        print(f"     Points per unit Z: {successful_points / max(z_progress, 0.01):.1f}")
+        
+        if len(trajectory) > 0:
+            # Calculate Z-coverage
+            trajectory_z = [(pos - center).dot(major_axis) for pos in trajectory]
+            z_coverage = (max(trajectory_z) - min(trajectory_z)) / actual_length * 100
+            
+            # Calculate surface distances
+            surface_distances = []
+            for pos in trajectory:
+                min_dist = self.calculate_surface_distance(pos, protein_coords)
+                surface_distances.append(min_dist)
+            
+            surface_distances = np.array(surface_distances)
+            
+            print(f"\n   Coverage and distance statistics:")
+            print(f"     Z-axis coverage: {z_coverage:.1f}% of DNA length")
+            print(f"     Z range: [{min(trajectory_z):.1f}, {max(trajectory_z):.1f}] Å")
+            print(f"     Distance from surface: {np.min(surface_distances):.1f} - {np.max(surface_distances):.1f} Å")
+            print(f"     Mean distance: {np.mean(surface_distances):.1f} Å")
+            print(f"     Close approaches (<3.5Å): {np.sum(surface_distances < 3.5)} frames ({100 * np.sum(surface_distances < 3.5) / len(surface_distances):.1f}%)")
+            
+            # Verify spiral motion
+            trajectory_angles = []
+            for pos in trajectory:
+                rel_pos = pos - center
+                x_proj = rel_pos.dot(minor_axis_1)
+                y_proj = rel_pos.dot(minor_axis_2)
+                angle = np.arctan2(y_proj, x_proj)
+                trajectory_angles.append(angle)
+            
+            if len(trajectory_angles) > 1:
+                angle_changes = np.diff(np.unwrap(trajectory_angles))
+                total_rotation = np.sum(angle_changes)
+                actual_turns = abs(total_rotation) / (2 * np.pi)
+                print(f"     Actual spiral rotation: {abs(np.degrees(total_rotation)):.1f}° ({actual_turns:.1f} turns)")
+                print(f"     Spiral integrity: {'GOOD' if actual_turns > n_helical_turns * 0.8 else 'POOR'}")
+        
+        # FALLBACK: If Z-coverage is too low, add sparse points along DNA
+        if len(trajectory) > 0 and z_coverage < 50:
+            print(f"\n   WARNING: Low Z-coverage ({z_coverage:.1f}%), adding sparse coverage points")
+            
+            # Add points at larger radius to ensure no collisions
+            fallback_radius = actual_surface_radius + target_distance * 2
+            n_fallback = 20
+            
+            for j in range(n_fallback):
+                t_fallback = j / (n_fallback - 1)
+                
+                if start_from_negative:
+                    z_fallback = z_min_local + t_fallback * actual_length
+                else:
+                    z_fallback = z_max_local - t_fallback * actual_length
+                
+                theta_fallback = initial_theta + t_fallback * n_helical_turns * 2 * np.pi
+                
+                x_fallback = fallback_radius * np.cos(theta_fallback)
+                y_fallback = fallback_radius * np.sin(theta_fallback)
+                
+                local_fallback = x_fallback * minor_axis_1 + y_fallback * minor_axis_2 + z_fallback * major_axis
+                world_fallback = center + local_fallback
+                
+                trajectory = np.vstack([trajectory, world_fallback])
+                times = np.append(times, times[-1] + dt if len(times) > 0 else 0)
+            
+            print(f"     Added {n_fallback} fallback points for coverage")
+        
+        return trajectory, times
+    
+    def generate_groove_following_trajectory(self, protein_coords, ligand_coords, ligand_atoms,
+                                           molecular_weight, n_steps, dt, target_distance,
+                                           geometry, step_size, approach_angle=0.0):
+        """
+        Generate trajectory that follows DNA major and minor grooves.
+        Suitable for medium-sized proteins that can fit into grooves.
+        """
+        center = geometry['center']
+        axes = geometry['principal_axes']
+        dimensions = geometry['dimensions']
+        
+        # DNA parameters
+        major_axis = axes[:, 0]
+        minor_axis_1 = axes[:, 1]
+        minor_axis_2 = axes[:, 2]
+        length = dimensions[0]
+        radius = max(dimensions[1], dimensions[2]) / 2
+        
+        print(f"\n   GROOVE-FOLLOWING TRAJECTORY")
+        print(f"     DNA length: {length:.1f} Å, radius: {radius:.1f} Å")
+        
+        trajectory = []
+        times = []
+        
+        # DNA B-form parameters
+        HELIX_PITCH = 34.0  # Å per complete turn
+        BP_RISE = 3.4  # Å per base pair
+        MAJOR_GROOVE_WIDTH = 22.0  # Å
+        MINOR_GROOVE_WIDTH = 12.0  # Å
+        MAJOR_GROOVE_DEPTH = 8.5  # Å
+        MINOR_GROOVE_DEPTH = 7.5  # Å
+        
+        # Determine which groove to follow based on approach angle
+        # Even approaches follow major groove, odd follow minor
+        follow_major = (int(approach_angle / (np.pi / 4)) % 2) == 0
+        groove_type = "major" if follow_major else "minor"
+        groove_width = MAJOR_GROOVE_WIDTH if follow_major else MINOR_GROOVE_WIDTH
+        groove_depth = MAJOR_GROOVE_DEPTH if follow_major else MINOR_GROOVE_DEPTH
+        
+        print(f"     Following {groove_type} groove")
+        print(f"     Groove width: {groove_width:.1f} Å, depth: {groove_depth:.1f} Å")
+        
+        # Random state for this approach
+        approach_random_state = np.random.RandomState(int(approach_angle * 1000) % 2**32)
+        
+        # Starting position along DNA
+        start_z = approach_random_state.uniform(-length/2 + 10, length/2 - 10)
+        
+        # Groove angle offset (major groove at 0°, minor at 144°)
+        groove_angle_offset = 0 if follow_major else np.radians(144)
+        
+        for i in range(n_steps):
+            t = i / (n_steps - 1)
+            
+            # Progress along DNA axis
+            z_position = start_z + (t - 0.5) * length * 0.8  # Cover 80% of DNA length
+            z_position = np.clip(z_position, -length/2 + 5, length/2 - 5)
+            
+            # Helical position following DNA twist
+            helix_angle = (z_position / HELIX_PITCH) * 2 * np.pi + groove_angle_offset + approach_angle
+            
+            # Position in groove with some lateral movement
+            lateral_offset = groove_width * 0.3 * np.sin(t * 4 * np.pi)  # Oscillate within groove
+            
+            # Distance from DNA axis (in groove)
+            r_groove = radius + groove_depth/2 + lateral_offset
+            
+            # Add hovering motion
+            hover_distance = target_distance + 5.0 * np.sin(t * 3 * np.pi)
+            hover_distance += approach_random_state.normal(0, 2.0)
+            r = r_groove + hover_distance
+            
+            # Convert to Cartesian coordinates
+            x_local = r * np.cos(helix_angle)
+            y_local = r * np.sin(helix_angle)
+            z_local = z_position
+            
+            # Apply small perturbations
+            x_local += approach_random_state.normal(0, step_size * 0.2)
+            y_local += approach_random_state.normal(0, step_size * 0.2)
+            z_local += approach_random_state.normal(0, step_size * 0.1)
+            
+            # Transform to world coordinates
             local_pos = x_local * minor_axis_1 + y_local * minor_axis_2 + z_local * major_axis
             world_pos = center + local_pos
             
-            # Enhanced Brownian motion for hovering behavior
-            # Larger component perpendicular to DNA axis for better lateral exploration
-            brownian_radial = np.random.randn() * step_size * 0.5
-            brownian_axial = np.random.randn() * step_size * 0.3
-            brownian_tangential = np.random.randn() * step_size * 0.4
+            # Check collision
+            test_coords = ligand_coords + (world_pos - ligand_coords.mean(axis=0))
             
-            # Apply Brownian motion in cylindrical components
-            r += brownian_radial
-            theta += brownian_tangential / r  # Angular displacement
-            z_position += brownian_axial
+            if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                trajectory.append(world_pos)
+                times.append(i * dt)
+        
+        trajectory = np.array(trajectory)
+        times = np.array(times[:len(trajectory)])
+        
+        # Print statistics
+        if len(trajectory) > 0:
+            surface_distances = []
+            for pos in trajectory:
+                min_dist = self.calculate_surface_distance(pos, protein_coords)
+                surface_distances.append(min_dist)
             
-            # Recalculate position with Brownian perturbations
+            surface_distances = np.array(surface_distances)
+            print(f"\n   Groove-following statistics:")
+            print(f"     Trajectory points: {len(trajectory)}")
+            print(f"     Mean distance from surface: {np.mean(surface_distances):.1f} Å")
+            print(f"     Groove type: {groove_type}")
+        
+        return trajectory, times
+    
+    def generate_sliding_trajectory(self, protein_coords, ligand_coords, ligand_atoms,
+                                  molecular_weight, n_steps, dt, target_distance,
+                                  geometry, step_size, approach_angle=0.0):
+        """
+        Generate sliding trajectory along DNA axis.
+        Suitable for large proteins that slide along DNA (1D diffusion).
+        """
+        center = geometry['center']
+        axes = geometry['principal_axes']
+        dimensions = geometry['dimensions']
+        
+        # DNA parameters
+        major_axis = axes[:, 0]
+        minor_axis_1 = axes[:, 1]
+        minor_axis_2 = axes[:, 2]
+        length = dimensions[0]
+        radius = max(dimensions[1], dimensions[2]) / 2
+        
+        print(f"\n   SLIDING TRAJECTORY")
+        print(f"     DNA length: {length:.1f} Å, radius: {radius:.1f} Å")
+        
+        trajectory = []
+        times = []
+        
+        # Random state for this approach
+        approach_random_state = np.random.RandomState(int(approach_angle * 1000) % 2**32)
+        
+        # Initial contact position
+        initial_angle = approach_angle + approach_random_state.uniform(-np.pi/4, np.pi/4)
+        
+        # Starting position along DNA
+        start_z = approach_random_state.uniform(-length/3, length/3)
+        
+        # Calculate actual surface distance
+        test_point = center + radius * (np.cos(initial_angle) * minor_axis_1 + np.sin(initial_angle) * minor_axis_2)
+        actual_surface_dist = self.calculate_surface_distance(test_point, protein_coords)
+        
+        print(f"     Initial angle: {np.degrees(initial_angle):.1f}°")
+        print(f"     Starting Z position: {start_z:.1f} Å")
+        
+        for i in range(n_steps):
+            t = i / (n_steps - 1)
+            
+            # Slide along DNA with 1D diffusion
+            z_drift = (t - 0.5) * length * 0.6  # Drift along DNA
+            z_diffusion = approach_random_state.normal(0, step_size * 2.0) * np.sqrt(t + 0.1)
+            z_position = start_z + z_drift + z_diffusion
+            z_position = np.clip(z_position, -length/2 + 10, length/2 - 10)
+            
+            # Maintain contact with slow rotation
+            rotation_speed = 0.5  # Slow rotation while sliding
+            theta = initial_angle + t * rotation_speed * 2 * np.pi
+            theta += approach_random_state.normal(0, 0.1)  # Small angular diffusion
+            
+            # Distance from DNA surface (maintaining close contact)
+            contact_distance = target_distance + 3.0 * np.sin(t * 2 * np.pi)
+            contact_distance += approach_random_state.normal(0, 1.0)
+            contact_distance = max(2.0, contact_distance)  # Maintain minimum distance
+            
+            r = actual_surface_dist + contact_distance
+            
+            # Convert to Cartesian coordinates
             x_local = r * np.cos(theta)
             y_local = r * np.sin(theta)
             z_local = z_position
@@ -593,39 +1029,129 @@ class ProteinLigandFluxAnalyzer:
             if not self.collision_detector.check_collision(test_coords, ligand_atoms):
                 trajectory.append(world_pos)
                 times.append(i * dt)
-            else:
-                # Try backing off
-                for r_adjust in np.linspace(2, 10, 5):
-                    r_test = r + r_adjust
-                    x_test = r_test * np.cos(theta)
-                    y_test = r_test * np.sin(theta)
-                    local_test = x_test * minor_axis_1 + y_test * minor_axis_2 + z_local * major_axis
-                    world_test = center + local_test
-                    test_coords = ligand_coords + (world_test - ligand_coords.mean(axis=0))
-                    
-                    if not self.collision_detector.check_collision(test_coords, ligand_atoms):
-                        trajectory.append(world_test)
-                        times.append(i * dt)
-                        break
         
         trajectory = np.array(trajectory)
         times = np.array(times[:len(trajectory)])
         
-        # Calculate surface distances (not center distances)
+        # Print statistics
         if len(trajectory) > 0:
-            surface_distances = []
-            for pos in trajectory:
-                min_dist = self.calculate_surface_distance(pos, protein_coords)
-                surface_distances.append(min_dist)
+            print(f"\n   Sliding trajectory statistics:")
+            print(f"     Trajectory points: {len(trajectory)}")
+            print(f"     Z-range covered: {np.ptp([p.dot(major_axis) for p in trajectory - center]):.1f} Å")
+        
+        return trajectory, times
+    
+    def generate_docking_trajectory(self, protein_coords, ligand_coords, ligand_atoms,
+                                  molecular_weight, n_steps, dt, target_distance,
+                                  geometry, step_size, approach_angle=0.0):
+        """
+        Generate docking-style approach trajectory.
+        Suitable for very large proteins that approach DNA from multiple angles.
+        """
+        center = geometry['center']
+        axes = geometry['principal_axes']
+        dimensions = geometry['dimensions']
+        
+        # DNA parameters
+        major_axis = axes[:, 0]
+        minor_axis_1 = axes[:, 1]
+        minor_axis_2 = axes[:, 2]
+        length = dimensions[0]
+        radius = max(dimensions[1], dimensions[2]) / 2
+        
+        print(f"\n   DOCKING TRAJECTORY")
+        print(f"     DNA length: {length:.1f} Å, radius: {radius:.1f} Å")
+        
+        trajectory = []
+        times = []
+        
+        # Random state for this approach
+        approach_random_state = np.random.RandomState(int(approach_angle * 1000) % 2**32)
+        
+        # Docking parameters
+        n_docking_attempts = 5  # Multiple approach attempts
+        
+        for attempt in range(n_docking_attempts):
+            # Random approach vector for this attempt
+            phi = approach_angle + attempt * (2 * np.pi / n_docking_attempts)
+            theta_tilt = approach_random_state.uniform(np.pi/4, 3*np.pi/4)  # Approach angle from DNA axis
             
-            surface_distances = np.array(surface_distances)
+            # Random position along DNA
+            z_target = approach_random_state.uniform(-length/3, length/3)
             
-            print(f"\n   Trajectory distance statistics:")
-            print(f"     Min distance from surface: {np.min(surface_distances):.1f} Å")
-            print(f"     Max distance from surface: {np.max(surface_distances):.1f} Å")
-            print(f"     Mean distance from surface: {np.mean(surface_distances):.1f} Å")
-            print(f"     Close approaches (<3.5Å): {np.sum(surface_distances < 3.5)} frames")
-            print(f"     H-bond range (<3.5Å): {100 * np.sum(surface_distances < 3.5) / len(surface_distances):.1f}% of frames")
+            # Steps for this docking attempt
+            steps_per_attempt = n_steps // n_docking_attempts
+            
+            for i in range(steps_per_attempt):
+                t = i / (steps_per_attempt - 1)
+                
+                # Approach from far to close
+                approach_dist = target_distance * 3 * (1 - t) + target_distance * t
+                
+                # Position with respect to DNA
+                r = radius + approach_dist
+                
+                # Add oscillation during approach
+                r += 5.0 * np.sin(t * 2 * np.pi)
+                
+                # Convert spherical to Cartesian
+                x_local = r * np.sin(theta_tilt) * np.cos(phi)
+                y_local = r * np.sin(theta_tilt) * np.sin(phi)
+                z_local = z_target + (1 - t) * length * 0.2  # Slight drift during approach
+                
+                # Add small perturbations
+                x_local += approach_random_state.normal(0, step_size * 0.3)
+                y_local += approach_random_state.normal(0, step_size * 0.3)
+                z_local += approach_random_state.normal(0, step_size * 0.2)
+                
+                # Transform to world coordinates
+                local_pos = x_local * minor_axis_1 + y_local * minor_axis_2 + z_local * major_axis
+                world_pos = center + local_pos
+                
+                # Check collision
+                test_coords = ligand_coords + (world_pos - ligand_coords.mean(axis=0))
+                
+                if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                    trajectory.append(world_pos)
+                    times.append((attempt * steps_per_attempt + i) * dt)
+        
+        # Convert to arrays
+        if len(trajectory) > 0:
+            trajectory = np.array(trajectory)
+            times = np.array(times[:len(trajectory)])
+        else:
+            # FALLBACK: If no collision-free positions found, create minimal trajectory
+            print(f"\n   WARNING: No collision-free positions found in docking trajectory")
+            print(f"     Generating fallback trajectory at larger distance")
+            
+            # Try with much larger distances
+            fallback_points = []
+            for i in range(min(10, n_steps)):
+                t = i / (min(10, n_steps) - 1)
+                
+                # Use much larger distance
+                r = radius + target_distance * 5
+                phi = approach_angle + t * np.pi
+                theta_tilt = np.pi / 2
+                
+                x_local = r * np.cos(phi)
+                y_local = r * np.sin(phi)
+                z_local = 0
+                
+                local_pos = x_local * minor_axis_1 + y_local * minor_axis_2 + z_local * major_axis
+                world_pos = center + local_pos
+                
+                fallback_points.append(world_pos)
+            
+            trajectory = np.array(fallback_points)
+            times = np.linspace(0, n_steps * dt, len(trajectory))
+        
+        # Print statistics
+        print(f"\n   Docking trajectory statistics:")
+        print(f"     Trajectory points: {len(trajectory)}")
+        print(f"     Docking attempts: {n_docking_attempts}")
+        if len(trajectory) < n_steps / 2:
+            print(f"     WARNING: Low success rate, consider increasing target distance")
         
         return trajectory, times
     
@@ -1607,6 +2133,17 @@ class ProteinLigandFluxAnalyzer:
         # Smooth backbone for professional appearance
         smooth_backbone = self.smooth_backbone_trace(ca_coords, smoothing_factor=4)
         
+        # Handle empty trajectory case
+        trajectory = np.array(trajectory)
+        if len(trajectory) == 0:
+            print(f"  WARNING: Empty trajectory for visualization, creating placeholder figure")
+            plt.text(0.5, 0.5, 'No trajectory points generated\n(All positions had collisions)', 
+                    ha='center', va='center', transform=fig.transFigure, fontsize=20)
+            vis_filename = os.path.join(output_dir, f'trajectory_iteration_{iteration_num}_approach_{approach_idx + 1}.png')
+            plt.savefig(vis_filename, dpi=300, bbox_inches='tight')
+            plt.close()
+            return fig
+        
         # 3D trajectory plot (main visualization)
         ax1 = fig.add_subplot(221, projection='3d')
         
@@ -1615,19 +2152,21 @@ class ProteinLigandFluxAnalyzer:
                 'k-', linewidth=3, alpha=0.4, label='Protein backbone', solid_capstyle='round')
         
         # Plot trajectory with gradient coloring
-        trajectory = np.array(trajectory)
         n_points = len(trajectory)
         colors = plt.cm.plasma(np.linspace(0, 1, n_points))
         
-        for i in range(len(trajectory) - 1):
-            ax1.plot(trajectory[i:i+2, 0], trajectory[i:i+2, 1], trajectory[i:i+2, 2],
-                    color=colors[i], linewidth=2, alpha=0.8, solid_capstyle='round')
+        if len(trajectory) > 1:
+            for i in range(len(trajectory) - 1):
+                ax1.plot(trajectory[i:i+2, 0], trajectory[i:i+2, 1], trajectory[i:i+2, 2],
+                        color=colors[i], linewidth=2, alpha=0.8, solid_capstyle='round')
         
         # Start and end points with circles
-        ax1.scatter(*trajectory[0], s=200, c='green', marker='o',
-                   edgecolors='darkgreen', linewidth=3, label='Start', zorder=5)
-        ax1.scatter(*trajectory[-1], s=200, c='red', marker='o',
-                   edgecolors='darkred', linewidth=3, label='End', zorder=5)
+        if len(trajectory) > 0:
+            ax1.scatter(*trajectory[0], s=200, c='green', marker='o',
+                       edgecolors='darkgreen', linewidth=3, label='Start', zorder=5)
+            if len(trajectory) > 1:
+                ax1.scatter(*trajectory[-1], s=200, c='red', marker='o',
+                           edgecolors='darkred', linewidth=3, label='End', zorder=5)
         
         ax1.set_xlabel('X (Å)', fontsize=12, fontweight='bold')
         ax1.set_ylabel('Y (Å)', fontsize=12, fontweight='bold')
@@ -1651,10 +2190,18 @@ class ProteinLigandFluxAnalyzer:
         is_linear = np.max(backbone_extent) / np.min(backbone_extent) > 3.0
         
         if is_linear:
-            # For linear molecules, show Z-axis position over time
-            # Find principal axis (assume it's Z for simplicity)
-            z_positions = trajectory[:, 2]
-            z_min, z_max = ca_coords[:, 2].min(), ca_coords[:, 2].max()
+            # For linear molecules, show position along principal axis
+            # Calculate principal axis of DNA
+            dna_center = ca_coords.mean(axis=0)
+            centered_dna = ca_coords - dna_center
+            cov_matrix = np.cov(centered_dna.T)
+            eigenvalues, eigenvectors = np.linalg.eig(cov_matrix)
+            principal_axis = eigenvectors[:, eigenvalues.argmax()]
+            
+            # Project trajectory and DNA onto principal axis
+            z_positions = [(pos - dna_center).dot(principal_axis) for pos in trajectory]
+            dna_projections = [(pos - dna_center).dot(principal_axis) for pos in ca_coords]
+            z_min, z_max = min(dna_projections), max(dna_projections)
             
             ax2.plot(range(len(trajectory)), z_positions, 'b-', linewidth=2, alpha=0.8)
             ax2.axhline(y=z_min, color='r', linestyle='--', alpha=0.5, label='DNA ends')
@@ -1695,14 +2242,17 @@ class ProteinLigandFluxAnalyzer:
                 alpha=0.4, label='Backbone', solid_capstyle='round')
         
         # Trajectory path
-        for i in range(len(trajectory) - 1):
-            ax3.plot(trajectory[i:i+2, 0], trajectory[i:i+2, 1],
-                    color=colors[i], linewidth=2, alpha=0.7, solid_capstyle='round')
+        if len(trajectory) > 1:
+            for i in range(len(trajectory) - 1):
+                ax3.plot(trajectory[i:i+2, 0], trajectory[i:i+2, 1],
+                        color=colors[i], linewidth=2, alpha=0.7, solid_capstyle='round')
         
-        ax3.scatter(*trajectory[0, :2], s=150, c='green', marker='o',
-                   edgecolors='darkgreen', linewidth=3, zorder=5)
-        ax3.scatter(*trajectory[-1, :2], s=150, c='red', marker='o',
-                   edgecolors='darkred', linewidth=3, zorder=5)
+        if len(trajectory) > 0:
+            ax3.scatter(*trajectory[0, :2], s=150, c='green', marker='o',
+                       edgecolors='darkgreen', linewidth=3, zorder=5)
+            if len(trajectory) > 1:
+                ax3.scatter(*trajectory[-1, :2], s=150, c='red', marker='o',
+                           edgecolors='darkred', linewidth=3, zorder=5)
         ax3.set_xlabel('X (Å)', fontsize=12, fontweight='bold')
         ax3.set_ylabel('Y (Å)', fontsize=12, fontweight='bold')
         ax3.set_title('XY Projection', fontsize=14, fontweight='bold')
@@ -1719,16 +2269,19 @@ class ProteinLigandFluxAnalyzer:
                 alpha=0.4, label='Backbone', solid_capstyle='round')
         
         # Trajectory path with coverage indication
-        for i in range(len(trajectory) - 1):
-            ax4.plot(trajectory[i:i+2, 0], trajectory[i:i+2, 2],
-                    color=colors[i], linewidth=2, alpha=0.7, solid_capstyle='round')
+        if len(trajectory) > 1:
+            for i in range(len(trajectory) - 1):
+                ax4.plot(trajectory[i:i+2, 0], trajectory[i:i+2, 2],
+                        color=colors[i], linewidth=2, alpha=0.7, solid_capstyle='round')
         
         # Highlight starting position based on approach
-        start_marker_color = 'green' if trajectory[0, 2] > 0 else 'cyan'
-        ax4.scatter(trajectory[0, 0], trajectory[0, 2], s=150, c=start_marker_color, marker='o',
-                   edgecolors='black', linewidth=3, zorder=5, label=f'Start ({"top" if trajectory[0, 2] > 0 else "bottom"})')
-        ax4.scatter(trajectory[-1, 0], trajectory[-1, 2], s=150, c='red', marker='o',
-                   edgecolors='darkred', linewidth=3, zorder=5, label='End')
+        if len(trajectory) > 0:
+            start_marker_color = 'green' if trajectory[0, 2] > 0 else 'cyan'
+            ax4.scatter(trajectory[0, 0], trajectory[0, 2], s=150, c=start_marker_color, marker='o',
+                       edgecolors='black', linewidth=3, zorder=5, label=f'Start ({"top" if trajectory[0, 2] > 0 else "bottom"})')
+            if len(trajectory) > 1:
+                ax4.scatter(trajectory[-1, 0], trajectory[-1, 2], s=150, c='red', marker='o',
+                           edgecolors='darkred', linewidth=3, zorder=5, label='End')
         
         # Add shaded regions to show DNA extent
         if is_linear:

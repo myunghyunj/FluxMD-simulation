@@ -93,9 +93,8 @@ def run_protein_dna_workflow(dna_file: str, protein_file: str, output_dir: str, 
         target_is_dna=True
     )
     
-    # Initialize collision detector with DNA structure
+    # Initialize collision detector with DNA structure (must be done BEFORE centering)
     dna_coords = dna_atoms[['x', 'y', 'z']].values
-    trajectory_generator.collision_detector.build_protein_tree(dna_coords, dna_atoms)
     
     # 8. Run UMA simulation iterations
     n_iterations = kwargs.get('n_iterations', 10)
@@ -118,14 +117,45 @@ def run_protein_dna_workflow(dna_file: str, protein_file: str, output_dir: str, 
     # Calculate protein molecular weight (approximate)
     protein_mw = len(protein_atoms) * 110.0  # Average amino acid MW
     
+    # Print protein information for trajectory mode selection
+    print(f"\n   Protein analysis:")
+    print(f"     Number of atoms: {len(protein_atoms)}")
+    print(f"     Estimated MW: {protein_mw:.0f} Da")
+    print(f"     Radius: {protein_radius:.1f} Å")
+    
     # Extract DNA backbone CA equivalent (phosphates) for trajectory generation
     dna_backbone = dna_atoms[dna_atoms['name'].isin(['P', 'C1\''])].copy()
     dna_ca_coords = dna_backbone[['x', 'y', 'z']].values if not dna_backbone.empty else dna_atoms[['x', 'y', 'z']].values[:100]
+    
+    # CRITICAL: Center coordinates for trajectory generation
+    # This ensures DNA is at origin for proper trajectory calculation
+    dna_center = dna_coords.mean(axis=0)
+    print(f"\n   DNA center (original): {dna_center}")
+    print(f"   DNA coordinate range: X[{dna_coords[:,0].min():.1f}, {dna_coords[:,0].max():.1f}], Y[{dna_coords[:,1].min():.1f}, {dna_coords[:,1].max():.1f}], Z[{dna_coords[:,2].min():.1f}, {dna_coords[:,2].max():.1f}]")
+    
+    # Center all coordinates
+    dna_coords_centered = dna_coords - dna_center
+    dna_ca_coords_centered = dna_ca_coords - dna_center
+    protein_coords_centered = protein_coords - dna_center
+    
+    print(f"   DNA centered at origin")
+    print(f"   Protein distance from DNA center: {np.linalg.norm(protein_com - dna_center):.1f} Å")
+    
+    # Initialize collision detector with centered DNA coordinates
+    trajectory_generator.collision_detector.build_protein_tree(dna_coords_centered, dna_atoms)
     
     print(f"\nRunning {n_iterations} iterations...")
     print(f"  Approaches per iteration: {n_approaches}")
     print(f"  Steps per approach: {n_steps}")
     print(f"  Rotations per position: {n_rotations}")
+    print(f"  Starting distance: {starting_distance:.1f} Å")
+    print(f"  Approach distance step: {approach_distance:.1f} Å")
+    
+    # Warn if approaches would go negative
+    final_distance = starting_distance - (n_approaches - 1) * approach_distance
+    if final_distance < 5.0:
+        print(f"  WARNING: Final approach distance would be {final_distance:.1f} Å")
+        print(f"           Clamping to minimum 5.0 Å for safety")
     
     for iteration_num in range(n_iterations):
         print(f"\n{'='*60}")
@@ -144,24 +174,32 @@ def run_protein_dna_workflow(dna_file: str, protein_file: str, output_dir: str, 
             
             # Calculate initial distance for this approach
             initial_distance = starting_distance - approach_num * approach_distance
-            print(f"   Initial distance: {initial_distance:.1f} Å")
+            # CRITICAL: Ensure minimum distance to prevent negative or too-close approaches
+            initial_distance = max(5.0, initial_distance)
+            print(f"   Initial distance: {initial_distance:.1f} Å (approach {approach_num + 1}/{n_approaches})")
             
             # Generate cocoon-style trajectory using the same method as ligand simulations
             print(f"\n   Generating cocoon trajectory:")
             print(f"     Molecular weight: {protein_mw:.1f} Da")
             
-            # Use trajectory generator's cocoon method
+            # Use trajectory generator's cocoon method with CENTERED coordinates
             trajectory, times = trajectory_generator.generate_cocoon_trajectory(
-                dna_ca_coords,  # Target backbone (DNA)
-                protein_coords,  # Mobile molecule (protein)  
-                protein_atoms,   # Protein dataframe
-                protein_mw,      # Molecular weight
+                dna_ca_coords_centered,  # Target backbone (DNA) - CENTERED
+                protein_coords_centered,  # Mobile molecule (protein) - CENTERED
+                protein_atoms,           # Protein dataframe (original for properties)
+                protein_mw,              # Molecular weight
                 n_steps=n_steps,
-                dt=40,           # timestep in femtoseconds
-                target_distance=initial_distance
+                dt=40,                   # timestep in femtoseconds
+                target_distance=initial_distance,
+                approach_angle=approach_angles[approach_num]  # Pass the calculated approach angle
             )
             
             print(f"   Generated {len(trajectory)} trajectory points")
+            
+            # Translate trajectory back to original coordinate frame
+            if len(trajectory) > 0:
+                trajectory = trajectory + dna_center
+                print(f"   Trajectory translated back to original frame")
             
             # Save trajectory visualization using the standard cocoon visualization
             save_trajectories = kwargs.get('save_trajectories', True)
