@@ -1463,11 +1463,12 @@ class ProteinLigandFluxAnalyzer:
         Args:
             start_pos: Starting position
             n_steps: Number of trajectory steps
-            ligand_coords: Ligand atom coordinates  
+            ligand_coords: Ligand atom coordinates
             ligand_atoms: Ligand atom data
             molecular_weight: Molecular weight for diffusion calculation
             dt: Time step (fs)
             max_distance: Optional maximum distance from origin (for boundary)
+            max_attempts: Maximum collision retries per step
             
         Returns:
             Array of positions shape (n_steps, 3)
