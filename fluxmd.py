@@ -109,7 +109,6 @@ def convert_smiles_to_pdb_cactus(smiles_string, output_name="ligand"):
     
     pdb_file = f"{output_name}.pdb"
     sdf_file = f"{output_name}.sdf"
-    pdbqt_file = f"{output_name}.pdbqt"
     
     try:
         print(f"Converting SMILES to 3D structure using NCI CACTUS...")
@@ -141,15 +140,22 @@ def convert_smiles_to_pdb_cactus(smiles_string, output_name="ligand"):
         with open(sdf_file, 'w') as f:
             f.write(sdf_content)
         
-        # Also get PDB format for compatibility
-        pdb_url = f"https://cactus.nci.nih.gov/chemical/structure/{encoded_smiles}/file?format=pdb&get3d=true"
-        
-        with urllib.request.urlopen(pdb_url) as response:
-            pdb_content = response.read().decode('utf-8')
-        
-        # Save PDB file
-        with open(pdb_file, 'w') as f:
-            f.write(pdb_content)
+        # Convert SDF to PDB with OpenBabel to preserve bond orders
+        try:
+            subprocess.run(
+                ['obabel', sdf_file, '-O', pdb_file, '-h', '-b'],
+                check=True, capture_output=True, text=True
+            )
+            with open(pdb_file, 'r') as f:
+                pdb_content = f.read()
+        except Exception as e:
+            print(f"OpenBabel conversion failed: {e}")
+            print("  Falling back to CACTUS PDB (bond orders may be missing)...")
+            pdb_url = f"https://cactus.nci.nih.gov/chemical/structure/{encoded_smiles}/file?format=pdb&get3d=true"
+            with urllib.request.urlopen(pdb_url) as response:
+                pdb_content = response.read().decode('utf-8')
+            with open(pdb_file, 'w') as f:
+                f.write(pdb_content)
         
         # Count atoms and check aromaticity
         atom_count = pdb_content.count('HETATM')
