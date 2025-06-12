@@ -16,9 +16,11 @@ Advanced flux analysis with GPU acceleration and statistical validation.
 - Hierarchical filtering (>100M pairs)
 
 ### Flux Calculation
-Implements the flux metric: **Φᵢ = ⟨|E̅ᵢ|⟩ · Cᵢ · (1 + τᵢ)**
+Implements the signed flux metric: **Φᵢ = ⟨E̅ᵢ⟩ · Cᵢ · (1 + τᵢ)**
 
-- **Magnitude (⟨|E̅ᵢ|⟩)**: Mean force magnitude (enthalpic contribution)
+- **Signed Energy (⟨E̅ᵢ⟩)**: Mean energy-weighted vector preserving sign
+  - Negative: attractive/stabilizing interactions
+  - Positive: repulsive/destabilizing interactions
 - **Consistency (Cᵢ)**: Directional alignment (entropic ordering)
 - **Temporal (τᵢ)**: Dynamic fluctuation (stability indicator)
 

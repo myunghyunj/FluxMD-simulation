@@ -1,8 +1,14 @@
 # FluxMD GPU Implementation Notes
 
+## Signed Flux Calculation
+
+The signed flux formula **Φᵢ = ⟨E̅ᵢ⟩ · Cᵢ · (1 + τᵢ)** preserves energy signs for physical interpretation:
+- Negative flux: attractive/stabilizing interactions
+- Positive flux: repulsive/destabilizing interactions
+
 ## Temporal Fluctuation (τᵢ) Calculation
 
-The flux formula **Φᵢ = ⟨|E̅ᵢ|⟩ · Cᵢ · (1 + τᵢ)** uses different methods for calculating τᵢ:
+The flux formula uses different methods for calculating τᵢ:
 
 ### CPU Version
 ```python

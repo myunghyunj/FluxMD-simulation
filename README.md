@@ -185,10 +185,10 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
 ### Statistical Framework
 - **Bootstrap Analysis**: 1000 iterations for confidence intervals
 - **Significance Testing**: P-values for binding site identification
-- **Flux Metric**: Φᵢ = ⟨|E̅ᵢ|⟩ · Cᵢ · (1 + τᵢ)
-  - E̅ᵢ: Combined force vector
-  - Cᵢ: Directional consistency
-  - τᵢ: Temporal variation
+- **Signed Flux Metric**: Φᵢ = ⟨E̅ᵢ⟩ · Cᵢ · (1 + τᵢ)
+  - E̅ᵢ: Energy-weighted vector (preserves sign)
+  - Cᵢ: Directional consistency (coherence)
+  - τᵢ: Temporal variation (normalized variance)
 
 
 
