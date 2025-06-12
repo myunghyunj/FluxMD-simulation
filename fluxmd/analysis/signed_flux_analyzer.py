@@ -67,9 +67,9 @@ class SignedFluxAnalyzer:
             # Mean signed energy magnitude
             mean_signed_energy = np.mean(energies)
             
-            # Coherence: ||∑E⃗|| / ∑|E⃗| (but with signed energies)
-            sum_vectors = np.sum(energy_vectors, axis=0)
-            sum_magnitudes = np.sum(np.abs(energies))
+            # Coherence: ||∑v⃗|| / ∑||v⃗|| using RAW vectors (not energy-weighted)
+            sum_vectors = np.sum(vectors, axis=0)
+            sum_magnitudes = np.sum(np.linalg.norm(vectors, axis=1))
             
             if sum_magnitudes > 1e-10:
                 coherence = np.linalg.norm(sum_vectors) / sum_magnitudes

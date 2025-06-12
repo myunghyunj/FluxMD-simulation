@@ -199,6 +199,7 @@ class TrajectoryFluxAnalyzer:
     def process_iteration_files(self, directory, file_pattern, structure_file=None):
         """Process all iteration files INCLUDING pi-stacking and intra-protein contributions"""
         residue_energy_tensors = {}
+        residue_raw_vectors = {}  # For coherence calculation
         pi_stacking_contributions = {}
         interaction_type_counts = {}
         intra_protein_contributions = {}
@@ -280,10 +281,12 @@ class TrajectoryFluxAnalyzer:
                         energy = row['bond_energy']
                         energy_vector = vector * energy
                         
-                        # Store vector for this iteration
+                        # Store BOTH raw vectors and energy-weighted vectors
                         if residue_id not in residue_energy_tensors:
                             residue_energy_tensors[residue_id] = []
+                            residue_raw_vectors[residue_id] = []  # For coherence calculation
                         residue_energy_tensors[residue_id].append(energy_vector)
+                        residue_raw_vectors[residue_id].append(vector)  # Store raw vector
                         
                         # If we have separate inter/intra vectors, track them
                         if 'inter_vector_x' in row and 'intra_vector_x' in row:
@@ -340,10 +343,13 @@ class TrajectoryFluxAnalyzer:
         
         # Convert to numpy arrays and filter
         filtered_tensors = {}
+        filtered_raw_vectors = {}
         for res_id in residue_energy_tensors:
             tensor = np.array(residue_energy_tensors[res_id])
             if len(tensor) >= 5:
                 filtered_tensors[res_id] = tensor
+                if res_id in residue_raw_vectors:
+                    filtered_raw_vectors[res_id] = np.array(residue_raw_vectors[res_id])
         
         # Store inter/intra contributions for later analysis
         self.inter_contributions = {}
@@ -358,7 +364,7 @@ class TrajectoryFluxAnalyzer:
         if len(self.inter_contributions) > 0:
             print(f"   ✓ Tracked inter/intra contributions for {len(self.inter_contributions)} residues")
         
-        return filtered_tensors
+        return filtered_tensors, filtered_raw_vectors
     
     def process_gpu_trajectory_results(self, gpu_trajectory_results, residue_indices):
         """
@@ -408,7 +414,7 @@ class TrajectoryFluxAnalyzer:
         
         return filtered_tensors
     
-    def calculate_tensor_flux_differentials(self, residue_tensors, ca_coords, residue_indices):
+    def calculate_tensor_flux_differentials(self, residue_tensors, ca_coords, residue_indices, residue_raw_vectors=None):
         """Calculate flux differentials using tensor analysis with proper mapping"""
         n_residues = len(residue_indices)
         flux_differentials = np.zeros(n_residues)
@@ -461,18 +467,35 @@ class TrajectoryFluxAnalyzer:
                         else:
                             rate_of_change = 0
                         
-                        # Calculate directional consistency (coherence) matching GPU/UMA
-                        if len(smoothed_tensor) > 1:
-                            # Coherence = ||∑F⃗|| / ∑||F⃗||
-                            sum_vectors = np.sum(smoothed_tensor, axis=0)
-                            sum_magnitudes = np.sum(np.linalg.norm(smoothed_tensor, axis=1))
-                            
-                            if sum_magnitudes > 1e-10:
-                                directional_consistency = np.linalg.norm(sum_vectors) / sum_magnitudes
+                        # Calculate directional consistency (coherence) using RAW vectors
+                        if residue_raw_vectors and res_id in residue_raw_vectors:
+                            raw_vectors = residue_raw_vectors[res_id]
+                            if len(raw_vectors) > 1:
+                                # Coherence = ||∑v⃗|| / ∑||v⃗|| using raw displacement vectors
+                                sum_vectors = np.sum(raw_vectors, axis=0)
+                                sum_magnitudes = np.sum(np.linalg.norm(raw_vectors, axis=1))
+                                
+                                if sum_magnitudes > 1e-10:
+                                    directional_consistency = np.linalg.norm(sum_vectors) / sum_magnitudes
+                                else:
+                                    directional_consistency = 0.0
                             else:
                                 directional_consistency = 0.0
                         else:
-                            directional_consistency = 0.0
+                            # Fallback to energy-weighted vectors if raw vectors not available
+                            if len(smoothed_tensor) > 1:
+                                # This will give values > 1, but better than nothing
+                                sum_vectors = np.sum(smoothed_tensor, axis=0)
+                                sum_magnitudes = np.sum(np.linalg.norm(smoothed_tensor, axis=1))
+                                
+                                if sum_magnitudes > 1e-10:
+                                    directional_consistency = np.linalg.norm(sum_vectors) / sum_magnitudes
+                                    # Cap at 1.0 for the fallback case
+                                    directional_consistency = min(1.0, directional_consistency)
+                                else:
+                                    directional_consistency = 0.0
+                            else:
+                                directional_consistency = 0.0
                         
                         # Calculate flux
                         mean_magnitude = np.mean(magnitudes)
@@ -635,7 +658,7 @@ class TrajectoryFluxAnalyzer:
                 
                 # Process CSV files in this iteration
                 try:
-                    residue_tensors = self.process_iteration_files(
+                    residue_tensors, residue_raw_vectors = self.process_iteration_files(
                         iter_dir,
                         "flux_iteration_*_output_vectors.csv",
                         structure_file=protein_pdb
@@ -644,9 +667,9 @@ class TrajectoryFluxAnalyzer:
                     print(f"   ⚠️  Skipping {os.path.basename(iter_dir)}: {e}")
                     continue
                 
-                # Calculate flux differentials
+                # Calculate flux differentials with raw vectors for coherence
                 flux, derivatives = self.calculate_tensor_flux_differentials(
-                    residue_tensors, ca_coords, res_indices)
+                    residue_tensors, ca_coords, res_indices, residue_raw_vectors)
                 
                 all_flux_data.append(flux)
                 all_derivatives.append(derivatives)
