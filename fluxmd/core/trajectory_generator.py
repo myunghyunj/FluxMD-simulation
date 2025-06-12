@@ -920,20 +920,29 @@ class ProteinLigandFluxAnalyzer:
         
         return np.array(trajectory)
     
-    def generate_random_walk_trajectory(self, start_pos, n_steps, ligand_coords,
-                                      ligand_atoms, molecular_weight=300.0, dt=40,
-                                      max_distance=None):
+    def generate_random_walk_trajectory(
+        self,
+        start_pos,
+        n_steps,
+        ligand_coords,
+        ligand_atoms,
+        molecular_weight=300.0,
+        dt=40,
+        max_distance=None,
+        max_attempts=10,
+    ):
         """
         Generate a truly random Brownian walk with no directional bias.
         
         Args:
             start_pos: Starting position
             n_steps: Number of trajectory steps
-            ligand_coords: Ligand atom coordinates  
+            ligand_coords: Ligand atom coordinates
             ligand_atoms: Ligand atom data
             molecular_weight: Molecular weight for diffusion calculation
             dt: Time step (fs)
             max_distance: Optional maximum distance from origin (for boundary)
+            max_attempts: Maximum collision retries per step
             
         Returns:
             Array of positions shape (n_steps, 3)
@@ -967,28 +976,29 @@ class ProteinLigandFluxAnalyzer:
         n_rejected = 0
         
         for i in range(1, n_steps):
-            # Generate random displacement - TRUE Brownian motion
-            displacement = np.random.randn(3) * step_size
-            proposed_pos = current_pos + displacement
-            
-            # Optional: enforce maximum distance boundary
-            if max_distance is not None:
-                distance_from_center = np.linalg.norm(proposed_pos - protein_center)
-                if distance_from_center > max_distance:
-                    # Reflect off boundary
-                    direction = (proposed_pos - protein_center) / distance_from_center
-                    proposed_pos = protein_center + direction * (2 * max_distance - distance_from_center)
-            
-            # Check collision
-            test_coords = ligand_coords + (proposed_pos - ligand_coords.mean(axis=0))
-            
-            if not self.collision_detector.check_collision(test_coords, ligand_atoms):
-                current_pos = proposed_pos
-            else:
+            attempts = 0
+            while attempts < max_attempts:
+                displacement = np.random.randn(3) * step_size
+                proposed_pos = current_pos + displacement
+
+                if max_distance is not None:
+                    distance_from_center = np.linalg.norm(proposed_pos - protein_center)
+                    if distance_from_center > max_distance:
+                        direction = (proposed_pos - protein_center) / distance_from_center
+                        proposed_pos = protein_center + direction * (
+                            2 * max_distance - distance_from_center
+                        )
+
+                test_coords = ligand_coords + (proposed_pos - ligand_coords.mean(axis=0))
+                if not self.collision_detector.check_collision(test_coords, ligand_atoms):
+                    current_pos = proposed_pos
+                    break
+
+                attempts += 1
+
+            if attempts == max_attempts:
                 n_rejected += 1
-                # For true random walk, if collision occurs, stay in place
-                # (don't try smaller steps as that would bias the distribution)
-            
+
             trajectory.append(current_pos.copy())
         
         if n_rejected > 0:
