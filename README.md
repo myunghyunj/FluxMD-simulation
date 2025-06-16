@@ -306,14 +306,14 @@ conda install -c conda-forge openbabel
 - Increase approach distance
 - Verify protein-ligand proximity
 
-## Citation
+## Citation (Archive)
 
 ```bibtex
 @software{fluxmd2025,
-  title={FluxMD: Biophysical Cartography for Biomolecular Energy Dynamics},
-  author={Myunghyun Jeong},
-  year={-},
-  url={https://github.com/myunghyunj/FluxMD-simulation}
+  title={Stress Barcoding Proteins]{FluxMD: High-Throughput Protein Stress Barcoding for Dynamic Structural Analysis},
+  author={Myunghyun J. Jeong},
+  year={2025},
+  url={TBD}
 }
 ```
 
