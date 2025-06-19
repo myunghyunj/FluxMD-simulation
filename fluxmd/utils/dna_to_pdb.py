@@ -43,6 +43,10 @@ class DNABuilder:
         'AT': -11.0, 'TA': -11.0,
         'GC': -10.5, 'CG': -10.5,
     }
+
+    # Approximate groove dimensions (Å)
+    MAJOR_GROOVE_WIDTH = 22.0
+    MINOR_GROOVE_WIDTH = 12.0
     
     # Atom templates are defined in a local coordinate system where C1' is the
     # point of attachment, but not necessarily the origin.
@@ -120,6 +124,7 @@ class DNABuilder:
         self.atoms = []
         self.atom_index_map = {}  # Maps (chain, res_id, atom_name) to atom index
         self.connectivity = []  # List of atom index pairs for CONECT records
+        self.groove_points = []  # List of (major_point, minor_point)
         self._process_atom_templates()
         
     def _process_atom_templates(self):
@@ -377,12 +382,38 @@ class DNABuilder:
             if atom['chain'] == chain and atom['res_id'] == res_id:
                 return atom['res_name'][-1]  # Last character of res_name
         return 'N'  # Default
+
+    def _add_groove_atoms(self):
+        """Append pseudo-atoms for major and minor groove centers."""
+        for idx, (major, minor) in enumerate(self.groove_points, start=1):
+            major_index = len(self.atoms) + 1
+            self.atoms.append({
+                'index': major_index,
+                'name': 'MG',
+                'element': 'C',
+                'coord': major,
+                'chain': 'G',
+                'res_id': idx,
+                'res_name': 'GRO'
+            })
+
+            minor_index = len(self.atoms) + 1
+            self.atoms.append({
+                'index': minor_index,
+                'name': 'NG',
+                'element': 'C',
+                'coord': minor,
+                'chain': 'H',
+                'res_id': idx,
+                'res_name': 'GRO'
+            })
     
-    def build_dna(self, sequence: str):
+    def build_dna(self, sequence: str, include_grooves: bool = True):
         """Build B-DNA double helix from sequence with dinucleotide-specific parameters."""
         self.atoms = []
         self.atom_index_map = {}
         self.connectivity = []
+        self.groove_points = []
         n = len(sequence)
         
         # Store O3' and O5' positions for backbone connectivity
@@ -439,6 +470,23 @@ class DNABuilder:
             atom_pos_b = self.add_nucleotide(base_b, 'B', n - i, pos_b, rot_b, propeller)
             o3_positions['B'][n - i] = atom_pos_b["O3'"]
             o5_positions['B'][n - i] = atom_pos_b["O5'"]
+
+            # Compute groove centers
+            c1_a = atom_pos_a["C1'"]
+            c1_b = atom_pos_b["C1'"]
+            mid = 0.5 * (c1_a + c1_b)
+            sugar_vec = c1_b - c1_a
+            axis = np.array([0.0, 0.0, 1.0])
+            groove_dir = np.cross(sugar_vec, axis)
+            norm = np.linalg.norm(groove_dir)
+            if norm > 0:
+                groove_dir /= norm
+            else:
+                groove_dir = np.array([1.0, 0.0, 0.0])
+
+            major_point = mid + groove_dir * (self.MAJOR_GROOVE_WIDTH / 2)
+            minor_point = mid - groove_dir * (self.MINOR_GROOVE_WIDTH / 2)
+            self.groove_points.append((major_point, minor_point))
             
             # Update position for next base pair
             if i < n - 1:
@@ -457,6 +505,10 @@ class DNABuilder:
         for i in range(n, 1, -1):
             if i in o3_positions['B'] and (i - 1) in o5_positions['B']:
                 self.add_phosphate('B', i - 1, o3_positions['B'][i], o5_positions['B'][i - 1])
+
+        # Add pseudo-atoms marking groove centers
+        if include_grooves:
+            self._add_groove_atoms()
     
     def write_pdb(self, filename: str):
         """Write structure to PDB file with CONECT records."""
@@ -529,10 +581,12 @@ def main():
         epilog='Example: %(prog)s ATCGATCG -o my_dna.pdb'
     )
     parser.add_argument('sequence', help='DNA sequence (5\' to 3\'), using A, T, G, C')
-    parser.add_argument('-o', '--output', default='dna_structure.pdb', 
+    parser.add_argument('-o', '--output', default='dna_structure.pdb',
                        help='Output PDB file (default: dna_structure.pdb)')
     parser.add_argument('--no-conect', action='store_true',
                        help='Skip writing CONECT records')
+    parser.add_argument('--include-grooves', action='store_true',
+                       help='Include pseudo atoms for major/minor grooves')
     
     args = parser.parse_args()
     
@@ -548,7 +602,7 @@ def main():
     
     # Build and save
     builder = DNABuilder()
-    builder.build_dna(sequence)
+    builder.build_dna(sequence, include_grooves=args.include_grooves)
     
     # Modify write method if no CONECT requested
     if args.no_conect:

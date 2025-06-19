@@ -152,6 +152,7 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
 - B-DNA double helix with accurate geometry ([Olson et al., 1998](https://www.pnas.org/doi/10.1073/pnas.95.19.11163))
 - Complete atomic detail including sugar-phosphate backbone
 - CONECT records for all covalent bonds
+- Optional pseudo-atoms marking major and minor grooves with `--include-grooves`
 
 ## Technical Implementation
 
