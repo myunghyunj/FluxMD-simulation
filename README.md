@@ -84,7 +84,7 @@ python benchmarks/benchmark_uma.py
 ```bash
 # Clone repository
 git clone https://github.com/myunghyunj/FluxMD-simulation
-cd FluxMD
+cd FluxMD-simulation
 
 # Create conda environment (required for OpenBabel)
 conda create -n fluxmd python=3.8
