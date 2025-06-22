@@ -328,4 +328,4 @@ For questions or issues: mhjonathan@gm.gist.ac.kr
 ## Acknowledgement
 
 Engineered on top of my previous 2023 term project: https://github.com/jaehee831/protein-folding-analysis-bioinformatics
-\n**Note**: `generate_linear_cocoon_trajectory` has been removed; use `generate_uniform_linear_trajectory`.
+\n**Note**: `generate_linear_cocoon_trajectory` is deprecated. Use `generate_uniform_linear_trajectory` instead.
