@@ -48,7 +48,18 @@ class MatryoshkaTrajectoryGenerator:
         self.layer_step = params.get('layer_step', 1.5)
         self.k_surf = params.get('k_surf', 2.0)
         self.k_guid = params.get('k_guid', 0.5)
-        self.n_workers = parse_workers(params.get('n_workers'))
+        
+        # Parse workers with defensive handling
+        n_workers_param = params.get('n_workers')
+        try:
+            self.n_workers = parse_workers(n_workers_param)
+        except Exception as e:
+            print(f"Warning: Failed to parse n_workers={n_workers_param}, using auto-detection. Error: {e}")
+            self.n_workers = parse_workers(None)
+        
+        # Ensure n_workers is never None
+        if self.n_workers is None:
+            self.n_workers = parse_workers(None)
         
         self.checkpoint_dir = params.get('checkpoint_dir', None)
         self.gpu_device = params.get('gpu_device', None)
@@ -557,6 +568,11 @@ class MatryoshkaTrajectoryGenerator:
         print(f"  Layers: {n_layers}")
         print(f"  Iterations per layer: {n_iterations}")
         print(f"  Total trajectories: {n_layers * n_iterations}")
+        
+        # Ensure n_workers is valid
+        if self.n_workers is None:
+            self.n_workers = parse_workers(None)  # Will return auto-detected value
+            
         print(f"  Workers: {format_workers_info(self.n_workers)}")
         
         # Load checkpoint if available
