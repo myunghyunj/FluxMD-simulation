@@ -1,6 +1,16 @@
-# fluxmd/core/dynamics/__init__.py
-"""Brownian-Langevin dynamics for molecular trajectory generation."""
+"""
+Brownian-Langevin dynamics for molecular trajectory generation.
 
-from .brownian_roller import BrownianSurfaceRoller
+This module implements:
+- BAOAB Langevin integrator
+- Surface-constrained Brownian motion
+- Monte Carlo layer hopping
+- Geodesic guidance forces
+"""
 
-__all__ = ["BrownianSurfaceRoller"]
+from .brownian_roller import BrownianSurfaceRoller, quaternion_multiply
+
+__all__ = [
+    "BrownianSurfaceRoller",
+    "quaternion_multiply",
+]

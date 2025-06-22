@@ -708,8 +708,8 @@ def run_complete_workflow():
             # Run UMA workflow with current files
             import subprocess
             cmd = [
-                sys.executable, "fluxmd_uma.py", 
-                protein_file, ligand_file, 
+                sys.executable, "fluxmd_uma.py",
+                protein_file, ligand_file,
                 "-o", output_dir,
                 "-s", str(n_steps),
                 "-i", str(n_iterations),
@@ -790,7 +790,7 @@ def run_complete_workflow():
         run_benchmark = input("\nRun performance benchmark for optimal selection? (y/n): ").strip().lower()
         if run_benchmark == 'y':
             benchmark_use_gpu, benchmark_reason = benchmark_performance(
-                protein_atoms, ligand_atoms, 
+                protein_atoms, ligand_atoms,
                 n_test_frames=min(5, n_steps),
                 n_test_rotations=n_rotations
             )
@@ -958,8 +958,8 @@ def run_complete_workflow():
             print("\nUsing integrated GPU flux pipeline (bypassing CSV parsing)...")
             # Use integrated GPU pipeline for maximum efficiency
             flux_data = flux_analyzer.create_integrated_flux_pipeline(
-                protein_file, 
-                trajectory_analyzer.gpu_trajectory_results, 
+                protein_file,
+                trajectory_analyzer.gpu_trajectory_results,
                 output_dir
             )
             
@@ -1171,8 +1171,8 @@ def run_uma_workflow():
             else:
                 # List potential ligand files
                 ligand_extensions = ['.pdb', '.pdbqt', '.mol2', '.sdf']
-                ligand_files = [f for f in os.listdir(protein_dir) 
-                              if any(f.endswith(ext) for ext in ligand_extensions) 
+                ligand_files = [f for f in os.listdir(protein_dir)
+                              if any(f.endswith(ext) for ext in ligand_extensions)
                               and f != os.path.basename(protein_file)]
                 
                 if ligand_files:
@@ -1277,8 +1277,8 @@ def run_uma_workflow():
     # Run fluxmd_uma as subprocess with parameters
     import subprocess
     cmd = [
-        sys.executable, "fluxmd_uma.py", 
-        protein_file, ligand_file, 
+        sys.executable, "fluxmd_uma.py",
+        protein_file, ligand_file,
         "-o", output_dir,
         "-s", str(n_steps),
         "-i", str(n_iterations),
@@ -1971,34 +1971,38 @@ def display_main_menu():
     
     print("Welcome to FluxMD - GPU-accelerated binding site prediction")
     print("\nOptions:")
-    print("1. Run complete workflow (standard cocoon)")
-    print("2. Run UMA-optimized workflow (zero-copy GPU, 100x faster)")
-    print("3. Convert SMILES to PDB (CACTUS with aromatics or OpenBabel)")
-    print("4. Generate DNA structure from sequence")
-    print("5. Protein-DNA Interaction Analysis (UMA)")
-    print("6. Run Matryoshka trajectory analysis (physics-based surface dynamics)")
-    print("7. Exit")
+    print("1. Run Matryoshka trajectory analysis ⟵ default")
+    print("2. Convert SMILES to PDB (CACTUS with aromatics or OpenBabel)")
+    print("3. Generate DNA structure from sequence")
+    print("4. Protein-DNA Interaction Analysis (UMA)")
+    print("5. Legacy workflows ▶")
+    print("6. Exit")
     print("="*80)
     
-    choice = input("Enter your choice [1-7]: ").strip()
+    choice = input("Enter your choice [1-6]: ").strip()
     return choice
 
 
 def handle_main_menu(choice):
     """Handle the user's choice and execute the corresponding workflow"""
     if choice == "1":
-        run_complete_workflow()
-    elif choice == "2":
-        run_uma_workflow()
-    elif choice == "3":
-        run_smiles_converter()
-    elif choice == "4":
-        run_dna_generator()
-    elif choice == "5":
-        run_protein_dna_uma_workflow()
-    elif choice == "6":
         run_matryoshka_workflow()
-    elif choice == "7":
+    elif choice == "2":
+        run_smiles_converter()
+    elif choice == "3":
+        run_dna_generator()
+    elif choice == "4":
+        run_protein_dna_uma_workflow()
+    elif choice == "5":
+        print("\nLegacy workflows:")
+        print("  a. Standard Cocoon (1.x)")
+        print("  b. UMA Cocoon (1.x zero-copy GPU)")
+        legacy = input("Select [a/b] or press Enter to cancel: ").lower()
+        if legacy == "a":
+            run_complete_workflow()
+        elif legacy == "b":
+            run_uma_workflow()
+    elif choice == "6":
         print("\nExiting FluxMD. Goodbye!")
         sys.exit()
     else:
@@ -2075,8 +2079,8 @@ def run_matryoshka_batch(params: dict):
         
         # Save parameters
         save_matryoshka_parameters(
-            params['output_dir'], 
-            params['protein_file'], 
+            params['output_dir'],
+            params['protein_file'],
             params['ligand_file'],
             params['n_layers'],
             params['n_trajectories_per_layer'],
@@ -2093,8 +2097,8 @@ def run_matryoshka_batch(params: dict):
         
         # Initialize trajectory generator for helper methods
         traj_gen = TrajectoryGenerator(
-            params['protein_file'], 
-            params['ligand_file'], 
+            params['protein_file'],
+            params['ligand_file'],
             params['output_dir'],
             energy_function='ref15'
         )

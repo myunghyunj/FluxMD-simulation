@@ -49,16 +49,20 @@ class MatryoshkaTrajectoryGenerator:
         self.k_surf = params.get('k_surf', 2.0)
         self.k_guid = params.get('k_guid', 0.5)
 
+        # Robust parsing of n_workers with fallback to auto-detection.
         raw_n_workers = params.get('n_workers')
-        if raw_n_workers in (None, '', 'auto'):
+
+        try:
+            # Centralized parsing function ensures consistent handling.
+            self.n_workers = parse_workers(raw_n_workers)
+        except Exception as e:
+            print(f"Warning: Invalid n_workers='{raw_n_workers}'. Auto-detecting optimal value. Reason: {e}")
             self.n_workers = max(1, os.cpu_count() - 1)
-        else:
-            try:
-                self.n_workers = max(1, int(raw_n_workers))
-            except ValueError as e:
-                raise ValueError(
-                    f"Invalid n_workers value: {raw_n_workers}. Must be 'auto' or a positive integer."
-                ) from e
+
+        # Final defensive check (shouldn't be necessary, but added for absolute safety).
+        if not isinstance(self.n_workers, int) or self.n_workers < 1:
+            print(f"Warning: Unexpected parsed n_workers value '{self.n_workers}', using auto-detection.")
+            self.n_workers = max(1, os.cpu_count() - 1)
         
         self.checkpoint_dir = params.get('checkpoint_dir', None)
         self.gpu_device = params.get('gpu_device', None)
@@ -571,6 +575,11 @@ class MatryoshkaTrajectoryGenerator:
         print(f"  Layers: {n_layers}")
         print(f"  Iterations per layer: {n_iterations}")
         print(f"  Total trajectories: {n_layers * n_iterations}")
+        
+        # Ensure n_workers is valid
+        if self.n_workers is None:
+            self.n_workers = parse_workers(None)  # Will return auto-detected value
+            
         print(f"  Workers: {format_workers_info(self.n_workers)}")
         
         # Load checkpoint if available
