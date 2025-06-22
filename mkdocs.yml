@@ -1,0 +1,7 @@
+site_name: FluxMD
+nav:
+  - Home: index.md
+  - Overview: readme_overview.md
+  - Algorithms: algorithms.md
+docs_dir: docs
+site_dir: site
