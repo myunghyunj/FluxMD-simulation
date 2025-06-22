@@ -305,7 +305,8 @@ MIT License. See [LICENSE](LICENSE) file for details.
 
 For questions or issues: mhjonathan@gm.gist.ac.kr
 
-## Acknowledgement
+### Acknowledgement
 
-Engineered on top of my previous 2023 term project: https://github.com/jaehee831/protein-folding-analysis-bioinformatics
-\n**Note**: `generate_linear_cocoon_trajectory` has been removed; use `generate_uniform_linear_trajectory`.
+Engineered on top of my previous 2023 term project: [Protein Folding Analysis Bioinformatics](https://github.com/jaehee831/protein-folding-analysis-bioinformatics).
+
+**Note**: `generate_linear_cocoon_trajectory` has been removed; use `generate_uniform_linear_trajectory`.
