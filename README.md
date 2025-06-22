@@ -26,14 +26,14 @@ graph TD
         Interactive --> LegacyMenu["Legacy Workflows"]
     end
 
-    Matryoshka -.->|"1. Matryoshka (Default)"| Interactive
+    Matryoshka -.->|"1. Matryoshka"| Interactive
     SMILES -.->|"2. SMILES"| Interactive
     DNA -.->|"3. DNA"| Interactive
     PDNA -.->|"4. Protein-DNA"| Interactive
     LegacyMenu -.->|"5. Legacy"| Interactive
 
-    LegacyMenu --> Standard["Standard Cocoon (1.x)"]
-    LegacyMenu --> UMA["UMA Cocoon (1.x)"]
+    LegacyMenu --> Standard["Standard Cocoon"]
+    LegacyMenu --> UMA["UMA Cocoon"]
 
     Standard -.->|"a. Standard"| LegacyMenu
     UMA -.->|"b. UMA"| LegacyMenu
@@ -44,13 +44,13 @@ graph TD
         Anchors --> Dynamics["3. Run Brownian Dynamics"]
         Dynamics --> REF15["4. Calculate REF15 Energy"]
         REF15 --> Flux["5. Compute Energy Flux"]
-        Flux --> Stats["6. Bootstrap & Report"]
+        Flux --> Stats["6. Bootstrap and Report"]
     end
 
     subgraph Outputs
-        Stats --> Report["Flux Report (.txt)"]
-        Stats --> Data["Processed Data (.csv)"]
-        Stats --> TrajectoryPlots["Trajectory Plots (.png)"]
+        Stats --> Report["Flux Report (txt)"]
+        Stats --> Data["Processed Data (csv)"]
+        Stats --> TrajectoryPlots["Trajectory Plots (png)"]
     end
 ```
 
@@ -310,4 +310,3 @@ For questions or issues: mhjonathan@gm.gist.ac.kr
 Engineered on top of my previous 2023 term project: [Protein Folding Analysis Bioinformatics](https://github.com/jaehee831/protein-folding-analysis-bioinformatics).
 
 **Note**: `generate_linear_cocoon_trajectory` has been removed; use `generate_uniform_linear_trajectory`.
-
