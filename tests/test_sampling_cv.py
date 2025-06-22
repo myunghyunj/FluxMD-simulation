@@ -1,6 +1,6 @@
 import numpy as np
-from fluxmd.core.cylindrical_sampler import FastCylindricalSampler
 
+from fluxmd.core.cylindrical_sampler import FastCylindricalSampler
 
 np.random.seed(0)
 
