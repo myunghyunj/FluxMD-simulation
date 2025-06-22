@@ -19,11 +19,17 @@ graph TD
     end
 
     subgraph "Interactive Menu"
-        Interactive --> |1. Matryoshka (Default)| Matryoshka[Matryoshka Engine]
-        Interactive --> |2. SMILES| SMILES[SMILES to PDB]
-        Interactive --> |3. DNA| DNA[DNA Generator]
-        Interactive --> |4. Protein-DNA| PDNA[Protein-DNA UMA]
-        Interactive --> |5. Legacy| LegacyMenu[Legacy Workflows]
+        Interactive --> Matryoshka[Matryoshka Engine]
+        Interactive --> SMILES[SMILES to PDB]
+        Interactive --> DNA[DNA Generator]
+        Interactive --> PDNA[Protein-DNA UMA]
+        Interactive --> LegacyMenu[Legacy Workflows]
+
+        Matryoshka -.->|"1. Matryoshka (Default)"| Interactive
+        SMILES -.->|"2. SMILES"| Interactive
+        DNA -.->|"3. DNA"| Interactive
+        PDNA -.->|"4. Protein-DNA"| Interactive
+        LegacyMenu -.->|"5. Legacy"| Interactive
     end
     
     LegacyMenu --> |a. Standard| Standard[Standard Cocoon (1.x)]
@@ -89,12 +95,13 @@ FluxMD provides multiple entry points optimized for different use cases:
 
 ### 1. `fluxmd` - Interactive Interface
 The main entry point with a menu-driven interface:
-- **Option 1**: Standard workflow - Complete analysis with file I/O
-- **Option 2**: UMA workflow - GPU-accelerated unified memory pipeline  
-- **Option 3**: SMILES converter - Chemical structure to PDB
-- **Option 4**: DNA generator - Sequence to double helix structure (currently unstable!)
-- FluxMD accepts .mmCIf inputs. (AlphaFold server friendly)
-  
+- **Option 1**: Matryoshka workflow (Default)
+- **Option 2**: SMILES converter - Chemical structure to PDB
+- **Option 3**: DNA generator - Sequence to double helix structure
+- **Option 4**: Protein-DNA UMA analysis
+- **Option 5**: Legacy workflows (Standard cocoon and UMA cocoon, deprecated)
+- **Option 6**: Exit
+
 ### 2. `fluxmd-uma` - Command-Line Interface
 High-performance command-line tool for automation:
 ```bash
