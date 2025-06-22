@@ -319,7 +319,7 @@ conda install -c conda-forge openbabel
 
 ## License
 
-MIT License. See [LICENSE](LICENSE) file for details.
+MIT License. See [LICENSE](../LICENSE) file for details.
 
 ## Contact
 

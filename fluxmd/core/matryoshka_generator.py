@@ -48,7 +48,17 @@ class MatryoshkaTrajectoryGenerator:
         self.layer_step = params.get('layer_step', 1.5)
         self.k_surf = params.get('k_surf', 2.0)
         self.k_guid = params.get('k_guid', 0.5)
-        self.n_workers = parse_workers(params.get('n_workers'))
+
+        n_workers_param = params.get('n_workers', 'auto')
+        if n_workers_param in (None, '', 'auto'):
+            self.n_workers = max(1, os.cpu_count() - 1)
+        else:
+            try:
+                self.n_workers = max(1, int(n_workers_param))
+            except ValueError as e:
+                raise ValueError(
+                    f"Invalid n_workers value: {n_workers_param}. Must be 'auto' or a positive integer."
+                ) from e
         
         self.checkpoint_dir = params.get('checkpoint_dir', None)
         self.gpu_device = params.get('gpu_device', None)
@@ -547,6 +557,10 @@ class MatryoshkaTrajectoryGenerator:
         Returns:
             List of trajectory dictionaries
         """
+        assert isinstance(self.n_workers, int) and self.n_workers >= 1, (
+            "Runtime error: n_workers must be a positive integer."
+        )
+
         # Use adaptive layer count if not specified
         if n_layers is None:
             n_layers = min(self.max_layers, 10)
