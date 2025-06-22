@@ -23,6 +23,7 @@ from scipy.spatial import ConvexHull, Delaunay, cKDTree
 import os
 import time
 from datetime import datetime
+from functools import lru_cache
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import warnings
@@ -34,6 +35,7 @@ from .protonation_aware_interactions import calculate_interactions_with_protonat
 from .intelligent_cocoon_sampler import IntelligentCocoonSampler
 from .ref15_energy import get_ref15_calculator
 from .energy_config import DEFAULT_ENERGY_FUNCTION
+from .cylindrical_sampler import FastCylindricalSampler
 
 # Import utils
 from ..utils.pdb_parser import PDBParser
@@ -460,10 +462,8 @@ class ProteinLigandFluxAnalyzer:
         # Choose trajectory generation method based on shape
         if geometry['shape_type'] == 'linear':
             print(f"     → Using cylindrical trajectory for linear molecule")
-            return self.generate_linear_cocoon_trajectory(
-                protein_coords, ligand_coords, ligand_atoms,
-                molecular_weight, n_steps, dt, target_distance,
-                geometry, step_size, approach_angle
+            return self.generate_uniform_linear_trajectory(
+                geometry, n_steps, target_distance
             )
         else:
             print(f"     → Using spherical trajectory for {geometry['shape_type']} molecule")
@@ -472,6 +472,28 @@ class ProteinLigandFluxAnalyzer:
                 molecular_weight, n_steps, dt, target_distance,
                 geometry, step_size, approach_angle
             )
+
+    @lru_cache(maxsize=1)
+    def _groove_angles_from_builder(self) -> tuple[float, float]:
+        """Return (theta_minor, theta_major) from stored groove markers."""
+        pts = getattr(self.dna_builder, "_groove_pts", None)
+        if not pts:
+            raise ValueError("DNA builder missing groove markers")
+        mid = len(pts) // 2
+        minor_pt, major_pt = pts[mid]
+        theta_m = float(np.arctan2(minor_pt[1], minor_pt[0]))
+        theta_M = float(np.arctan2(major_pt[1], major_pt[0]))
+        return theta_m, theta_M
+
+
+    def generate_uniform_linear_trajectory(self, geometry, n_steps, start_dist):
+        length = geometry['dimensions'][0]
+        radius = max(geometry['dimensions'][1], geometry['dimensions'][2]) / 2 + start_dist
+        theta_m, theta_M = self._groove_angles_from_builder()
+        sampler = FastCylindricalSampler(length, radius, pad=0.1)
+        pts = sampler.sample(n_steps, (theta_m, theta_M))
+        times = np.linspace(0, n_steps * 40, n_steps)
+        return pts, times
         
     def determine_dna_trajectory_mode(self, protein_coords, dna_coords, dna_geometry):
         """
@@ -515,53 +537,6 @@ class ProteinLigandFluxAnalyzer:
         
         return mode
     
-    def generate_linear_cocoon_trajectory(self, protein_coords, ligand_coords, ligand_atoms,
-                                        molecular_weight, n_steps, dt, target_distance,
-                                        geometry, step_size, approach_angle=0.0):
-        """
-        Generate adaptive trajectory for DNA based on protein size.
-        
-        This method automatically selects the appropriate trajectory type:
-        - Spiral: For small peptides that can wrap around DNA
-        - Groove following: For medium proteins that fit in grooves
-        - Sliding: For large proteins that slide along DNA
-        - Docking: For very large proteins
-        
-        IMPORTANT: In DNA-protein workflow context:
-        - protein_coords = DNA coordinates (the target)
-        - ligand_coords = protein coordinates (the mobile molecule)
-        
-        Args:
-            approach_angle: Starting angle offset for trajectory
-        """
-        # Determine trajectory mode
-        # CRITICAL: In DNA-protein workflow, the naming is reversed:
-        # - protein_coords = DNA (the target)
-        # - ligand_coords = protein (the mobile molecule)
-        # So we pass ligand_coords as protein and protein_coords as DNA
-        mode = self.determine_dna_trajectory_mode(ligand_coords, protein_coords, geometry)
-        
-        # Call appropriate trajectory generator
-        if mode == 'spiral':
-            return self.generate_spiral_trajectory(
-                protein_coords, ligand_coords, ligand_atoms, molecular_weight,
-                n_steps, dt, target_distance, geometry, step_size, approach_angle
-            )
-        elif mode == 'groove_following':
-            return self.generate_groove_following_trajectory(
-                protein_coords, ligand_coords, ligand_atoms, molecular_weight,
-                n_steps, dt, target_distance, geometry, step_size, approach_angle
-            )
-        elif mode == 'sliding':
-            return self.generate_sliding_trajectory(
-                protein_coords, ligand_coords, ligand_atoms, molecular_weight,
-                n_steps, dt, target_distance, geometry, step_size, approach_angle
-            )
-        else:  # docking
-            return self.generate_docking_trajectory(
-                protein_coords, ligand_coords, ligand_atoms, molecular_weight,
-                n_steps, dt, target_distance, geometry, step_size, approach_angle
-            )
     
     def generate_spiral_trajectory(self, protein_coords, ligand_coords, ligand_atoms,
                                  molecular_weight, n_steps, dt, target_distance,

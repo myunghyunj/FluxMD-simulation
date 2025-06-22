@@ -5,10 +5,42 @@ Generates accurate B-DNA double helix structures from DNA sequences.
 Includes CONECT records for proper connectivity and optimized base pair alignment.
 """
 
-import numpy as np
 import argparse
 import math
 from typing import Dict, List, Tuple, Set
+
+
+import numpy as np
+
+# --- Constants -------------------------------------------------------------
+GROOVE_ASYMMETRY_DEG = 160.0
+MINOR_OFFSET_DEG = 80.0
+MINOR_BASE_RADIUS = 6.0
+MAJOR_BASE_RADIUS = 11.0
+SEQ_RADIUS_COEF = 0.50
+
+
+# --- Public helpers --------------------------------------------------------
+def groove_vectors(twist_rad: float, roll_deg: float = 0.0) -> tuple[np.ndarray, np.ndarray]:
+    """Return unit vectors toward minor and major grooves."""
+    dphi = math.radians(MINOR_OFFSET_DEG + 0.5 * roll_deg)
+    v_minor = np.array([math.cos(twist_rad + dphi), math.sin(twist_rad + dphi), 0.0])
+    v_major = np.array(
+        [
+            math.cos(twist_rad + dphi + math.radians(GROOVE_ASYMMETRY_DEG)),
+            math.sin(twist_rad + dphi + math.radians(GROOVE_ASYMMETRY_DEG)),
+            0.0,
+        ]
+    )
+    return v_minor / np.linalg.norm(v_minor), v_major / np.linalg.norm(v_major)
+
+
+def minor_radius(sequence: str, idx: int, window: int = 5) -> float:
+    """Sequence-aware minor-groove radius."""
+    half = window // 2
+    seg = sequence[max(0, idx - half) : idx + half + 1]
+    gc = (seg.count("G") + seg.count("C")) / max(len(seg), 1.0)
+    return MINOR_BASE_RADIUS + SEQ_RADIUS_COEF * (gc - 0.5)
 
 class DNABuilder:
     """Builds B-DNA structures with dinucleotide-specific parameters."""
@@ -37,7 +69,7 @@ class DNABuilder:
         'GA': 3.39, 'GT': 3.38, 'GG': 3.38, 'GC': 3.38,
         'CA': 3.45, 'CT': 3.38, 'CG': 3.32, 'CC': 3.38,
     }
-    
+
     # Propeller twist angles for base pairs (degrees)
     BASE_PAIR_PROPELLER = {
         'AT': -11.0, 'TA': -11.0,
@@ -120,6 +152,7 @@ class DNABuilder:
         self.atoms = []
         self.atom_index_map = {}  # Maps (chain, res_id, atom_name) to atom index
         self.connectivity = []  # List of atom index pairs for CONECT records
+        self._groove_pts = []
         self._process_atom_templates()
         
     def _process_atom_templates(self):
@@ -378,11 +411,17 @@ class DNABuilder:
                 return atom['res_name'][-1]  # Last character of res_name
         return 'N'  # Default
     
-    def build_dna(self, sequence: str):
-        """Build B-DNA double helix from sequence with dinucleotide-specific parameters."""
+    def build_dna(self, sequence: str, groove_mode: str = "static"):
+        """Build B-DNA double helix from sequence."""
+        if not sequence:
+            raise ValueError("sequence must not be empty")
+        illegal = set(sequence) - set("ATGC")
+        if illegal:
+            raise ValueError(f"illegal characters in sequence: {illegal}")
         self.atoms = []
         self.atom_index_map = {}
         self.connectivity = []
+        self._groove_pts = []
         n = len(sequence)
         
         # Store O3' and O5' positions for backbone connectivity
@@ -406,6 +445,14 @@ class DNABuilder:
             
             # Common rotation around the helix axis
             rot_z_twist = self.rotation_z(cumulative_twist)
+
+            r_minor = (
+                minor_radius(sequence, i) if groove_mode == "seq" else MINOR_BASE_RADIUS
+            )
+            r_major = MAJOR_BASE_RADIUS
+            v_minor, v_major = groove_vectors(cumulative_twist)
+            axis = np.array([0.0, 0.0, z_position])
+            self._groove_pts.append((axis + r_minor * v_minor, axis + r_major * v_major))
             
             # With the processed templates, the geometry is now intrinsically correct.
             # The sugar will point away from the helix axis, and the base will point toward it.
@@ -529,10 +576,12 @@ def main():
         epilog='Example: %(prog)s ATCGATCG -o my_dna.pdb'
     )
     parser.add_argument('sequence', help='DNA sequence (5\' to 3\'), using A, T, G, C')
-    parser.add_argument('-o', '--output', default='dna_structure.pdb', 
+    parser.add_argument('-o', '--output', default='dna_structure.pdb',
                        help='Output PDB file (default: dna_structure.pdb)')
     parser.add_argument('--no-conect', action='store_true',
                        help='Skip writing CONECT records')
+    parser.add_argument('--groove-mode', default='static', choices=['static', 'seq'],
+                        help='Minor groove radius mode')
     
     args = parser.parse_args()
     
@@ -548,7 +597,7 @@ def main():
     
     # Build and save
     builder = DNABuilder()
-    builder.build_dna(sequence)
+    builder.build_dna(sequence, groove_mode=args.groove_mode)
     
     # Modify write method if no CONECT requested
     if args.no_conect:

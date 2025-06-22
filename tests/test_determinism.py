@@ -2,6 +2,8 @@ import os
 import sys
 import hashlib
 import numpy as np
+
+np.random.seed(0)
 import pandas as pd
 import torch
 
