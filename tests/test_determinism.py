@@ -2,8 +2,12 @@ import os
 import sys
 import hashlib
 import numpy as np
+
+np.random.seed(0)
 import pandas as pd
-import torch
+import pytest
+
+torch = pytest.importorskip("torch", reason="torch is required for determinism tests")
 
 # Allow running tests without installing the package
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))

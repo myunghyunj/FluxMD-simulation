@@ -1,0 +1,9 @@
+*.pyc
+__pycache__/
+.site/
+site/
+htmlcov/
+.coverage
+baseline_tmp/
+
+benchmarks/*.pdb
