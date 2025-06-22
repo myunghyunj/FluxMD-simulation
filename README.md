@@ -26,31 +26,31 @@ graph TD
         Interactive --> LegacyMenu["Legacy Workflows"]
     end
 
-    Matryoshka -.->|"1. Matryoshka"| Interactive
-    SMILES -.->|"2. SMILES"| Interactive
-    DNA -.->|"3. DNA"| Interactive
-    PDNA -.->|"4. Protein-DNA"| Interactive
-    LegacyMenu -.->|"5. Legacy"| Interactive
+    Matryoshka --> Interactive
+    SMILES --> Interactive
+    DNA --> Interactive
+    PDNA --> Interactive
+    LegacyMenu --> Interactive
 
     LegacyMenu --> Standard["Standard Cocoon"]
     LegacyMenu --> UMA["UMA Cocoon"]
 
-    Standard -.->|"a. Standard"| LegacyMenu
-    UMA -.->|"b. UMA"| LegacyMenu
+    Standard --> LegacyMenu
+    UMA --> LegacyMenu
 
     subgraph Core_Physics_and_Analysis
-        Matryoshka --> SES["1. Build SES Surface"]
-        SES --> Anchors["2. Define PCA Anchors"]
-        Anchors --> Dynamics["3. Run Brownian Dynamics"]
-        Dynamics --> REF15["4. Calculate REF15 Energy"]
-        REF15 --> Flux["5. Compute Energy Flux"]
-        Flux --> Stats["6. Bootstrap and Report"]
+        Matryoshka --> SES["Build SES Surface"]
+        SES --> Anchors["Define PCA Anchors"]
+        Anchors --> Dynamics["Run Brownian Dynamics"]
+        Dynamics --> REF15["Calculate REF15 Energy"]
+        REF15 --> Flux["Compute Energy Flux"]
+        Flux --> Stats["Bootstrap and Report"]
     end
 
     subgraph Outputs
-        Stats --> Report["Flux Report (txt)"]
-        Stats --> Data["Processed Data (csv)"]
-        Stats --> TrajectoryPlots["Trajectory Plots (png)"]
+        Stats --> Report["Flux Report txt"]
+        Stats --> Data["Processed Data csv"]
+        Stats --> TrajectoryPlots["Trajectory Plots png"]
     end
 ```
 
