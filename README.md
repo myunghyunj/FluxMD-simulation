@@ -32,8 +32,11 @@ graph TD
         LegacyMenu -.->|"5. Legacy"| Interactive
     end
     
-    LegacyMenu --> |a. Standard| Standard[Standard Cocoon (1.x)]
-    LegacyMenu --> |b. UMA| UMA[UMA Cocoon (1.x)]
+    LegacyMenu --> Standard[Standard Cocoon (1.x)]
+    LegacyMenu --> UMA[UMA Cocoon (1.x)]
+
+    Standard -.->|"a. Standard"| LegacyMenu
+    UMA -.->|"b. UMA"| LegacyMenu
 
     subgraph "Core Physics & Analysis"
         Matryoshka --> SES[1. Build SES Surface]
