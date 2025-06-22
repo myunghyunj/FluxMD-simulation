@@ -14,43 +14,43 @@ This major release is intrinsically optimized for modern chip architectures—in
 
 ```mermaid
 graph TD
-    subgraph "Entry Points"
-        CLI[Command Line] --> Interactive[fluxmd Interactive Menu]
+    subgraph Entry_Points
+        CLI["Command Line"] --> Interactive["FluxMD Interactive Menu"]
     end
 
-    subgraph "Interactive Menu"
-        Interactive --> Matryoshka[Matryoshka Engine]
-        Interactive --> SMILES[SMILES to PDB]
-        Interactive --> DNA[DNA Generator]
-        Interactive --> PDNA[Protein-DNA UMA]
-        Interactive --> LegacyMenu[Legacy Workflows]
-
-        Matryoshka -.->|"1. Matryoshka (Default)"| Interactive
-        SMILES -.->|"2. SMILES"| Interactive
-        DNA -.->|"3. DNA"| Interactive
-        PDNA -.->|"4. Protein-DNA"| Interactive
-        LegacyMenu -.->|"5. Legacy"| Interactive
+    subgraph Interactive_Menu
+        Interactive --> Matryoshka["Matryoshka Engine"]
+        Interactive --> SMILES["SMILES to PDB"]
+        Interactive --> DNA["DNA Generator"]
+        Interactive --> PDNA["Protein-DNA UMA"]
+        Interactive --> LegacyMenu["Legacy Workflows"]
     end
-    
-    LegacyMenu --> Standard[Standard Cocoon (1.x)]
-    LegacyMenu --> UMA[UMA Cocoon (1.x)]
+
+    Matryoshka -.->|"1. Matryoshka (Default)"| Interactive
+    SMILES -.->|"2. SMILES"| Interactive
+    DNA -.->|"3. DNA"| Interactive
+    PDNA -.->|"4. Protein-DNA"| Interactive
+    LegacyMenu -.->|"5. Legacy"| Interactive
+
+    LegacyMenu --> Standard["Standard Cocoon (1.x)"]
+    LegacyMenu --> UMA["UMA Cocoon (1.x)"]
 
     Standard -.->|"a. Standard"| LegacyMenu
     UMA -.->|"b. UMA"| LegacyMenu
 
-    subgraph "Core Physics & Analysis"
-        Matryoshka --> SES[1. Build SES Surface]
-        SES --> Anchors[2. Define PCA Anchors]
-        Anchors --> Dynamics[3. Run Brownian Dynamics]
-        Dynamics --> REF15[4. Calculate REF15 Energy]
-        REF15 --> Flux[5. Compute Energy Flux]
-        Flux --> Stats[6. Bootstrap & Report]
+    subgraph Core_Physics_and_Analysis
+        Matryoshka --> SES["1. Build SES Surface"]
+        SES --> Anchors["2. Define PCA Anchors"]
+        Anchors --> Dynamics["3. Run Brownian Dynamics"]
+        Dynamics --> REF15["4. Calculate REF15 Energy"]
+        REF15 --> Flux["5. Compute Energy Flux"]
+        Flux --> Stats["6. Bootstrap & Report"]
     end
 
-    subgraph "Outputs"
-        Stats --> Report[Flux Report (.txt)]
-        Stats --> Data[Processed Data (.csv)]
-        Stats --> TrajectoryPlots[Trajectory Plots (.png)]
+    subgraph Outputs
+        Stats --> Report["Flux Report (.txt)"]
+        Stats --> Data["Processed Data (.csv)"]
+        Stats --> TrajectoryPlots["Trajectory Plots (.png)"]
     end
 ```
 
