@@ -7,3 +7,4 @@ htmlcov/
 baseline_tmp/
 
 benchmarks/*.pdb
+CLAUDE.md
