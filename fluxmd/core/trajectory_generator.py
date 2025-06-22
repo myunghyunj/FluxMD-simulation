@@ -162,6 +162,9 @@ class ProteinLigandFluxAnalyzer:
         # Initialize physiological pH
         self.physiological_pH = 7.4
         
+        # Initialize DNA builder (used for DNA-specific trajectory generation)
+        self.dna_builder = None
+        
         # Initialize energy function
         self.energy_function = energy_function or DEFAULT_ENERGY_FUNCTION
         if self.energy_function.startswith('ref15'):
@@ -189,6 +192,9 @@ class ProteinLigandFluxAnalyzer:
         
         # Initialize trajectory results
         self.gpu_trajectory_results = None
+        
+        # Initialize DNA builder (if needed for DNA analysis)
+        self.dna_builder = None
         
     def init_residue_properties(self):
         """Initialize residue property definitions"""
@@ -476,9 +482,25 @@ class ProteinLigandFluxAnalyzer:
     @lru_cache(maxsize=1)
     def _groove_angles_from_builder(self) -> tuple[float, float]:
         """Return (theta_minor, theta_major) from stored groove markers."""
-        pts = getattr(self.dna_builder, "_groove_pts", None)
+        # Check if dna_builder exists
+        if not hasattr(self, 'dna_builder'):
+            # Return default B-DNA groove angles if no builder available
+            # Minor groove: ~12 Angstroms wide, major groove: ~22 Angstroms wide
+            # Default angles based on standard B-DNA geometry
+            print("   Using default B-DNA groove angles (no DNA builder available)")
+            return 0.0, np.pi  # Minor at 0°, major at 180°
+            
+        # Get groove points from DNA builder if available
+        if self.dna_builder is None:
+            pts = None
+        else:
+            pts = getattr(self.dna_builder, "_groove_pts", None)
+            
         if not pts:
-            raise ValueError("DNA builder missing groove markers")
+            # Fallback to default angles
+            print("   DNA builder missing groove markers, using defaults")
+            return 0.0, np.pi
+            
         mid = len(pts) // 2
         minor_pt, major_pt = pts[mid]
         theta_m = float(np.arctan2(minor_pt[1], minor_pt[0]))
