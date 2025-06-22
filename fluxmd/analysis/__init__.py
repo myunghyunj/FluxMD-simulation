@@ -31,7 +31,4 @@ except (ImportError, ModuleNotFoundError):  # torch or cuda libs absent
     UMAFluxAnalyzer = _UnavailableUMA  # type: ignore
     warnings.warn("PyTorch not available – UMA flux analyzer disabled.", ImportWarning)
 
-__all__ = [
-    'TrajectoryFluxAnalyzer',
-    'UMAFluxAnalyzer'
-]
+__all__ = ["TrajectoryFluxAnalyzer", "UMAFluxAnalyzer"]
