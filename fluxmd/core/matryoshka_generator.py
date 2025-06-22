@@ -571,6 +571,11 @@ class MatryoshkaTrajectoryGenerator:
         print(f"  Layers: {n_layers}")
         print(f"  Iterations per layer: {n_iterations}")
         print(f"  Total trajectories: {n_layers * n_iterations}")
+        
+        # Ensure n_workers is valid
+        if self.n_workers is None:
+            self.n_workers = parse_workers(None)  # Will return auto-detected value
+            
         print(f"  Workers: {format_workers_info(self.n_workers)}")
         
         # Load checkpoint if available
