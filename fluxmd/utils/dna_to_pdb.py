@@ -21,7 +21,7 @@ SEQ_RADIUS_COEF = 0.50
 
 
 # --- Public helpers --------------------------------------------------------
-def groove_vectors(twist_rad: float, roll_deg: float = 0.0) -> tuple[np.ndarray, np.ndarray]:
+def groove_vectors(twist_rad: float, roll_deg: float = 0.0) -> Tuple[np.ndarray, np.ndarray]:
     """Return unit vectors toward minor and major grooves."""
     dphi = math.radians(MINOR_OFFSET_DEG + 0.5 * roll_deg)
     v_minor = np.array([math.cos(twist_rad + dphi), math.sin(twist_rad + dphi), 0.0])
