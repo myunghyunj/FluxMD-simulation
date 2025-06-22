@@ -4,10 +4,12 @@ FluxMD: GPU-accelerated binding site prediction using flux differential analysis
 
 import os
 import sys
+import argparse
 import multiprocessing as mp
 import platform
 import subprocess
 import tempfile
+import time
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -18,6 +20,20 @@ warnings.filterwarnings('ignore')
 from fluxmd.core.trajectory_generator import ProteinLigandFluxAnalyzer
 from fluxmd.analysis.flux_analyzer import TrajectoryFluxAnalyzer
 from fluxmd.gpu.gpu_accelerated_flux import get_device
+from fluxmd.utils.config_parser import load_config, print_derived_constants, create_example_config
+from fluxmd.utils.pdb_parser import PDBParser
+from fluxmd.utils.cpu import parse_workers, format_workers_info
+
+
+def check_gpu_availability():
+    """Check if GPU is available for computation"""
+    try:
+        device = get_device()
+        if 'mps' in str(device) or 'cuda' in str(device):
+            return True
+    except:
+        pass
+    return False
 
 
 def benchmark_performance(protein_atoms, ligand_atoms, n_test_frames=5, n_test_rotations=12):
@@ -1613,21 +1629,358 @@ def run_protein_dna_uma_workflow():
         print(f"\nAn error occurred during the Protein-DNA workflow: {e}")
 
 
+def run_matryoshka_workflow():
+    """Run the Matryoshka trajectory workflow with physics-based surface dynamics"""
+    print_banner("MATRYOSHKA TRAJECTORY ANALYSIS")
+    print("Advanced physics-based trajectory generation with Brownian dynamics")
+    print("\nFeatures:")
+    print("  ✓ Solvent-excluded surface (SES) based trajectories")
+    print("  ✓ Physical Brownian-Langevin dynamics with proper diffusion")
+    print("  ✓ Multi-layer exploration (nested Russian doll surfaces)")
+    print("  ✓ PCA-based anchor points for objective trajectory endpoints")
+    print("  ✓ GPU-accelerated energy calculations (when available)")
+    
+    try:
+        # Check dependencies
+        try:
+            import skimage
+            print("\n✓ scikit-image detected for marching cubes")
+        except ImportError:
+            print("\n⚠️  Warning: scikit-image not found. Surface mesh generation may be limited.")
+            print("   Install with: pip install scikit-image")
+        
+        # Get protein file
+        print("\n" + "="*80)
+        print("Enter protein structure file (PDB format):")
+        protein_file = input("Protein file path: ").strip()
+        if not os.path.exists(protein_file):
+            raise FileNotFoundError(f"Protein file not found: {protein_file}")
+        
+        # Get ligand file
+        print("\nEnter ligand structure file (PDB format):")
+        ligand_file = input("Ligand file path: ").strip()
+        if not os.path.exists(ligand_file):
+            raise FileNotFoundError(f"Ligand file not found: {ligand_file}")
+        
+        # Load existing parameters or collect new ones
+        param_file = "simulation_parameters.txt"
+        print(f"\nChecking for existing parameters in {param_file}...")
+        
+        if os.path.exists(param_file):
+            use_existing = input("Found existing parameters. Use them? (y/n): ").lower() == 'y'
+            if use_existing:
+                params = load_parameters(param_file)
+                n_layers = params.get('n_layers', None)
+                n_trajectories_per_layer = params.get('n_trajectories_per_layer', 10)
+                layer_step = params.get('layer_step', 1.5)
+                k_surf = params.get('k_surf', 2.0)
+                k_guid = params.get('k_guid', 0.5)
+                probe_radius = params.get('probe_radius', 0.75)
+                physiological_pH = params.get('physiological_pH', 7.4)
+                n_workers = params.get('n_workers', None)
+                checkpoint_dir = params.get('checkpoint_dir', './matryoshka_checkpoints')
+            else:
+                use_existing = False
+        else:
+            use_existing = False
+        
+        if not use_existing:
+            # Collect Matryoshka-specific parameters
+            print("\n" + "="*80)
+            print("MATRYOSHKA PARAMETERS")
+            print("="*80)
+            
+            print("\nLayer Configuration:")
+            n_layers = input("Number of nested layers (default: auto-detect): ").strip()
+            n_layers = int(n_layers) if n_layers else None
+            
+            n_trajectories_per_layer = int(input("Trajectories per layer (default 10): ") or "10")
+            layer_step = float(input("Layer step size in Å (default 1.5): ") or "1.5")
+            
+            print("\nPhysics Parameters:")
+            probe_radius = float(input("SES probe radius in Å (default 0.75): ") or "0.75")
+            k_surf = float(input("Surface adherence force constant (default 2.0 kcal/mol/Å²): ") or "2.0")
+            k_guid = float(input("Guidance force constant (default 0.5 kcal/mol/Å²): ") or "0.5")
+            
+            print("\nComputation Settings:")
+            physiological_pH = float(input("Physiological pH (default 7.4): ") or "7.4")
+            n_workers_input = input("Number of parallel workers (default: auto): ").strip()
+            n_workers = parse_workers(n_workers_input)
+            print(f"  Workers set to: {format_workers_info(n_workers)}")
+            
+            checkpoint_dir = input("Checkpoint directory (default ./matryoshka_checkpoints): ").strip()
+            checkpoint_dir = checkpoint_dir or "./matryoshka_checkpoints"
+        
+        # Create output directory
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_dir = f"matryoshka_analysis_{timestamp}"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        print(f"\nOutput directory: {output_dir}")
+        
+        # Save parameters
+        save_matryoshka_parameters(
+            output_dir, protein_file, ligand_file, n_layers, n_trajectories_per_layer,
+            layer_step, probe_radius, k_surf, k_guid, physiological_pH, n_workers, checkpoint_dir
+        )
+        
+        # Run the Matryoshka analysis
+        print("\n" + "="*80)
+        print("STARTING MATRYOSHKA TRAJECTORY GENERATION")
+        print("="*80)
+        
+        # Import here to avoid startup delays
+        from fluxmd.core.trajectory_generator import ProteinLigandFluxAnalyzer as TrajectoryGenerator
+        from fluxmd.core.matryoshka_generator import MatryoshkaTrajectoryGenerator
+        
+        # Initialize trajectory generator (but we'll use it for helper methods)
+        traj_gen = TrajectoryGenerator(protein_file, ligand_file, output_dir, energy_function='ref15')
+        
+        # Load molecular structures
+        print("\nLoading molecular structures...")
+        
+        # Use PDB parser to load structures
+        parser = PDBParser()
+        protein_df = parser.parse(protein_file)
+        ligand_df = parser.parse(ligand_file)
+        
+        # Extract coordinates and prepare atom dictionaries
+        protein_coords = protein_df[['x', 'y', 'z']].values
+        ligand_coords = ligand_df[['x', 'y', 'z']].values
+        
+        # Get atomic properties
+        protein_atoms = {
+            'coords': protein_coords,
+            'names': protein_df['name'].values,
+            'radii': traj_gen.get_vdw_radii(protein_df),
+            'masses': traj_gen.get_atomic_masses(protein_df),
+            'resnames': protein_df.get('resName', protein_df.get('resname', [''] * len(protein_df))).values
+        }
+        
+        ligand_atoms = {
+            'coords': ligand_coords,
+            'names': ligand_df['name'].values,
+            'masses': traj_gen.get_atomic_masses(ligand_df)
+        }
+        
+        # Set up Matryoshka parameters
+        matryoshka_params = {
+            'T': 298.15,  # Room temperature
+            'viscosity': 0.00089,  # Water viscosity in Pa·s
+            'probe_radius': probe_radius,
+            'layer_step': layer_step,
+            'k_surf': k_surf,
+            'k_guid': k_guid,
+            'n_workers': n_workers,
+            'checkpoint_dir': checkpoint_dir,
+            'vdw_cutoff': 12.0
+        }
+        
+        # Check for GPU availability
+        gpu_available = check_gpu_availability()
+        if gpu_available:
+            print("\n✓ GPU detected - will use for energy calculations")
+            matryoshka_params['gpu_device'] = 0
+        else:
+            print("\n⚠️  No GPU detected - using CPU for energy calculations")
+        
+        # Initialize Matryoshka generator
+        print("\nInitializing Matryoshka trajectory generator...")
+        matryoshka_gen = MatryoshkaTrajectoryGenerator(
+            protein_atoms, ligand_atoms, matryoshka_params
+        )
+        
+        # Run trajectory generation
+        print(f"\nGenerating trajectories...")
+        print(f"  Layers: {n_layers if n_layers else 'auto-detect'}")
+        print(f"  Trajectories per layer: {n_trajectories_per_layer}")
+        
+        start_time = time.time()
+        trajectories = matryoshka_gen.run(
+            n_layers=n_layers,
+            n_iterations=n_trajectories_per_layer
+        )
+        end_time = time.time()
+        
+        print(f"\n✓ Generated {len(trajectories)} trajectories in {end_time - start_time:.1f} seconds")
+        
+        # Convert and save trajectories
+        print("\nSaving trajectory data...")
+        save_matryoshka_trajectories(output_dir, trajectories, ligand_atoms)
+        
+        # Run energy analysis if REF15 calculator available
+        if hasattr(traj_gen, 'ref15_calculator'):
+            print("\nRunning REF15 energy analysis...")
+            analyze_matryoshka_energies(output_dir, trajectories, matryoshka_gen)
+        
+        # Generate analysis report
+        print("\nGenerating analysis report...")
+        generate_matryoshka_report(output_dir, trajectories, matryoshka_gen)
+        
+        print("\n" + "="*80)
+        print("MATRYOSHKA ANALYSIS COMPLETE")
+        print(f"Results saved to: {output_dir}")
+        print("="*80)
+        
+    except Exception as e:
+        print(f"\nAn error occurred during Matryoshka analysis: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def save_matryoshka_parameters(output_dir, protein_file, ligand_file, n_layers,
+                               n_trajectories_per_layer, layer_step, probe_radius,
+                               k_surf, k_guid, physiological_pH, n_workers, checkpoint_dir):
+    """Save Matryoshka simulation parameters"""
+    param_file = os.path.join(output_dir, "matryoshka_parameters.txt")
+    with open(param_file, 'w') as f:
+        f.write("MATRYOSHKA TRAJECTORY PARAMETERS\n")
+        f.write("="*50 + "\n")
+        f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"Mode: Matryoshka (physics-based surface dynamics)\n")
+        f.write(f"Protein file: {protein_file}\n")
+        f.write(f"Ligand file: {ligand_file}\n")
+        f.write(f"Number of layers: {n_layers if n_layers else 'auto-detect'}\n")
+        f.write(f"Trajectories per layer: {n_trajectories_per_layer}\n")
+        f.write(f"Layer step size: {layer_step} Å\n")
+        f.write(f"SES probe radius: {probe_radius} Å\n")
+        f.write(f"Surface force constant: {k_surf} kcal/mol/Å²\n")
+        f.write(f"Guidance force constant: {k_guid} kcal/mol/Å²\n")
+        f.write(f"Physiological pH: {physiological_pH}\n")
+        f.write(f"Parallel workers: {n_workers if n_workers else 'auto'}\n")
+        f.write(f"Checkpoint directory: {checkpoint_dir}\n")
+
+
+def save_matryoshka_trajectories(output_dir, trajectories, ligand_atoms):
+    """Save Matryoshka trajectories in FluxMD-compatible format"""
+    traj_dir = os.path.join(output_dir, "trajectories")
+    os.makedirs(traj_dir, exist_ok=True)
+    
+    for i, traj in enumerate(trajectories):
+        layer_idx = traj.get('layer_idx', 0)
+        iter_idx = traj.get('iteration_idx', 0)
+        
+        # Save position trajectory
+        pos_file = os.path.join(traj_dir, f"trajectory_L{layer_idx}_I{iter_idx}.csv")
+        
+        # Convert positions and quaternions to full ligand coordinates
+        positions = []
+        for pos, quat in zip(traj['pos'], traj['quat']):
+            # Here we would reconstruct full ligand coordinates
+            # For now, just save COM positions
+            positions.append(pos)
+        
+        # Save as CSV
+        import pandas as pd
+        df = pd.DataFrame(positions, columns=['x', 'y', 'z'])
+        df['time_ps'] = traj['time']
+        df.to_csv(pos_file, index=False)
+    
+    print(f"  Saved {len(trajectories)} trajectory files")
+
+
+def analyze_matryoshka_energies(output_dir, trajectories, generator):
+    """Analyze energies from Matryoshka trajectories"""
+    energy_data = []
+    
+    for traj in trajectories:
+        if 'sampled_energies' in traj:
+            layer = traj['layer_idx']
+            energies = traj['sampled_energies']
+            energy_data.append({
+                'layer': layer,
+                'mean_energy': np.mean(energies),
+                'min_energy': np.min(energies),
+                'std_energy': np.std(energies)
+            })
+    
+    if energy_data:
+        import pandas as pd
+        df = pd.DataFrame(energy_data)
+        df.to_csv(os.path.join(output_dir, "layer_energies.csv"), index=False)
+        print(f"  Saved energy analysis for {len(energy_data)} trajectories")
+
+
+def generate_matryoshka_report(output_dir, trajectories, generator):
+    """Generate comprehensive Matryoshka analysis report"""
+    report_file = os.path.join(output_dir, "matryoshka_report.txt")
+    
+    with open(report_file, 'w') as f:
+        f.write("MATRYOSHKA TRAJECTORY ANALYSIS REPORT\n")
+        f.write("="*80 + "\n\n")
+        
+        # System information
+        f.write("SYSTEM INFORMATION\n")
+        f.write("-"*40 + "\n")
+        f.write(f"Protein atoms: {len(generator.protein_atoms['coords'])}\n")
+        f.write(f"Ligand atoms: {len(generator.ligand_atoms['coords'])}\n")
+        f.write(f"Ligand radius of gyration: {generator.ligand_sphere['radius']:.2f} Å\n")
+        f.write(f"Ligand mass: {generator.ligand_sphere['mass']:.1f} amu\n")
+        f.write(f"Anchor separation: {np.linalg.norm(generator.anchors[1] - generator.anchors[0]):.1f} Å\n")
+        f.write(f"Geodesic distance: {generator.geodesic_distance:.1f} Å\n")
+        f.write(f"Maximum useful layers: {generator.max_layers}\n\n")
+        
+        # Surface information
+        f.write("SURFACE MESH INFORMATION\n")
+        f.write("-"*40 + "\n")
+        f.write(f"Base surface vertices: {len(generator.base_surface.vertices)}\n")
+        f.write(f"Base surface faces: {len(generator.base_surface.faces)}\n")
+        f.write(f"Layer step size: {generator.layer_step} Å\n\n")
+        
+        # Trajectory statistics
+        f.write("TRAJECTORY STATISTICS\n")
+        f.write("-"*40 + "\n")
+        f.write(f"Total trajectories: {len(trajectories)}\n")
+        
+        # Group by layer
+        layer_counts = {}
+        for traj in trajectories:
+            layer = traj.get('layer_idx', 0)
+            layer_counts[layer] = layer_counts.get(layer, 0) + 1
+        
+        f.write("\nTrajectories per layer:\n")
+        for layer in sorted(layer_counts.keys()):
+            f.write(f"  Layer {layer}: {layer_counts[layer]} trajectories\n")
+        
+        # Path length statistics
+        path_lengths = []
+        for traj in trajectories:
+            if len(traj['pos']) > 1:
+                # Calculate total path length
+                positions = np.array(traj['pos'])
+                displacements = np.diff(positions, axis=0)
+                path_length = np.sum(np.linalg.norm(displacements, axis=1))
+                path_lengths.append(path_length)
+        
+        if path_lengths:
+            f.write(f"\nPath length statistics:\n")
+            f.write(f"  Mean: {np.mean(path_lengths):.1f} Å\n")
+            f.write(f"  Std: {np.std(path_lengths):.1f} Å\n")
+            f.write(f"  Min: {np.min(path_lengths):.1f} Å\n")
+            f.write(f"  Max: {np.max(path_lengths):.1f} Å\n")
+        
+        f.write("\n" + "="*80 + "\n")
+        f.write("Report generated at: " + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + "\n")
+    
+    print(f"  Generated analysis report: {report_file}")
+
+
 def display_main_menu():
     """Display the main menu and return the user's choice"""
     print_banner("FLUXMD - PROTEIN-LIGAND FLUX ANALYSIS")
     
     print("Welcome to FluxMD - GPU-accelerated binding site prediction")
     print("\nOptions:")
-    print("1. Run complete workflow (standard)")
+    print("1. Run complete workflow (standard cocoon)")
     print("2. Run UMA-optimized workflow (zero-copy GPU, 100x faster)")
     print("3. Convert SMILES to PDB (CACTUS with aromatics or OpenBabel)")
     print("4. Generate DNA structure from sequence")
     print("5. Protein-DNA Interaction Analysis (UMA)")
-    print("6. Exit")
+    print("6. Run Matryoshka trajectory analysis (physics-based surface dynamics)")
+    print("7. Exit")
     print("="*80)
     
-    choice = input("Enter your choice [1-6]: ").strip()
+    choice = input("Enter your choice [1-7]: ").strip()
     return choice
 
 
@@ -1644,6 +1997,8 @@ def handle_main_menu(choice):
     elif choice == "5":
         run_protein_dna_uma_workflow()
     elif choice == "6":
+        run_matryoshka_workflow()
+    elif choice == "7":
         print("\nExiting FluxMD. Goodbye!")
         sys.exit()
     else:
@@ -1651,8 +2006,265 @@ def handle_main_menu(choice):
         main()
 
 
+def run_batch_mode(config: dict):
+    """Run FluxMD in batch mode with configuration file."""
+    mode = config['mode']
+    
+    print_banner(f"FLUXMD - {mode.upper()} MODE (BATCH)")
+    print(f"Configuration loaded from: {config.get('_config_file', 'config')}")
+    
+    if mode == 'matryoshka':
+        # Set up parameters from config
+        params = {
+            'protein_file': config['protein_file'],
+            'ligand_file': config['ligand_file'],
+            'output_dir': config.get('output_dir', f'matryoshka_output_{datetime.now().strftime("%Y%m%d_%H%M%S")}'),
+            'n_layers': config.get('n_layers', None),
+            'n_trajectories_per_layer': config.get('n_trajectories_per_layer', 10),
+            'layer_step': config.get('layer_step', 1.5),
+            'probe_radius': config.get('probe_radius', 0.75),
+            'k_surf': config.get('k_surf', 2.0),
+            'k_guid': config.get('k_guid', 0.5),
+            'physiological_pH': config.get('physiological_pH', 7.4),
+            'n_workers': parse_workers(config.get('n_workers')),
+            'checkpoint_dir': config.get('checkpoint_dir', './matryoshka_checkpoints'),
+            'groove_preference': config.get('groove_preference', 'major'),
+            'temperature': config.get('temperature', 298.15),
+            'viscosity': config.get('viscosity', 0.00089),
+            'max_steps': config.get('max_steps', 1_000_000),
+            'use_gpu': config.get('use_gpu', True)
+        }
+        
+        # Run Matryoshka workflow directly
+        run_matryoshka_batch(params)
+        
+    elif mode == 'cocoon':
+        # Run standard workflow
+        params = {
+            'protein_file': config['protein_file'],
+            'ligand_file': config['ligand_file'],
+            'output_dir': config.get('output_dir', f'fluxmd_output_{datetime.now().strftime("%Y%m%d_%H%M%S")}'),
+            'n_iterations': config.get('n_iterations', 100),
+            'n_steps': config.get('n_steps', 100),
+            'n_approaches': config.get('n_approaches', 5),
+            'n_rotations': config.get('n_rotations', 36),
+            'starting_distance': config.get('starting_distance', 15.0),
+            'approach_distance': config.get('approach_distance', 2.5),
+            'physiological_pH': config.get('physiological_pH', 7.4),
+            'save_trajectories': config.get('save_trajectories', True),
+            'use_gpu': config.get('use_gpu', True)
+        }
+        
+        run_cocoon_batch(params)
+        
+    else:
+        print(f"Batch mode not yet implemented for mode: {mode}")
+        sys.exit(1)
+
+
+def run_matryoshka_batch(params: dict):
+    """Run Matryoshka workflow in batch mode."""
+    try:
+        # Import required modules
+        from fluxmd.core.trajectory_generator import ProteinLigandFluxAnalyzer as TrajectoryGenerator
+        from fluxmd.core.matryoshka_generator import MatryoshkaTrajectoryGenerator
+        from fluxmd.utils.pdb_parser import PDBParser
+        
+        # Set up output directory
+        os.makedirs(params['output_dir'], exist_ok=True)
+        
+        # Save parameters
+        save_matryoshka_parameters(
+            params['output_dir'], 
+            params['protein_file'], 
+            params['ligand_file'],
+            params['n_layers'],
+            params['n_trajectories_per_layer'],
+            params['layer_step'],
+            params['probe_radius'],
+            params['k_surf'],
+            params['k_guid'],
+            params['physiological_pH'],
+            params['n_workers'],
+            params['checkpoint_dir']
+        )
+        
+        print("\nLoading molecular structures...")
+        
+        # Initialize trajectory generator for helper methods
+        traj_gen = TrajectoryGenerator(
+            params['protein_file'], 
+            params['ligand_file'], 
+            params['output_dir'],
+            energy_function='ref15'
+        )
+        
+        # Load structures
+        parser = PDBParser()
+        protein_df = parser.parse(params['protein_file'])
+        ligand_df = parser.parse(params['ligand_file'])
+        
+        # Prepare atom dictionaries
+        protein_atoms = {
+            'coords': protein_df[['x', 'y', 'z']].values,
+            'names': protein_df['name'].values,
+            'radii': traj_gen.get_vdw_radii(protein_df),
+            'masses': traj_gen.get_atomic_masses(protein_df),
+            'resnames': protein_df.get('resName', protein_df.get('resname', [''] * len(protein_df))).values
+        }
+        
+        ligand_atoms = {
+            'coords': ligand_df[['x', 'y', 'z']].values,
+            'names': ligand_df['name'].values,
+            'masses': traj_gen.get_atomic_masses(ligand_df)
+        }
+        
+        # Set up Matryoshka parameters
+        matryoshka_params = {
+            'T': params['temperature'],
+            'viscosity': params['viscosity'],
+            'probe_radius': params['probe_radius'],
+            'layer_step': params['layer_step'],
+            'k_surf': params['k_surf'],
+            'k_guid': params['k_guid'],
+            'n_workers': params['n_workers'],
+            'checkpoint_dir': params['checkpoint_dir'],
+            'vdw_cutoff': 12.0,
+            'groove_preference': params['groove_preference'],
+            'max_steps': params['max_steps'],
+            'use_ref15': params.get('use_gpu', True),
+            'pH': params['physiological_pH']
+        }
+        
+        # Check GPU
+        if params['use_gpu'] and check_gpu_availability():
+            print("✓ GPU detected - will use for energy calculations")
+            matryoshka_params['gpu_device'] = 0
+        else:
+            print("⚠️ Running in CPU mode")
+        
+        # Initialize and run
+        print("\nInitializing Matryoshka trajectory generator...")
+        matryoshka_gen = MatryoshkaTrajectoryGenerator(
+            protein_atoms, ligand_atoms, matryoshka_params
+        )
+        
+        print("\nGenerating trajectories...")
+        start_time = time.time()
+        trajectories = matryoshka_gen.run(
+            n_layers=params['n_layers'],
+            n_iterations=params['n_trajectories_per_layer']
+        )
+        end_time = time.time()
+        
+        print(f"\n✓ Generated {len(trajectories)} trajectories in {end_time - start_time:.1f} seconds")
+        
+        # Save results
+        save_matryoshka_trajectories(params['output_dir'], trajectories, ligand_atoms)
+        generate_matryoshka_report(params['output_dir'], trajectories, matryoshka_gen)
+        
+        print(f"\nResults saved to: {params['output_dir']}")
+        
+    except Exception as e:
+        print(f"\nError in batch mode: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+def run_cocoon_batch(params: dict):
+    """Run standard cocoon workflow in batch mode."""
+    # Implementation similar to run_complete_workflow but with params from config
+    print("Cocoon batch mode implementation pending...")
+    # TODO: Implement cocoon batch mode
+
+
+def parse_arguments():
+    """Parse command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description='FluxMD - GPU-accelerated binding site prediction',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Interactive mode (default)
+  python fluxmd.py
+  
+  # Batch mode with config file
+  python fluxmd.py --config matryoshka_config.yaml
+  
+  # Dry run to check parameters
+  python fluxmd.py --config matryoshka_config.yaml --dry-run
+  
+  # Create example configuration
+  python fluxmd.py --create-example-config
+        """
+    )
+    
+    parser.add_argument(
+        '--config', '-c',
+        help='Path to configuration file (YAML or JSON)'
+    )
+    
+    parser.add_argument(
+        '--dry-run', '-n',
+        action='store_true',
+        help='Print derived constants and exit without running'
+    )
+    
+    parser.add_argument(
+        '--create-example-config',
+        action='store_true',
+        help='Create an example configuration file and exit'
+    )
+    
+    parser.add_argument(
+        '--non-interactive',
+        action='store_true',
+        help='Run in non-interactive mode (requires --config)'
+    )
+    
+    return parser.parse_args()
+
+
 def main():
-    """Main interactive loop"""
+    """Main entry point with argument parsing."""
+    args = parse_arguments()
+    
+    # Handle example config creation
+    if args.create_example_config:
+        create_example_config()
+        sys.exit(0)
+    
+    # Handle config file mode
+    if args.config:
+        try:
+            config = load_config(args.config)
+            config['_config_file'] = args.config
+            
+            # Dry run mode
+            if args.dry_run:
+                print_banner("FLUXMD - DRY RUN MODE")
+                print(f"\nConfiguration file: {args.config}")
+                print(f"Mode: {config['mode']}")
+                print(f"Protein: {config['protein_file']}")
+                print(f"Ligand: {config['ligand_file']}")
+                print_derived_constants(config)
+                sys.exit(0)
+            
+            # Run in batch mode
+            run_batch_mode(config)
+            sys.exit(0)
+            
+        except Exception as e:
+            print(f"Error loading configuration: {e}")
+            sys.exit(1)
+    
+    # Check for non-interactive without config
+    if args.non_interactive:
+        print("Error: --non-interactive requires --config")
+        sys.exit(1)
+    
+    # Default interactive mode
     while True:
         choice = display_main_menu()
         handle_main_menu(choice)

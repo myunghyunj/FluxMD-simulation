@@ -196,6 +196,35 @@ class ProteinLigandFluxAnalyzer:
         # Initialize DNA builder (if needed for DNA analysis)
         self.dna_builder = None
         
+    def get_vdw_radii(self, atoms_df):
+        """Get van der Waals radii for atoms"""
+        vdw_radii = {
+            'H': 1.20, 'C': 1.70, 'N': 1.55, 'O': 1.52,
+            'F': 1.47, 'P': 1.80, 'S': 1.80, 'CL': 1.75,
+            'BR': 1.85, 'I': 1.98, 'A': 1.70, 'FE': 1.40,
+            'ZN': 1.39, 'MG': 1.73, 'CA': 1.97, 'NA': 2.27,
+            'K': 2.75, 'CU': 1.40, 'MN': 1.39
+        }
+        default_radius = 1.70
+        
+        radii = []
+        for _, atom in atoms_df.iterrows():
+            element = atom.get('element', atom['name'][0]).upper()
+            radius = vdw_radii.get(element, default_radius)
+            radii.append(radius)
+        
+        return np.array(radii)
+    
+    def get_atomic_masses(self, atoms_df):
+        """Get atomic masses for atoms"""
+        masses = []
+        for _, atom in atoms_df.iterrows():
+            element = atom.get('element', atom['name'][0]).upper()
+            mass = self.ELEMENT_MASSES.get(element, 12.0)  # Default to carbon
+            masses.append(mass)
+        
+        return np.array(masses)
+        
     def init_residue_properties(self):
         """Initialize residue property definitions"""
         # Hydrogen bond donors

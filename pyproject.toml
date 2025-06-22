@@ -36,6 +36,7 @@ dependencies = [
     "networkx>=2.8.0",
     "seaborn>=0.12.0",
     "colorama>=0.4.6",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -102,7 +103,7 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-addopts = "-v --cov=fluxmd --cov-report=html --cov-report=term"
+addopts = "-q"
 
 [tool.mypy]
 python_version = "3.8"

@@ -1,87 +1,200 @@
-# FluxMD 2.0
+Metadata-Version: 2.4
+Name: fluxmd
+Version: 1.4.0b1
+Summary: Energy Flux Differential Analysis for Protein-Ligand Binding Sites
+Author-email: Myunghyun Jeong <mhjonathan@gm.gist.ac.kr>
+License: MIT License
+        
+        Copyright (c) 2024 [Myunghyun Jeong—FluxMD]
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+        
+Project-URL: Homepage, https://github.com/panelarin/FluxMD
+Project-URL: Bug Reports, https://github.com/panelarin/FluxMD/issues
+Project-URL: Documentation, https://github.com/panelarin/FluxMD#readme
+Project-URL: Source, https://github.com/panelarin/FluxMD
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Science/Research
+Classifier: Topic :: Scientific/Engineering :: Bio-Informatics
+Classifier: Topic :: Scientific/Engineering :: Chemistry
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE.md
+Requires-Dist: numpy>=1.20.0
+Requires-Dist: pandas>=1.3.0
+Requires-Dist: scipy>=1.7.0
+Requires-Dist: matplotlib>=3.4.0
+Requires-Dist: biopython>=1.79
+Requires-Dist: torch>=2.0.0
+Requires-Dist: joblib>=1.0.0
+Requires-Dist: networkx>=2.8.0
+Requires-Dist: seaborn>=0.12.0
+Requires-Dist: colorama>=0.4.6
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0; extra == "dev"
+Requires-Dist: black>=23.0; extra == "dev"
+Requires-Dist: flake8>=6.0; extra == "dev"
+Requires-Dist: mypy>=1.0; extra == "dev"
+Requires-Dist: sphinx>=6.0; extra == "dev"
+Requires-Dist: sphinx-rtd-theme>=1.3; extra == "dev"
+Requires-Dist: pre-commit>=3.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+Requires-Dist: isort>=5.12.0; extra == "dev"
+Requires-Dist: pylint>=2.17.0; extra == "dev"
+Requires-Dist: bandit>=1.7.5; extra == "dev"
+Requires-Dist: safety>=2.3.5; extra == "dev"
+Requires-Dist: memory-profiler>=0.61.0; extra == "dev"
+Requires-Dist: line-profiler>=4.1.0; extra == "dev"
+Requires-Dist: py-spy>=0.3.14; extra == "dev"
+Requires-Dist: pytest-benchmark>=4.0.0; extra == "dev"
+Requires-Dist: pytest-xdist>=3.3.1; extra == "dev"
+Requires-Dist: ipython>=8.12.0; extra == "dev"
+Requires-Dist: pdbpp>=0.10.3; extra == "dev"
+Requires-Dist: twine>=4.0.2; extra == "dev"
+Requires-Dist: build>=0.10.0; extra == "dev"
+Provides-Extra: gpu
+Requires-Dist: torch>=2.0.0; extra == "gpu"
+Provides-Extra: viz
+Requires-Dist: matplotlib>=3.4.0; extra == "viz"
+Requires-Dist: seaborn>=0.12.0; extra == "viz"
+Dynamic: license-file
+
+# FluxMD
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Version: 2.0.1](https://img.shields.io/badge/version-2.0.1-blue.svg)](https://github.com/myunghyunj/FluxMD-simulation)
 
-**FluxMD v2.0** introduces the **Matryoshka Engine**, a high-performance, physics-based trajectory generator for mapping biomolecular binding interfaces. Unlike traditional docking or linear-path sampling, the Matryoshka engine simulates a ligand's Brownian motion across nested layers of the protein's solvent-excluded surface (SES), providing a more realistic exploration of the binding landscape.
+Recent Updates (Jun 11, 2025) : Added FluxMD for DNA (to validate logic universality), Replaced Simplified Physics to [RSF15](https://pubs.acs.org/doi/10.1021/acs.jctc.7b00125), Added example protein sets in /examples
 
-This major release is intrinsically optimized for modern chip architectures—including GPU and Unified Memory Architecture (UMA)—enabling accelerated, high-throughput screening of molecular dynamics. It applies to protein–protein, protein–ligand, and protein–nucleic acid systems.
+**FluxMD** maps binding interfaces between two biomolecules by tracing the flow of interaction energy. Unlike traditional docking, which samples static conformers, FluxMD follows dynamic energy flux as molecules orbit and engage, exposing regions where forces perturbate. Intrinsically optimized from physics-level to signal-processing code for modern chip architectures—i.e. GPU, UMA—FluxMD enables accelerated high-throughput screening of molecular dynamics. The method applies to protein–protein and protein–ligand systems, with support for protein–nucleic acid interactions underway. Each run produces a **stress barcode**, a reproducible energy signature unique to the molecular pair.
 
 ![FluxMD Concept](images/fluxmd_concept.png)
 
-## Program Flow (v2.0)
+## Program Flow
 
 ```mermaid
 graph TD
-    subgraph "Entry Points"
-        CLI[Command Line] --> Interactive[fluxmd Interactive Menu]
-    end
-
-    subgraph "Interactive Menu"
-        Interactive --> |1. Matryoshka (Default)| Matryoshka[Matryoshka Engine]
-        Interactive --> |2. SMILES| SMILES[SMILES to PDB]
-        Interactive --> |3. DNA| DNA[DNA Generator]
-        Interactive --> |4. Protein-DNA| PDNA[Protein-DNA UMA]
-        Interactive --> |5. Legacy| LegacyMenu[Legacy Workflows]
-    end
+    %% Entry Points
+    CLI[Command Line] --> fluxmd[fluxmd Interactive]
+    CLI --> fluxmd_uma[fluxmd-uma Direct]
+    CLI --> fluxmd_dna[fluxmd-dna]
     
-    LegacyMenu --> |a. Standard| Standard[Standard Cocoon (1.x)]
-    LegacyMenu --> |b. UMA| UMA[UMA Cocoon (1.x)]
-
-    subgraph "Core Physics & Analysis"
-        Matryoshka --> SES[1. Build SES Surface]
-        SES --> Anchors[2. Define PCA Anchors]
-        Anchors --> Dynamics[3. Run Brownian Dynamics]
-        Dynamics --> REF15[4. Calculate REF15 Energy]
-        REF15 --> Flux[5. Compute Energy Flux]
-        Flux --> Stats[6. Bootstrap & Report]
-    end
-
-    subgraph "Outputs"
-        Stats --> Report[Flux Report (.txt)]
-        Stats --> Data[Processed Data (.csv)]
-        Stats --> TrajectoryPlots[Trajectory Plots (.png)]
-    end
+    %% Interactive Menu
+    fluxmd --> |Option 1| Standard[Standard Pipeline]
+    fluxmd --> |Option 2| UMA[UMA Pipeline]
+    fluxmd --> |Option 3| SMILES[SMILES Converter]
+    fluxmd --> |Option 4| DNA[DNA Generator]
+    
+    %% Input Processing
+    Standard --> Parse1[Parse Protein<br/>PDB/CIF/mmCIF]
+    Standard --> Parse2[Parse Ligand<br/>PDB/SMILES]
+    UMA --> Parse1
+    UMA --> Parse2
+    fluxmd_uma --> Parse1
+    fluxmd_uma --> Parse2
+    
+    Parse2 -->|SMILES| CACTUS[CACTUS API]
+    CACTUS -->|Fallback| OpenBabel[OpenBabel]
+    
+    %% Core Processing
+    Parse1 --> IntraForces[Calculate Intra-protein<br/>Forces with REF15]
+    Parse2 --> Trajectory[Generate Helical<br/>Trajectories]
+    IntraForces --> Forces[Calculate Inter-molecular<br/>Forces with REF15]
+    Trajectory --> Forces
+    
+    %% Analysis Pipeline
+    Forces --> |Standard| CSV[Write CSV Files]
+    CSV --> FluxCalc[Calculate Flux<br/>Values]
+    
+    Forces --> |UMA| Tensors[GPU Tensors]
+    Tensors --> FluxCalc
+    
+    FluxCalc --> Bootstrap[Bootstrap Analysis<br/>1000 iterations]
+    Bootstrap --> Results[Generate Results]
+    
+    %% Output
+    Results --> Report[Flux Report<br/>.txt]
+    Results --> Data[Processed Data<br/>.csv]
+    Results --> Viz[Visualization<br/>.png]
+    
+    %% DNA Pipeline
+    DNA --> Sequence[DNA Sequence]
+    fluxmd_dna --> Sequence
+    Sequence --> BForm[Generate B-DNA<br/>Double Helix]
+    BForm --> PDB[Output PDB with<br/>CONECT Records]
 ```
 
 ## Quick Start
 
 ```bash
-# Run the new Matryoshka analysis (recommended)
+# Interactive mode - recommended for first-time users
 fluxmd
 
-# Or run non-interactively via config file
-fluxmd --config matryoshka_config.yaml
+# Command-line mode for automation
+fluxmd-uma protein.pdb ligand.pdb -o results/
+
+# Generate DNA structure
+fluxmd-dna ATCGATCG -o dna_structure.pdb
+
+# Run benchmark
+python benchmarks/benchmark_uma.py
 ```
 
-## Key Features in 2.0
-
-- **Matryoshka Trajectory Engine**: Physics-based Brownian dynamics on nested solvent-excluded surfaces.
-- **Enhanced Performance**: Retains the UMA-optimized core for GPU-accelerated energy calculations.
-- **Advanced Physics**: Implements BAOAB Langevin integrator for correct statistical mechanics, Stokes-Einstein diffusion, and quaternion-based rotational dynamics.
-- **Streamlined UI**: The main menu is reordered to prioritize the new Matryoshka workflow, with legacy methods moved to a submenu.
-
 ## Installation
-
-Installation requirements remain the same. See `pyproject.toml` for details.
 
 ```bash
 # Clone repository
 git clone https://github.com/myunghyunj/FluxMD-simulation
-cd FluxMD-simulation
+cd FluxMD
 
-# Create conda environment (recommended)
-conda create -n fluxmd2 python=3.8
-conda activate fluxmd2
+# Create conda environment (required for OpenBabel)
+conda create -n fluxmd python=3.8
+conda activate fluxmd
 
 # Install FluxMD with all features
 pip install -e ".[dev,gpu,viz]"
+
+# Install OpenBabel (must use conda)
+conda install -c conda-forge openbabel
+
+# For Apple Silicon MPS support (if needed)
+pip install --pre torch --index-url https://download.pytorch.org/whl/nightly/cpu
 ```
 
-## Legacy Workflows
+### Verify Installation
 
-The original "cocoon" and "UMA cocoon" workflows from FluxMD 1.x are still available under the "Legacy Workflows" menu option. They are suitable for reproducing older results but are no longer under active development.
+```bash
+# Check GPU detection
+python -c "import torch; print(f'MPS available: {torch.backends.mps.is_available()}')"
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+
+# Test FluxMD
+fluxmd --help
+```
 
 ## Entry Points
 
@@ -161,6 +274,8 @@ fluxmd-dna ATCGATCG -o dna_structure.pdb
   - E̅ᵢ: Energy-weighted vector (preserves sign)
   - Cᵢ: Directional consistency (coherence)
   - τᵢ: Temporal variation (normalized variance)
+
+
 
 ## Input/Output
 

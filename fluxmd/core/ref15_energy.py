@@ -4,6 +4,7 @@ Core implementation of Rosetta Energy Function 2015
 """
 
 import numpy as np
+import warnings
 from typing import Dict, Tuple, List, Optional
 from dataclasses import dataclass
 import logging
@@ -41,8 +42,31 @@ class REF15EnergyCalculator:
         self.params = get_ref15_params()
         self.atom_typer = get_atom_typer()
         
+        # Validate parameters to catch zero volumes early
+        self._validate_parameters()
+        
         # Energy component tracking for analysis
         self.last_energy_components = {}
+        
+    def _validate_parameters(self):
+        """Validate REF15 parameters and warn about potential issues"""
+        zero_volume_types = []
+        
+        # Check LK parameters for zero volumes
+        for atom_type in self.params.lk_params:
+            dgfree, lambda_val, volume = self.params.get_lk_params(atom_type)
+            if volume == 0.0:
+                zero_volume_types.append(atom_type)
+        
+        if zero_volume_types:
+            logger.warning(
+                f"Found {len(zero_volume_types)} atom types with zero volume: {zero_volume_types[:5]}..."
+                f"{'(showing first 5)' if len(zero_volume_types) > 5 else ''}"
+            )
+            logger.warning(
+                "Zero volumes may cause division by zero errors. "
+                "These will be handled with fallback values during calculations."
+            )
         
     def calculate_interaction_energy(self, 
                                    atom1: AtomContext, 
@@ -176,6 +200,16 @@ class REF15EnergyCalculator:
         # Burial functions (simplified - should use actual neighbor counts)
         burial1 = self._burial_function(atom1.neighbor_count)
         burial2 = self._burial_function(atom2.neighbor_count)
+        
+        # Guard against zero atomic volumes to avoid singularity
+        if volume1 == 0 or volume2 == 0:
+            warnings.warn(
+                f"Zero atomic volume detected (types: {atom1.atom_type}/{atom2.atom_type}); "
+                "using fallback 1.0 Å³ to avoid singularity.",
+                RuntimeWarning
+            )
+            volume1 = volume1 or 1.0
+            volume2 = volume2 or 1.0
         
         # Solvation energy change
         e_sol1 = dgfree1 * burial1 * gaussian2 * (volume2 / volume1)

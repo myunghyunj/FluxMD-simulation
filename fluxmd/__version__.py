@@ -1,12 +1,12 @@
 """Version information for FluxMD"""
 
-__version__ = "1.4.0b1"
-__version_info__ = (1, 4, 0, "b1")
+__version__ = "2.0.1"
+__version_info__ = (2, 0, 1)
 __author__ = "Myunghyun Jeong"
 __email__ = "mhjonathan@gm.gist.ac.kr"
 __license__ = "MIT"
 __copyright__ = "Copyright 2025 FluxMD"
-__url__ = "https://github.com/myunghyunj/FluxMD"
+__url__ = "https://github.com/myunghyunj/FluxMD-simulation"
 
 def get_version():
     """Return the current version string"""

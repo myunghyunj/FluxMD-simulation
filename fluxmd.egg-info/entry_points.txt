@@ -1,0 +1,4 @@
+[console_scripts]
+fluxmd = fluxmd.cli:main
+fluxmd-dna = fluxmd.utils.dna_to_pdb:main
+fluxmd-uma = fluxmd.cli:main_uma

@@ -1,0 +1,11 @@
+name: fluxmd-ci
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python  # Version specified by matrix
+  - openbabel>=3.1.0
+  - pip
+  - pip:
+    # Core dependencies installed from pyproject.toml
+    # This file only handles conda-specific dependencies

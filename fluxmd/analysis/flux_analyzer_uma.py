@@ -9,7 +9,6 @@ Optimized for Unified Memory Architecture (UMA) - processes everything on GPU.
 
 import numpy as np
 import pandas as pd
-import torch
 import os
 from typing import List, Dict, Optional, Tuple
 try:
@@ -20,6 +19,20 @@ except ImportError:
 import matplotlib.pyplot as plt
 import seaborn as sns
 from ..gpu.gpu_accelerated_flux_uma import InteractionResult
+
+# Optional torch import for environments without GPU libraries
+try:
+    import torch  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover – allow CPU‐only CI
+    torch = None  # type: ignore
+    import warnings
+    warnings.warn(
+        "PyTorch not available – GPU-optimised UMA flux analysis will be disabled.",
+        ImportWarning,
+    )
+
+if torch is None:
+    raise ImportError("PyTorch (torch) is required for UMA flux analyzer.")
 
 class TrajectoryFluxAnalyzer:
     """Analyzes trajectory data to compute and visualize energy flux."""

@@ -1,7 +1,40 @@
-site_name: FluxMD
-nav:
-  - Home: index.md
-  - Overview: readme_overview.md
-  - Algorithms: algorithms.md
+site_name: "FluxMD 2.0"
+site_description: "Energy Flux Differential Analysis for Protein-Ligand Binding Sites"
+site_author: "Myunghyun Jeong"
+site_url: "https://github.com/myunghyunj/FluxMD-simulation"
+
+repo_name: "myunghyunj/FluxMD-simulation"
+repo_url: "https://github.com/myunghyunj/FluxMD-simulation"
+edit_uri: "edit/main/docs/"
+
+theme:
+  name: "material"
+  palette:
+    scheme: slate
+    primary: "indigo"
+    accent: "blue"
+  features:
+    - navigation.tabs
+    - navigation.top
+    - search.suggest
+    - search.highlight
+
+markdown_extensions:
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - toc:
+      permalink: true
+
 docs_dir: docs
 site_dir: site
+
+nav:
+  - "Home": index.md
+  - "Overview": readme_overview.md
+  - "Algorithms": 
+    - "Matryoshka Engine (2.0)": "algorithms.md"
+  - "Development Archive":
+      - "Phase 3 Summary": "archive/PHASE3_SUMMARY.md"
+      - "Phase 4 Summary": "archive/PHASE4_SUMMARY.md"
+      - "Phase 5 Summary": "archive/PHASE5_SUMMARY.md"
+      - "Physics Fixes": "archive/PHYSICS_FIXES_SUMMARY.md"
