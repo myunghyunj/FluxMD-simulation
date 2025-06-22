@@ -1,6 +1,15 @@
-# fluxmd/core/geometry/__init__.py
-"""Geometric analysis tools for trajectory generation."""
+"""
+Geometric analysis tools for trajectory generation.
 
-from .pca_anchors import extreme_calpha_pairs
+This module provides:
+- PCA-based anchor point detection
+- Protein extremity identification
+- Nucleic acid backbone detection
+"""
 
-__all__ = ["extreme_calpha_pairs"]
+from .pca_anchors import PCAAnchors, extreme_calpha_pairs
+
+__all__ = [
+    "PCAAnchors",
+    "extreme_calpha_pairs",
+]
