@@ -7,7 +7,7 @@ Recent Updates (Jun 11, 2025) : Added FluxMD for DNA (to validate logic universa
 
 **FluxMD** maps binding interfaces between two biomolecules by tracing the flow of interaction energy. Unlike traditional docking, which samples static conformers, FluxMD follows dynamic energy flux as molecules orbit and engage, exposing regions where forces perturbate. Intrinsically optimized from physics-level to signal-processing code for modern chip architectures—i.e. GPU, UMA—FluxMD enables accelerated high-throughput screening of molecular dynamics. The method applies to protein–protein and protein–ligand systems, with support for protein–nucleic acid interactions underway. Each run produces a **stress barcode**, a reproducible energy signature unique to the molecular pair.
 
-![FluxMD Concept](https://example.com/fluxmd_concept.png)
+![FluxMD Concept](Images/fluxmd_concept.png)
 
 ## Program Flow
 
