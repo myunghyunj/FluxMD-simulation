@@ -1,8 +1,9 @@
-import numpy as np
 import time
 
-from fluxmd.utils.dna_to_pdb import DNABuilder
+import numpy as np
+
 from fluxmd.core.trajectory_generator import ProteinLigandFluxAnalyzer
+from fluxmd.utils.dna_to_pdb import DNABuilder
 
 np.random.seed(0)
 
@@ -11,7 +12,7 @@ def test_fluxmd_end2end():
     builder = DNABuilder()
     seq = "ATCG" * 3
     builder.build_dna(seq)
-    coords = np.array([a['coord'] for a in builder.atoms])
+    coords = np.array([a["coord"] for a in builder.atoms])
 
     tg = ProteinLigandFluxAnalyzer("dummy.pdb", "dummy.pdb", "./tmp")
     tg.dna_builder = builder

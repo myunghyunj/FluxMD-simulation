@@ -7,13 +7,13 @@ This module provides tools for:
 - DNA groove detection and labeling
 """
 
+from .dna_groove_detector import DNAGrooveDetector
 from .layer_stream import MatryoshkaLayerGenerator
 from .ses_builder import SESBuilder, SurfaceMesh
-from .dna_groove_detector import DNAGrooveDetector
 
 __all__ = [
     "SESBuilder",
-    "SurfaceMesh", 
+    "SurfaceMesh",
     "MatryoshkaLayerGenerator",
     "DNAGrooveDetector",
 ]
