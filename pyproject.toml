@@ -92,7 +92,7 @@ version = {attr = "fluxmd.__version__.__version__"}
 
 [tool.black]
 line-length = 100
-target-version = ['py38', 'py39', 'py310', 'py311']
+target-version = ['py311']
 include = '\.pyi?$'
 
 [tool.isort]
