@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import multiprocessing as mp
-import os
 import pickle
 import time
 from pathlib import Path
@@ -538,7 +537,7 @@ class MatryoshkaTrajectoryGenerator:
         else:
             n_layers = min(n_layers, self.max_layers)
 
-        print(f"\nStarting Matryoshka trajectory generation:")
+        print("\nStarting Matryoshka trajectory generation:")
         print(f"  Layers: {n_layers}")
         print(f"  Iterations per layer: {n_iterations}")
         print(f"  Total trajectories: {n_layers * n_iterations}")

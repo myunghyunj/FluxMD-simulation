@@ -15,14 +15,12 @@ Author: FluxMD Development Team
 """
 
 import os
-import warnings
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from scipy.ndimage import gaussian_filter1d
 
 
@@ -64,8 +62,6 @@ class SignedFluxAnalyzer:
             vectors = group[["vector_x", "vector_y", "vector_z"]].values
 
             # Calculate SIGNED energy-weighted vectors (preserving energy sign)
-            energy_vectors = vectors * energies[:, np.newaxis]
-
             # Mean signed energy magnitude
             mean_signed_energy = np.mean(energies)
 
@@ -301,10 +297,14 @@ class SignedFluxAnalyzer:
         print("=" * 60)
         print(f"Total residues analyzed: {len(residue_ids)}")
         print(
-            f"Attractive residues: {attractive_residues} ({attractive_residues/len(residue_ids)*100:.1f}%)"
+            "Attractive residues: "
+            f"{attractive_residues} "
+            f"({attractive_residues/len(residue_ids)*100:.1f}%)"
         )
         print(
-            f"Repulsive residues: {repulsive_residues} ({repulsive_residues/len(residue_ids)*100:.1f}%)"
+            "Repulsive residues: "
+            f"{repulsive_residues} "
+            f"({repulsive_residues/len(residue_ids)*100:.1f}%)"
         )
         print(f"\nEstimated binding contribution: {total_attractive:.2f} kcal/mol·Å")
         print(f"Spatially smoothed estimate: {smoothed_negative:.2f} kcal/mol·Å")
@@ -317,7 +317,8 @@ class SignedFluxAnalyzer:
             energy = row[("mean_energy", "mean")]
             n_int = row[("n_interactions", "sum")]
             print(
-                f"Residue {idx}: Flux = {flux:.3f}, Mean Energy = {energy:.3f} kcal/mol, N = {n_int}"
+                f"Residue {idx}: Flux = {flux:.3f}, "
+                f"Mean Energy = {energy:.3f} kcal/mol, N = {n_int}"
             )
 
         return fig

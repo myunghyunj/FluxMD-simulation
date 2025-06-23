@@ -4,13 +4,13 @@ Uses energy-aware approach trajectory generation
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 
 import numpy as np
 from scipy.spatial import ConvexHull
 from scipy.spatial.distance import cdist
 
-from .ref15_energy import AtomContext, get_ref15_calculator
+from .ref15_energy import get_ref15_calculator
 from .rosetta_atom_types import get_atom_typer
 
 logger = logging.getLogger(__name__)

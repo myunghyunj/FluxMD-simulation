@@ -5,15 +5,12 @@ FIXED: H-bond and salt bridge calculations now match reference implementation
 """
 
 import platform
-import time
-import warnings
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict
 
 import numpy as np
 import pandas as pd
 import torch
-from scipy.spatial import cKDTree
 
 from ..core.protonation_aware_interactions import ProtonationAwareInteractionDetector
 

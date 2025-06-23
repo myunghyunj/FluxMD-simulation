@@ -28,7 +28,6 @@ import pandas as pd
 from Bio import PDB
 from matplotlib import cm
 from matplotlib.colors import LinearSegmentedColormap
-from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Line3DCollection
 from scipy.interpolate import splev, splprep
 
@@ -62,7 +61,7 @@ def load_flux_data(csv_path):
     try:
         df = pd.read_csv(csv_path)
         if "residue_index" not in df.columns or "average_flux" not in df.columns:
-            print(f"Error: CSV must contain 'residue_index' and 'average_flux' columns")
+            print("Error: CSV must contain 'residue_index' and 'average_flux' columns")
             return None
         return df
     except Exception as e:
@@ -413,7 +412,7 @@ def main():
     if not output_file:
         output_file = "multiflux_comparison.png"
 
-    print(f"\nCreating ribbon visualization...")
+    print("\nCreating ribbon visualization...")
     visualize_multiflux(protein_flux_pairs, output_file)
 
 

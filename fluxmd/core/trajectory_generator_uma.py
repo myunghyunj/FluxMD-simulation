@@ -5,9 +5,7 @@ This shows the key changes needed to integrate the in-memory GPU pipeline.
 """
 import os
 
-import matplotlib.pyplot as plt
 import numpy as np
-from scipy.spatial.distance import cdist
 
 from ..analysis.flux_analyzer_uma import TrajectoryFluxAnalyzer
 
@@ -35,9 +33,7 @@ def save_iteration_data_uma(
     This ensures UMA version produces same output structure as CPU version.
     Supports both protein-ligand and DNA-protein workflows.
     """
-    import numpy as np
     import pandas as pd
-    import torch
 
     # Create iteration directory
     iter_dir = os.path.join(output_dir, f"iteration_{iteration_num + 1}")
@@ -218,7 +214,6 @@ def run_single_iteration_uma(
     Args:
         save_trajectories: If True, generate and save trajectory visualizations
     """
-    import numpy as np  # Ensure numpy is available in this function scope
 
     print(f"\n{'='*60}")
     if n_iterations:
@@ -243,7 +238,7 @@ def run_single_iteration_uma(
 
         # Print trajectory generation info (matching CPU version)
         dt = 40  # timestep in femtoseconds
-        print(f"\n   Generating random walk:")
+        print("\n   Generating random walk:")
         print(f"     Molecular weight: {ligand_mw:.1f} Da")
 
         # Calculate diffusion coefficient
@@ -380,7 +375,7 @@ def run_single_iteration_uma(
             import numpy as np
 
             energies_array = np.array(all_energies)
-            print(f"\n   Energy statistics:")
+            print("\n   Energy statistics:")
             print(f"     Mean: {np.mean(energies_array):.2f} kcal/mol")
             print(f"     Std: {np.std(energies_array):.2f} kcal/mol")
             print(f"     Min: {np.min(energies_array):.2f} kcal/mol")
@@ -500,7 +495,7 @@ def run_single_iteration_uma(
                     total_capped = capped_high + capped_low
                     capped_percentage = (total_capped / len(energies_array)) * 100
 
-                    f.write(f"\n  Capping Statistics:\n")
+                    f.write("\n  Capping Statistics:\n")
                     f.write(
                         f"    Energies capped at +10: {capped_high} ({(capped_high/len(energies_array)*100):.1f}%)\n"
                     )
@@ -512,7 +507,7 @@ def run_single_iteration_uma(
                     # Energy distribution analysis
                     physiological_range = np.sum((energies_array >= -5) & (energies_array <= 5))
                     extended_range = np.sum((energies_array >= -10) & (energies_array <= 10))
-                    f.write(f"\n  Energy Distribution:\n")
+                    f.write("\n  Energy Distribution:\n")
                     f.write(
                         f"    Within physiological range (-5 to +5): {physiological_range} ({(physiological_range/len(energies_array)*100):.1f}%)\n"
                     )
@@ -620,10 +615,7 @@ def run_complete_analysis_uma(
     ligand_atoms_df = self.parse_structure_robust(ligand_file, parse_heterogens=True)
 
     # Import required modules
-    import numpy as np
     import pandas as pd
-
-    from ..analysis.flux_analyzer_uma import TrajectoryFluxAnalyzer
 
     # Device was already set above when saving parameters
     # Calculate centers of mass
@@ -728,7 +720,7 @@ def run_complete_analysis_uma(
 
             if all_energies:
                 energies_array = np.array(all_energies)
-                print(f"  Energy statistics:")
+                print("  Energy statistics:")
                 print(f"    - Mean: {np.mean(energies_array):.2f} kcal/mol")
                 print(f"    - Std: {np.std(energies_array):.2f} kcal/mol")
                 print(f"    - Min: {np.min(energies_array):.2f} kcal/mol")
@@ -755,7 +747,7 @@ def run_complete_analysis_uma(
                         for itype in range(5):  # 5 interaction types
                             interaction_type_counts[itype] += (types == itype).sum()
 
-                print(f"  Interaction type breakdown:")
+                print("  Interaction type breakdown:")
                 total_typed = sum(interaction_type_counts.values())
                 if total_typed > 0:
                     for itype, count in interaction_type_counts.items():
@@ -830,7 +822,6 @@ def run_complete_analysis_uma(
     print("=" * 80)
 
     # Import here to ensure it is available in the monkey-patched context
-    from ..analysis.flux_analyzer_uma import TrajectoryFluxAnalyzer
 
     flux_analyzer = TrajectoryFluxAnalyzer(device=device)
 
@@ -849,7 +840,7 @@ def run_complete_analysis_uma(
         for iter_results in all_iteration_results
     )
 
-    print(f"\nOverall statistics:")
+    print("\nOverall statistics:")
     print(f"  - Total iterations: {n_iterations}")
     print(f"  - Total frames analyzed: {total_frames}")
     print(f"  - Total interactions detected: {total_interactions}")
@@ -984,8 +975,6 @@ def _save_parameters_uma(
     import os
     from datetime import datetime
 
-    import pandas as pd
-
     # Get protein name from filename
     protein_name = os.path.splitext(os.path.basename(protein_file))[0]
 
@@ -1003,7 +992,7 @@ def _save_parameters_uma(
         f.write("\n")
         f.write("TRAJECTORY PARAMETERS\n")
         f.write("-" * 40 + "\n")
-        f.write(f"Mode: UMA-OPTIMIZED WINDING TRAJECTORY\n")
+        f.write("Mode: UMA-OPTIMIZED WINDING TRAJECTORY\n")
         f.write(f"Steps per approach: {n_steps}\n")
         f.write(f"Number of iterations: {n_iterations}\n")
         f.write(f"Number of approaches: {n_approaches}\n")

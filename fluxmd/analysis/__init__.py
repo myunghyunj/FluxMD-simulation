@@ -1,14 +1,9 @@
-"""
-Analysis modules for FluxMD flux calculations
-"""
+"""Flux analysis subpackage."""
 
-"""Analysis subpackage exports.
-
-If PyTorch (or GPU libs) are unavailable we still want CPU functionality to
-work so tests that don't need GPU can run.  Therefore the UMA-optimised
-analyzer is imported conditionally; when missing we expose a stub that raises
-on use but doesn't break module import time.
-"""
+# If PyTorch (or GPU libs) are unavailable we still want CPU functionality to
+# work so tests that don't need GPU can run. Therefore the UMA-optimised analyzer
+# is imported conditionally; when missing we expose a stub that raises on use but
+# doesn't break module import time.
 
 from .flux_analyzer import TrajectoryFluxAnalyzer  # CPU version (always works)
 

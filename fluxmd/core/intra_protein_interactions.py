@@ -4,8 +4,7 @@ Calculates complete n×n residue-residue interactions for internal protein force
 """
 
 import logging
-from itertools import combinations
-from typing import Dict, List, Optional, Tuple
+from typing import Dict
 
 import numpy as np
 import pandas as pd
