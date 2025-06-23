@@ -14,7 +14,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install black flake8 pytest
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy
+          pip install -e .
+          pip install black flake8 pytest
       - run: black --check fluxmd/ tests/ --target-version py311
       - run: flake8 fluxmd/ tests/ --max-line-length=100
       - run: pytest --maxfail=1 --disable-warnings -q
