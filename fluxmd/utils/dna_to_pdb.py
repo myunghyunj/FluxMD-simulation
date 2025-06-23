@@ -9,6 +9,7 @@ import argparse
 import math
 from typing import Dict, Tuple
 
+
 import numpy as np
 
 # --- Constants -------------------------------------------------------------
@@ -37,7 +38,7 @@ def groove_vectors(twist_rad: float, roll_deg: float = 0.0) -> Tuple[np.ndarray,
 def minor_radius(sequence: str, idx: int, window: int = 5) -> float:
     """Sequence-aware minor-groove radius."""
     half = window // 2
-    seg = sequence[max(0, idx - half) : idx + half + 1]
+    seg = sequence[slice(max(0, idx - half), idx + half + 1)]
     gc = (seg.count("G") + seg.count("C")) / max(len(seg), 1.0)
     return MINOR_BASE_RADIUS + SEQ_RADIUS_COEF * (gc - 0.5)
 
@@ -434,7 +435,6 @@ class DNABuilder:
                 perp1 / np.linalg.norm(perp1) if np.linalg.norm(perp1) > 0 else np.array([0, 0, 1])
             )
             perp2 = np.cross(unit_vec, perp1)
-
             # Position OP1 and OP2
             op1_pos = p_pos + 1.48 * (0.7 * perp1 + 0.3 * unit_vec)
             op2_pos = p_pos + 1.48 * (-0.7 * perp1 + 0.3 * unit_vec)
@@ -708,7 +708,6 @@ def main():
         base_a = sequence[i]
         base_b = DNABuilder.COMPLEMENT[base_a]
         print(f"  {i+1}: {base_a}-{base_b}")
-
 
 if __name__ == "__main__":
     main()

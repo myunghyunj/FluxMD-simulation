@@ -1,8 +1,10 @@
 """
-FluxMD: GPU-accelerated molecular dynamics simulation tool for mapping binding interfaces.
+FluxMD: GPU-accelerated molecular dynamics simulation tool for mapping binding
+interfaces.
 
-FluxMD uses dynamic energy flux analysis to identify binding sites between biomolecules,
-supporting protein-protein, protein-ligand, and protein-DNA interactions.
+FluxMD uses dynamic energy flux analysis to identify binding sites between
+biomolecules, supporting protein-protein, protein-ligand, and protein-DNA
+interactions.
 """
 
 from .__version__ import __version__
