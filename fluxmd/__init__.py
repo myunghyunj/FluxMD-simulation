@@ -8,18 +8,11 @@ interactions.
 """
 
 from .__version__ import __version__
+from .analysis.flux_analyzer import TrajectoryFluxAnalyzer
+from .core.matryoshka_generator import MatryoshkaTrajectoryGenerator
 
 # Core functionality
-try:
-    from .analysis.flux_analyzer import TrajectoryFluxAnalyzer
-    from .core.matryoshka_generator import MatryoshkaTrajectoryGenerator
-    from .core.trajectory_generator import ProteinLigandFluxAnalyzer
-except Exception:  # pragma: no cover - optional dependencies may be missing
-    ProteinLigandFluxAnalyzer = None
-    MatryoshkaTrajectoryGenerator = None
-    TrajectoryFluxAnalyzer = None
-
-from .utils.dna_to_pdb import dna_to_pdb_structure
+from .core.trajectory_generator import ProteinLigandFluxAnalyzer
 
 # Utilities
 from .utils.pdb_parser import PDBParser
@@ -37,5 +30,4 @@ __all__ = [
     "MatryoshkaTrajectoryGenerator",
     "TrajectoryFluxAnalyzer",
     "PDBParser",
-    "dna_to_pdb_structure",
 ]

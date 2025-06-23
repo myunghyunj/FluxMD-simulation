@@ -8,9 +8,11 @@ __license__ = "MIT"
 __copyright__ = "Copyright 2025 FluxMD"
 __url__ = "https://github.com/myunghyunj/FluxMD-simulation"
 
+
 def get_version():
     """Return the current version string"""
     return __version__
+
 
 def get_version_tuple():
     """Return the current version as a tuple of integers"""

@@ -7,7 +7,8 @@ Includes CONECT records for proper connectivity and optimized base pair alignmen
 
 import argparse
 import math
-from typing import Dict, Tuple
+from typing import Dict, List, Set, Tuple
+
 
 import numpy as np
 
@@ -433,6 +434,7 @@ class DNABuilder:
             perp1 = (
                 perp1 / np.linalg.norm(perp1) if np.linalg.norm(perp1) > 0 else np.array([0, 0, 1])
             )
+            perp2 = np.cross(unit_vec, perp1)
             # Position OP1 and OP2
             op1_pos = p_pos + 1.48 * (0.7 * perp1 + 0.3 * unit_vec)
             op2_pos = p_pos + 1.48 * (-0.7 * perp1 + 0.3 * unit_vec)
@@ -706,14 +708,6 @@ def main():
         base_a = sequence[i]
         base_b = DNABuilder.COMPLEMENT[base_a]
         print(f"  {i+1}: {base_a}-{base_b}")
-
-
-def dna_to_pdb_structure(sequence: str):
-    """Return atoms and connectivity for the given DNA sequence."""
-    builder = DNABuilder()
-    builder.build_dna(sequence)
-    return builder.atoms, builder.connectivity
-
 
 if __name__ == "__main__":
     main()

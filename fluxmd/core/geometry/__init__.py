@@ -8,5 +8,7 @@ This module provides:
 """
 
 from .pca_anchors import extreme_calpha_pairs
-
-__all__ = ("extreme_calpha_pairs",)
+__all__ = [
+    "PCAAnchors",
+    "extreme_calpha_pairs",
+]

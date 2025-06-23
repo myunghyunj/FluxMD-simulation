@@ -1,6 +1,7 @@
+import hashlib
 import os
 import sys
-import hashlib
+
 import numpy as np
 
 np.random.seed(0)
