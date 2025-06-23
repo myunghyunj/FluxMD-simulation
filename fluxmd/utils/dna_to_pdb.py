@@ -12,6 +12,7 @@ from typing import Dict, Tuple
 
 import numpy as np
 
+    # Use explicit slice boundaries for Python 3.11 compatibility
     seg = sequence[max(0, idx - half) : idx + half + 1]
 GROOVE_ASYMMETRY_DEG = 160.0
 MINOR_OFFSET_DEG = 80.0
