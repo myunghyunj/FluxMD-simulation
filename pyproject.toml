@@ -120,17 +120,6 @@ extend-exclude = "fluxmd/_ARCHIVE_simplified_version/*"
 
 [tool.ruff]
 extend-exclude = ["fluxmd/_ARCHIVE_simplified_version/*"]
-extend-ignore = [
-    "E402",
-    "E722",
-    "F401",
-    "F402",
-    "F541",
-    "F811",
-    "F821",
-    "F841",
-]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
@@ -151,6 +140,7 @@ warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
 exclude = "fluxmd/_ARCHIVE_simplified_version/*"
+
 ignore_errors = true
 
 [tool.bandit]
