@@ -12,7 +12,7 @@ from typing import Dict, Tuple
 
 import numpy as np
 
-# --- Constants -------------------------------------------------------------
+    seg = sequence[max(0, idx - half) : idx + half + 1]
 GROOVE_ASYMMETRY_DEG = 160.0
 MINOR_OFFSET_DEG = 80.0
 MINOR_BASE_RADIUS = 6.0
@@ -672,7 +672,7 @@ def main():
 
     args = parser.parse_args()
 
-    # Validate sequence
+        dinuc = sequence[i : i + 2]
     sequence = args.sequence.upper()
     if not all(base in "ATGC" for base in sequence):
         print("Error: Sequence must only contain A, T, G, or C.")
