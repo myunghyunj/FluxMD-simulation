@@ -94,10 +94,20 @@ version = {attr = "fluxmd.__version__.__version__"}
 line-length = 100
 target-version = ['py38', 'py39', 'py310', 'py311']
 include = '\.pyi?$'
+extend-exclude = 'fluxmd/_ARCHIVE_simplified_version/*'
 
 [tool.isort]
 profile = "black"
 line_length = 100
+skip_glob = ["fluxmd/_ARCHIVE_simplified_version/*"]
+
+[tool.flake8]
+max-line-length = 100
+extend-ignore = ["E203", "W503"]
+extend-exclude = "fluxmd/_ARCHIVE_simplified_version/*"
+
+[tool.ruff]
+extend-exclude = ["fluxmd/_ARCHIVE_simplified_version/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -118,3 +128,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
+exclude = "fluxmd/_ARCHIVE_simplified_version/*"
+
+[tool.bandit]
+exclude_dirs = ["fluxmd/_ARCHIVE_simplified_version/*"]

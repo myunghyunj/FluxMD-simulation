@@ -1,4 +1,5 @@
 import math
+
 import numpy as np
 
 np.random.seed(0)
@@ -10,4 +11,3 @@ def test_groove_angle():
     minor, major = groove_vectors(0.0)
     deg = math.degrees(np.arccos(minor @ major))
     assert 155 < deg < 165
-

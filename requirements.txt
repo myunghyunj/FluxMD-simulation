@@ -6,3 +6,4 @@ biopython>=1.79
 scikit-image>=0.25
 pytest>=6.2
 pytest-cov>=2.12
+tqdm>=4.64

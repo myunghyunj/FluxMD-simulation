@@ -23,6 +23,7 @@ except Exception:  # pragma: no cover
 # Submodules
 from . import dynamics, geometry, surface
 
+
 __all__ = [
     "ProteinLigandFluxAnalyzer",
     "IntraProteinInteractions",

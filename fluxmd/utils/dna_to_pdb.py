@@ -9,6 +9,7 @@ import argparse
 import math
 from typing import Dict, Tuple
 
+
 import numpy as np
 
 # --- Constants -------------------------------------------------------------
@@ -651,6 +652,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate B-DNA structure from sequence (5' to 3').",
         epilog="Example: %(prog)s ATCGATCG -o my_dna.pdb",
+
     )
     parser.add_argument("sequence", help="DNA sequence (5' to 3'), using A, T, G, C")
     parser.add_argument(
@@ -659,6 +661,7 @@ def main():
         default="dna_structure.pdb",
         help="Output PDB file (default: dna_structure.pdb)",
     )
+
     parser.add_argument("--no-conect", action="store_true", help="Skip writing CONECT records")
     parser.add_argument(
         "--groove-mode",
@@ -697,6 +700,7 @@ def main():
     print("\nDinucleotide steps:")
     for i in range(len(sequence) - 1):
         dinuc = sequence[i: i + 2]
+
         twist, rise = builder.get_dinucleotide_params(sequence[i], sequence[i + 1])
         print(f"  {dinuc}: twist={twist}°, rise={rise} Å")
 
@@ -707,13 +711,10 @@ def main():
         base_b = DNABuilder.COMPLEMENT[base_a]
         print(f"  {i+1}: {base_a}-{base_b}")
 
-
 def dna_to_pdb_structure(sequence: str):
     """Return atoms and connectivity for the given DNA sequence."""
     builder = DNABuilder()
     builder.build_dna(sequence)
     return builder.atoms, builder.connectivity
-
-
 if __name__ == "__main__":
     main()
