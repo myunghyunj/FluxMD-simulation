@@ -8,7 +8,7 @@ for publication-quality figures.
 Usage:
     # Interactive mode (recommended)
     python visualize_multiflux.py
-    
+
     # Command-line mode
     python visualize_multiflux.py \\
         --proteins protein1.pdb protein2.pdb protein3.pdb \\
