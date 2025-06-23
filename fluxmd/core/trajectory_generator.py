@@ -25,7 +25,6 @@ from functools import lru_cache
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from Bio.PDB import PDBIO, PDBParser, Select
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.spatial import ConvexHull, Delaunay, cKDTree
 from scipy.spatial.distance import cdist
@@ -33,7 +32,6 @@ from scipy.spatial.distance import cdist
 warnings.filterwarnings("ignore")
 
 # Import utils
-from ..utils.pdb_parser import PDBParser
 from .cylindrical_sampler import FastCylindricalSampler
 from .energy_config import DEFAULT_ENERGY_FUNCTION
 from .intelligent_cocoon_sampler import IntelligentCocoonSampler

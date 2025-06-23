@@ -709,5 +709,6 @@ def main():
         base_b = DNABuilder.COMPLEMENT[base_a]
         print(f"  {i+1}: {base_a}-{base_b}")
 
+
 if __name__ == "__main__":
     main()
