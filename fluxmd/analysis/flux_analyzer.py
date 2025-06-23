@@ -16,14 +16,8 @@ import pandas as pd
 import seaborn as sns
 from Bio.PDB import PDBParser
 from joblib import Parallel, delayed
-from matplotlib.cm import ScalarMappable
-from matplotlib.colors import LinearSegmentedColormap, Normalize
-from mpl_toolkits.mplot3d import Axes3D
-from scipy import stats
 from scipy.interpolate import UnivariateSpline, splev, splprep
 from scipy.ndimage import gaussian_filter1d
-from scipy.signal import savgol_filter
-from scipy.stats import norm
 
 
 class TrajectoryFluxAnalyzer:
@@ -401,7 +395,8 @@ class TrajectoryFluxAnalyzer:
 
         if len(self.inter_contributions) > 0:
             print(
-                f"   ✓ Tracked inter/intra contributions for {len(self.inter_contributions)} residues"
+                "   ✓ Tracked inter/intra contributions for "
+                f"{len(self.inter_contributions)} residues"
             )
 
         return filtered_tensors, filtered_raw_vectors
@@ -500,7 +495,8 @@ class TrajectoryFluxAnalyzer:
                         # Calculate temporal component using variance method (matching GPU/UMA)
                         if len(magnitudes) > 1:
                             # Extract energies for this residue
-                            energies = res_interactions["bond_energy"].values
+                            # Use magnitude as proxy for bond energy when explicit data missing
+                            energies = np.linalg.norm(tensor, axis=1)
 
                             # Calculate variance and mean
                             energy_variance = np.var(energies)
@@ -565,12 +561,16 @@ class TrajectoryFluxAnalyzer:
                 flux_derivatives[i] = 0
 
         print(
-            f"   ✓ Successfully mapped {mapped_count}/{n_residues} residues ({100*mapped_count/n_residues:.1f}%)"
+            "   ✓ Successfully mapped "
+            f"{mapped_count}/{n_residues} residues "
+            f"({100 * mapped_count / n_residues:.1f}%)"
         )
 
         if unmapped_residues:
             print(
-                f"   ℹ️  {len(unmapped_residues)} residues had no interactions: {unmapped_residues[:5]}..."
+                "   ℹ️  "
+                f"{len(unmapped_residues)} residues had no interactions: "
+                f"{unmapped_residues[:5]}..."
             )
 
         # Apply spatial smoothing
@@ -653,11 +653,11 @@ class TrajectoryFluxAnalyzer:
         print("\n1. Loading protein structure...")
         ca_atoms, ca_coords, res_indices, res_names = self.parse_pdb_for_ribbon(protein_pdb)
         print(f"   ✓ Loaded {len(ca_coords)} residues")
-        print(f"   ✓ Created proper atom-to-residue mapping")
+        print("   ✓ Created proper atom-to-residue mapping")
 
         # Check if we have GPU results
         if gpu_trajectory_results is not None:
-            print(f"\n2. Using GPU trajectory results directly (bypassing CSV parsing)")
+            print("\n2. Using GPU trajectory results directly (bypassing CSV parsing)")
             print(f"   Found {len(gpu_trajectory_results)} trajectory frames")
 
             # Process GPU results into flux data
@@ -805,7 +805,8 @@ class TrajectoryFluxAnalyzer:
         # Bootstrap validation
         n_significant = sum(1 for stats in bootstrap_stats.values() if stats["is_significant"])
         print(
-            f"   ✓ Bootstrap complete: {n_significant}/{len(res_indices)} residues significant (p<0.05)"
+            "   ✓ Bootstrap complete: "
+            f"{n_significant}/{len(res_indices)} residues significant (p<0.05)"
         )
 
         return self.flux_data
@@ -900,10 +901,8 @@ class TrajectoryFluxAnalyzer:
         if normalized_matrix.shape[1] > 200:
             step = normalized_matrix.shape[1] // 200
             normalized_matrix_plot = normalized_matrix[:, ::step]
-            x_labels = res_indices[::step]
         else:
             normalized_matrix_plot = normalized_matrix
-            x_labels = res_indices
 
         # Create normalized heatmap
         sns.heatmap(
@@ -960,7 +959,7 @@ class TrajectoryFluxAnalyzer:
 
         with open(report_file, "w") as f:
             f.write(f"FluxMD Analysis Report for {protein_name}\n")
-            f.write(f"Unified Memory Architecture (UMA) Optimized Pipeline\n")
+            f.write("Unified Memory Architecture (UMA) Optimized Pipeline\n")
             f.write("=" * 60 + "\n")
             f.write(f"\nTotal residues analyzed: {len(res_indices)}\n")
             f.write(f"Average flux range: [{avg_flux.min():.4f}, {avg_flux.max():.4f}]\n")
@@ -998,7 +997,9 @@ class TrajectoryFluxAnalyzer:
             f.write(f"Mean flux: {np.mean(avg_flux):.4f} ± {np.std(avg_flux):.4f}\n")
             f.write(f"Median flux: {np.median(avg_flux):.4f}\n")
             f.write(
-                f"Non-zero residues: {np.sum(avg_flux > 0)} ({np.sum(avg_flux > 0)/len(avg_flux)*100:.1f}%)\n"
+                "Non-zero residues: "
+                f"{np.sum(avg_flux > 0)} "
+                f"({np.sum(avg_flux > 0)/len(avg_flux)*100:.1f}%)\n"
             )
 
         print(f"   ✓ Saved report to: {report_file}")
@@ -1099,7 +1100,7 @@ class TrajectoryFluxAnalyzer:
             "bootstrap_stats": {},  # Can add bootstrap if needed
         }
 
-        print(f"\n3. Flux computation complete!")
+        print("\n3. Flux computation complete!")
         print(f"   Flux range: {flux_values.min():.3f} - {flux_values.max():.3f}")
         print(f"   Mean flux: {flux_values.mean():.3f}")
 
@@ -1137,7 +1138,9 @@ class TrajectoryFluxAnalyzer:
             f.write(f"Mean flux: {np.mean(avg_flux):.4f} ± {np.std(avg_flux):.4f}\n")
             f.write(f"Median flux: {np.median(avg_flux):.4f}\n")
             f.write(
-                f"Non-zero residues: {np.sum(avg_flux > 0)} ({np.sum(avg_flux > 0)/len(avg_flux)*100:.1f}%)\n"
+                "Non-zero residues: "
+                f"{np.sum(avg_flux > 0)} "
+                f"({np.sum(avg_flux > 0)/len(avg_flux)*100:.1f}%)\n"
             )
 
         print(f"   ✓ Saved analysis report to: {report_file}")

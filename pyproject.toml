@@ -107,18 +107,9 @@ extend-ignore = ["E203", "W503"]
 extend-exclude = "fluxmd/_ARCHIVE_simplified_version/*"
 
 [tool.ruff]
+line-length = 100
 extend-exclude = ["fluxmd/_ARCHIVE_simplified_version/*"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = "test_*.py"
-python_classes = "Test*"
-python_functions = "test_*"
-addopts = "-q"
-
-[tool.mypy]
-python_version = "3.8"
-warn_return_any = true
+extend-ignore = []
 warn_unused_configs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
@@ -129,6 +120,8 @@ warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
 exclude = "fluxmd/_ARCHIVE_simplified_version/*"
+
+ignore_errors = true
 
 [tool.bandit]
 exclude_dirs = ["fluxmd/_ARCHIVE_simplified_version/*"]

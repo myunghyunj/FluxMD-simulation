@@ -3,9 +3,8 @@ PDB file parser for FluxMD.
 Handles both protein and DNA structures.
 """
 
-from typing import Dict, List, Optional
+from typing import Optional
 
-import numpy as np
 import pandas as pd
 
 
@@ -113,7 +112,7 @@ class PDBParser:
                                 }
                             )
 
-                        except (ValueError, IndexError) as e:
+                        except (ValueError, IndexError):
                             print(f"Warning: Could not parse line: {line.strip()}")
                             continue
 

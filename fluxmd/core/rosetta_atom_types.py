@@ -5,9 +5,7 @@ Maps PDB atoms to Rosetta atom types for accurate energy calculations
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, Optional, Set, Tuple
-
-import numpy as np
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 

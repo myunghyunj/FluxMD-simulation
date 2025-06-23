@@ -5,12 +5,11 @@ Optimized for Apple Silicon (Metal) and NVIDIA CUDA
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple
 
-import numpy as np
 import torch
 
-from ..core.ref15_params import REF15Parameters, get_ref15_params
+from ..core.ref15_params import get_ref15_params
 from ..core.rosetta_atom_types import get_atom_typer
 
 logger = logging.getLogger(__name__)

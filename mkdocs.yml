@@ -34,7 +34,4 @@ nav:
   - "Algorithms": 
     - "Matryoshka Engine (2.0)": "algorithms.md"
   - "Development Archive":
-      - "Phase 3 Summary": "archive/PHASE3_SUMMARY.md"
-      - "Phase 4 Summary": "archive/PHASE4_SUMMARY.md"
-      - "Phase 5 Summary": "archive/PHASE5_SUMMARY.md"
-      - "Physics Fixes": "archive/PHYSICS_FIXES_SUMMARY.md"
+      - "Physics Fixes": "PHYSICS_FIXES_SUMMARY.md"

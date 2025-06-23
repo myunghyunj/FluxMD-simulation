@@ -7,7 +7,7 @@ Includes CONECT records for proper connectivity and optimized base pair alignmen
 
 import argparse
 import math
-from typing import Dict, List, Set, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 

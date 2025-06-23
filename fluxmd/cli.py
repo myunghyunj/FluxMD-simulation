@@ -17,7 +17,6 @@ def main():
     fluxmd_script_path = os.path.join(parent_dir, "fluxmd.py")
 
     # Import the script module dynamically
-    import importlib.util
 
     spec = importlib.util.spec_from_file_location("fluxmd_script", fluxmd_script_path)
     fluxmd_script = importlib.util.module_from_spec(spec)
@@ -34,7 +33,6 @@ def main_uma():
     uma_script_path = os.path.join(parent_dir, "fluxmd_uma.py")
 
     # Import the script module dynamically
-    import importlib.util
 
     spec = importlib.util.spec_from_file_location("fluxmd_uma_script", uma_script_path)
     uma_script = importlib.util.module_from_spec(spec)

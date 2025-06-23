@@ -8,9 +8,7 @@ Optimized for Unified Memory Architecture (UMA) - keeps everything on GPU.
 FIXED: Now uses the same energy functions as the reference implementation.
 """
 
-import logging
 import platform
-import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -204,7 +202,7 @@ class GPUAcceleratedInteractionCalculator:
         print("   ✓ DNA properties pre-computed and stored on GPU")
 
         # Debug output
-        print(f"\n   DNA Donor/Acceptor Statistics:")
+        print("\n   DNA Donor/Acceptor Statistics:")
         print(f"     Total donors: {properties['is_donor'].sum().item()}")
         print(f"     Total acceptors: {properties['is_acceptor'].sum().item()}")
         print(f"     Charged negative (phosphates): {properties['is_charged_neg'].sum().item()}")
@@ -314,7 +312,7 @@ class GPUAcceleratedInteractionCalculator:
         print("   ✓ Protein properties pre-computed and stored on GPU")
 
         # FIXED: Add debug output for donor/acceptor detection
-        print(f"\n   Donor/Acceptor Statistics:")
+        print("\n   Donor/Acceptor Statistics:")
         print(f"     Total donors: {properties['is_donor'].sum().item()}")
         print(f"     Total acceptors: {properties['is_acceptor'].sum().item()}")
         print(f"     Charged positive: {properties['is_charged_pos'].sum().item()}")
@@ -326,7 +324,7 @@ class GPUAcceleratedInteractionCalculator:
         n_atoms = len(ligand_atoms)
 
         # FIXED: Debug element detection
-        print(f"\n   Ligand element detection:")
+        print("\n   Ligand element detection:")
         element_counts = {}
 
         properties = {
@@ -395,7 +393,7 @@ class GPUAcceleratedInteractionCalculator:
         print(f"     Elements found: {dict(sorted(element_counts.items()))}")
 
         # FIXED: Add debug output for ligand donor/acceptor detection
-        print(f"\n   Ligand Donor/Acceptor Statistics:")
+        print("\n   Ligand Donor/Acceptor Statistics:")
         print(f"     Total donors: {properties['is_donor'].sum().item()}")
         print(f"     Total acceptors: {properties['is_acceptor'].sum().item()}")
         print(f"     Charged positive: {properties['is_charged_pos'].sum().item()}")

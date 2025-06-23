@@ -8,18 +8,11 @@ Optimized for Unified Memory Architecture (UMA) - processes everything on GPU.
 """
 
 import os
-from typing import Dict, List, Optional, Tuple
-
-import numpy as np
-import pandas as pd
-
-try:
-    from Bio.PDB import PDBParser
-except ImportError:
-    # Fallback to our own PDB parser if BioPython not available
-    from ..utils.pdb_parser import PDBParser
+from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import seaborn as sns
 
 from ..gpu.gpu_accelerated_flux_uma import InteractionResult
@@ -121,7 +114,8 @@ class TrajectoryFluxAnalyzer:
                 )
             else:
                 print(
-                    f"   ✓ Found {len(self.residue_indices)} residues. Analysis tensor size: {self.n_residues}"
+                    "   ✓ Found "
+                    f"{len(self.residue_indices)} residues. Analysis tensor size: {self.n_residues}"
                 )
             return
 
@@ -164,11 +158,13 @@ class TrajectoryFluxAnalyzer:
                 else:
                     self.base_types.append("?")
             print(
-                f"   ✓ Found {len(self.residue_indices)} nucleotides. Analysis tensor size: {self.n_residues}"
+                "   ✓ Found "
+                f"{len(self.residue_indices)} nucleotides. Analysis tensor size: {self.n_residues}"
             )
         else:
             print(
-                f"   ✓ Found {len(self.residue_indices)} residues. Analysis tensor size: {self.n_residues}"
+                "   ✓ Found "
+                f"{len(self.residue_indices)} residues. Analysis tensor size: {self.n_residues}"
             )
 
     def process_iterations_and_calculate_flux(
@@ -460,9 +456,6 @@ class TrajectoryFluxAnalyzer:
 
             # Add colored bars for different bases
             base_colors = {"A": "#FF6B6B", "T": "#4ECDC4", "G": "#45B7D1", "C": "#96CEB4"}
-            y_max = ax1.get_ylim()[1]
-            bar_height = y_max * 0.02
-
             for i, (idx, base) in enumerate(zip(residue_indices, self.base_types)):
                 if base in base_colors:
                     ax1.axvspan(
@@ -502,9 +495,6 @@ class TrajectoryFluxAnalyzer:
         if flux_matrix.shape[1] > 200:
             step = flux_matrix.shape[1] // 200
             flux_matrix = flux_matrix[:, ::step]
-            x_labels = residue_indices[::step]
-        else:
-            x_labels = residue_indices
 
         sns.heatmap(flux_matrix, cmap="YlOrRd", cbar_kws={"label": "Flux Value"})
         plt.xlabel("Residue Index")
@@ -577,7 +567,7 @@ class TrajectoryFluxAnalyzer:
         """Generate a text summary of the flux analysis."""
         report_lines = [
             f"FluxMD Analysis Report for {target_name}",
-            f"Unified Memory Architecture (UMA) Optimized Pipeline",
+            "Unified Memory Architecture (UMA) Optimized Pipeline",
             "=" * 60,
             f"\nTotal residues analyzed: {len(flux_data['res_indices'])}",
             f"Average flux range: [{flux_data['avg_flux'].min():.4f}, {flux_data['avg_flux'].max():.4f}]",

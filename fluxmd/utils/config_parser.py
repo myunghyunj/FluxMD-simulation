@@ -4,7 +4,7 @@
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import yaml
 
@@ -179,7 +179,7 @@ def print_derived_constants(config: Dict[str, Any]) -> None:
         D_r = kT / (8 * 3.14159 * eta_converted * R_ligand**3)
 
         print(f"\nViscosity: {viscosity} Pa·s")
-        print(f"Example for 5 Å ligand:")
+        print("Example for 5 Å ligand:")
         print(f"  Translational diffusion (D_t): {D_t:.2e} Å²/ps")
         print(f"  Rotational diffusion (D_r): {D_r:.2e} rad²/ps")
 

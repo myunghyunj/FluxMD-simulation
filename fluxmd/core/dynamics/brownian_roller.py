@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import heapq
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Tuple
 
 import numpy as np
 from scipy.spatial import cKDTree

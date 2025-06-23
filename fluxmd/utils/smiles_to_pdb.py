@@ -4,13 +4,11 @@ SMILES to PDB Converter - Enhanced version with proper aromatic bond handling
 Converts SMILES strings to 3D PDB structures using NCI CACTUS and OpenBabel
 """
 
-import os
 import subprocess
 import sys
-import tempfile
 import urllib.parse
 import urllib.request
-from typing import Optional, Tuple
+from typing import Optional
 
 
 class SMILESConverter:
@@ -48,7 +46,7 @@ class SMILESConverter:
         sdf_file = f"{output_name}.sdf"
 
         try:
-            print(f"Converting SMILES to 3D structure...")
+            print("Converting SMILES to 3D structure...")
             print(f"SMILES: {smiles_string}")
 
             # Get SDF from CACTUS
@@ -99,7 +97,7 @@ class SMILESConverter:
             # Build URL
             url = f"{self.CACTUS_BASE_URL}/{encoded_smiles}/file?format={format_type}&get3d=true"
 
-            print(f"  Fetching 3D structure from NCI CACTUS...")
+            print("  Fetching 3D structure from NCI CACTUS...")
 
             with urllib.request.urlopen(url) as response:
                 content = response.read().decode("utf-8")
@@ -176,7 +174,7 @@ class SMILESConverter:
                     if connections.count(atom) > 1:
                         multiple_bonds += 1
 
-        print(f"\nGenerated structure:")
+        print("\nGenerated structure:")
         print(f"  Atoms: {atom_count}")
         print(f"  CONECT records: {len(conect_lines)}")
         if sdf_aromatic_bonds > 0:
