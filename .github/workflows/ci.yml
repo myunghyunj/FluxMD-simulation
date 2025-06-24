@@ -14,12 +14,26 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Cache pre-commit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-precommit-${{ hashFiles('.pre-commit-config.yaml') }}
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -e .
+          pip install -e .[dev]
           pip install black flake8 pytest
+      - name: Authorise nested git clones (pre-commit hooks)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config --global url."https://${GH_TOKEN}:x-oauth-basic@github.com/".insteadOf "https://github.com/"
+      - name: Pre-commit
+        run: |
+          pre-commit install --hook-type pre-commit --hook-type commit-msg
+          pre-commit run --all-files --show-diff-on-failure
       - run: black --check fluxmd/ tests/ --target-version py311
       - run: flake8 fluxmd/ tests/ --max-line-length=100
       - run: pytest --maxfail=1 --disable-warnings -q
