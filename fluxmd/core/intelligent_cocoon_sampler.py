@@ -177,7 +177,6 @@ class IntelligentCocoonSampler:
             # Check if surface exposed (simple distance check)
             min_dist_to_surface = np.min(cdist([coord], self.protein_coords)[0])
             if min_dist_to_surface < 5.0:  # Near surface
-
                 # Create context for REF15
                 context = self.ref15.create_atom_context(atom)
 

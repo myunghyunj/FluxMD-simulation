@@ -905,7 +905,7 @@ class ProteinLigandFluxAnalyzer:
         print(f"     Total iterations: {i}")
         print(f"     Successful points: {successful_points}")
         print(f"     Collisions handled: {collision_count}")
-        print(f"     Z-progress achieved: {z_progress*100:.1f}%")
+        print(f"     Z-progress achieved: {z_progress * 100:.1f}%")
         print(f"     Points per unit Z: {successful_points / max(z_progress, 0.01):.1f}")
 
         if len(trajectory) > 0:
@@ -2662,7 +2662,7 @@ class ProteinLigandFluxAnalyzer:
                 edgecolors="black",
                 linewidth=3,
                 zorder=5,
-                label=f'Start ({"top" if trajectory[0, 2] > 0 else "bottom"})',
+                label=f"Start ({'top' if trajectory[0, 2] > 0 else 'bottom'})",
             )
             if len(trajectory) > 1:
                 ax4.scatter(
@@ -2727,9 +2727,9 @@ class ProteinLigandFluxAnalyzer:
             n_rotations: Number of rotations to try at each trajectory position
             trajectory_step_size: User-defined step size in Angstroms (optional)
         """
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Iteration {iteration_num}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         # Parse structures
         print("Parsing structures...")
@@ -3239,7 +3239,7 @@ class ProteinLigandFluxAnalyzer:
                 color=color,
                 alpha=0.9,
                 linewidth=3,
-                label=f"Approach {i+1}",
+                label=f"Approach {i + 1}",
                 solid_capstyle="round",
             )
 
@@ -3356,9 +3356,9 @@ class ProteinLigandFluxAnalyzer:
         iteration_data = []
 
         for iteration in range(n_iterations):
-            print(f"\n{'#'*80}")
+            print(f"\n{'#' * 80}")
             print(f"STARTING ITERATION {iteration + 1} OF {n_iterations}")
-            print(f"{'#'*80}")
+            print(f"{'#' * 80}")
 
             iteration_start = time.time()
 
@@ -3408,7 +3408,7 @@ class ProteinLigandFluxAnalyzer:
             print(f"Total iterations completed: {len(iteration_data)}")
             print(f"Total interactions found: {total_interactions}")
             print(f"Total time: {total_time:.1f} seconds")
-            print(f"Average time per iteration: {total_time/len(iteration_data):.1f} seconds")
+            print(f"Average time per iteration: {total_time / len(iteration_data):.1f} seconds")
 
             # Check for pi-stacking
             pi_stacking_total = 0

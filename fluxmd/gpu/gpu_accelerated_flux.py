@@ -441,7 +441,9 @@ class GPUAcceleratedInteractionCalculator:
         molecule_type = (
             "Target (DNA)"
             if self.target_is_dna and is_target
-            else "Target (Protein)" if is_target else "Mobile"
+            else "Target (Protein)"
+            if is_target
+            else "Mobile"
         )
 
         print(
