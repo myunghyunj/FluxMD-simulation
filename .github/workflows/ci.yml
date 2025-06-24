@@ -18,12 +18,11 @@ jobs:
         with:
           python-version: '3.11'
       - name: git auth setup
-        id: git_auth
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config --global url."https://${TOKEN}:x-oauth-basic@github.com/".insteadOf "https://github.com/"
-          echo "token_masked=***" >> "$GITHUB_OUTPUT"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config --global --list | grep insteadOf
       - name: Cache pre-commit
         uses: actions/cache@v4
         with:
@@ -35,10 +34,6 @@ jobs:
         run: |
           pre-commit install --hook-type pre-commit --hook-type commit-msg
           pre-commit run --all-files --show-diff-on-failure
-      - name: git auth teardown
-        if: always()
-        run: |
-          git config --global --remove-section url."https://${{ secrets.GITHUB_TOKEN }}:x-oauth-basic@github.com/" || true
       - run: black --check fluxmd/ tests/ --target-version py311
       - run: flake8 fluxmd/ tests/ --max-line-length=100
       - run: pytest --maxfail=1 --disable-warnings -q
