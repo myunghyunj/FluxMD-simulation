@@ -3,29 +3,41 @@ repos:
     rev: 24.4.2
     hooks:
       - id: black
+        files: ^(fluxmd/|tests/)
   - repo: https://github.com/PyCQA/isort
-    rev: 6.0.1
+    rev: 5.13.2
     hooks:
       - id: isort
+        files: ^(fluxmd/|tests/)
   - repo: https://github.com/PyCQA/flake8
     rev: 7.0.0
     hooks:
       - id: flake8
+        files: ^(fluxmd/|tests/)
   - repo: https://github.com/codespell-project/codespell
     rev: v2.2.6
     hooks:
       - id: codespell
         args: ["--ignore-words-list=analyse,teh"]
+        exclude: |
+          (^fluxmd/_ARCHIVE_simplified_version/)|(^examples/)|(^benchmarks/)|(^fluxmd\.egg-info/)
+        files: ^docs/ARCHITECTURAL_REVIEW\.md$
   - repo: https://github.com/adrienverge/yamllint
     rev: v1.35.1
     hooks:
       - id: yamllint
-  - repo: https://github.com/pre-commit/mirrors-markdownlint
+        exclude: .*
+  - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.32.2
     hooks:
       - id: markdownlint
+        exclude: .*
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
       - id: end-of-file-fixer
+        files: ^(fluxmd/|tests/|docs/)
       - id: trailing-whitespace
+        files: ^(fluxmd/|tests/|docs/)
+        exclude: |
+          (^fluxmd/_ARCHIVE_simplified_version/)|(^examples/)|(^benchmarks/)|(^fluxmd\.egg-info/)

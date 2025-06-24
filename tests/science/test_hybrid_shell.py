@@ -1,5 +1,12 @@
 import numpy as np
-from fluxmd.core.solvent.hybrid_shell import build_hybrid_shell
+import importlib.util
+import pathlib
+
+MODULE_PATH = pathlib.Path(__file__).resolve().parents[2] / "fluxmd" / "core" / "solvent" / "hybrid_shell.py"
+spec = importlib.util.spec_from_file_location("hybrid_shell", MODULE_PATH)
+hybrid_shell = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(hybrid_shell)
+build_hybrid_shell = hybrid_shell.build_hybrid_shell
 
 
 def test_scaffold_runs():
