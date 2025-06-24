@@ -35,3 +35,5 @@ nav:
     - "Matryoshka Engine (2.0)": "algorithms.md"
   - "Development Archive":
       - "Physics Fixes": "PHYSICS_FIXES_SUMMARY.md"
+  - "Design docs":
+      - "Architectural review": "ARCHITECTURAL_REVIEW.md"

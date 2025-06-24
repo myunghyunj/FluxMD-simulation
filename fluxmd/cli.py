@@ -5,6 +5,7 @@ Command-line interface for FluxMD
 import importlib.util
 import os
 import sys
+import argparse
 
 # Add parent directory to path for backwards compatibility
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -12,6 +13,26 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def main():
     """Main entry point for fluxmd command"""
+    parser = argparse.ArgumentParser(description="FluxMD CLI")
+    parser.add_argument("--protein", required=False)
+    parser.add_argument("--ligand", required=False)
+    parser.add_argument("--params", required=False)
+    parser.add_argument("--dry-run", action="store_true")
+    args, unknown = parser.parse_known_args()
+
+    required = [args.protein, args.ligand, args.params]
+    for p in required:
+        if p and not os.path.exists(p):
+            print(f"Error: Required file not found: {p}", file=sys.stderr)
+            sys.exit(1)
+
+    # Build argv for underlying script
+    sys.argv = [sys.argv[0]] + unknown
+    if args.params:
+        sys.argv.extend(["--config", args.params])
+    if args.dry_run:
+        sys.argv.append("--dry-run")
+
     # Import main function directly from the fluxmd.py script
     parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     fluxmd_script_path = os.path.join(parent_dir, "fluxmd.py")
