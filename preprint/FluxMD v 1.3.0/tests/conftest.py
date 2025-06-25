@@ -1,5 +1,6 @@
 import pytest
 
+
 def pytest_addoption(parser):
     parser.addoption(
         "--device",
@@ -7,6 +8,7 @@ def pytest_addoption(parser):
         default="cpu",
         help="device to run tests on (cpu or gpu)",
     )
+
 
 @pytest.fixture
 def device(request):

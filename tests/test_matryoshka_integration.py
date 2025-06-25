@@ -183,7 +183,7 @@ def create_synthetic_ligand(center=(0, 0, 0), n_atoms=20):
         atoms.append(
             {
                 "serial": i + 1,
-                "name": f"C{i+1}",
+                "name": f"C{i + 1}",
                 "residue": "LIG",
                 "chain": "L",
                 "residue_number": 1,

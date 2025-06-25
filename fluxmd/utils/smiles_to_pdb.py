@@ -181,7 +181,7 @@ class SMILESConverter:
             print(f"  Aromatic bonds in SDF: {sdf_aromatic_bonds}")
         if multiple_bonds > 0:
             print(
-                f"  Multiple bonds in PDB: {multiple_bonds//2}"
+                f"  Multiple bonds in PDB: {multiple_bonds // 2}"
             )  # Divide by 2 as each bond is counted twice
 
         # Display sample CONECT lines
@@ -190,7 +190,7 @@ class SMILESConverter:
             for line in conect_lines[:5]:
                 print(f"  {line}")
             if len(conect_lines) > 5:
-                print(f"  ... ({len(conect_lines)-5} more)")
+                print(f"  ... ({len(conect_lines) - 5} more)")
 
 
 def convert_smiles_to_pdb_improved(

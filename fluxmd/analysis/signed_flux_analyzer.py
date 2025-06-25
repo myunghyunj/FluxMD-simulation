@@ -299,12 +299,12 @@ class SignedFluxAnalyzer:
         print(
             "Attractive residues: "
             f"{attractive_residues} "
-            f"({attractive_residues/len(residue_ids)*100:.1f}%)"
+            f"({attractive_residues / len(residue_ids) * 100:.1f}%)"
         )
         print(
             "Repulsive residues: "
             f"{repulsive_residues} "
-            f"({repulsive_residues/len(residue_ids)*100:.1f}%)"
+            f"({repulsive_residues / len(residue_ids) * 100:.1f}%)"
         )
         print(f"\nEstimated binding contribution: {total_attractive:.2f} kcal/mol·Å")
         print(f"Spatially smoothed estimate: {smoothed_negative:.2f} kcal/mol·Å")

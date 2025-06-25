@@ -547,7 +547,7 @@ class BrownianSurfaceRoller:
 
         print(
             f"Layer hops: {self.successful_hops}/{self.hop_attempts} "
-            + f"({100*self.successful_hops/(self.hop_attempts+1e-10):.1f}% success)"
+            + f"({100 * self.successful_hops / (self.hop_attempts + 1e-10):.1f}% success)"
         )
 
         return trajectory

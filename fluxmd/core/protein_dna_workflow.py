@@ -141,7 +141,7 @@ def run_protein_dna_workflow(dna_file: str, protein_file: str, output_dir: str, 
     dna_center = dna_coords.mean(axis=0)
     print(f"\n   DNA center (original): {dna_center}")
     print(
-        f"   DNA coordinate range: X[{dna_coords[:,0].min():.1f}, {dna_coords[:,0].max():.1f}], Y[{dna_coords[:,1].min():.1f}, {dna_coords[:,1].max():.1f}], Z[{dna_coords[:,2].min():.1f}, {dna_coords[:,2].max():.1f}]"
+        f"   DNA coordinate range: X[{dna_coords[:, 0].min():.1f}, {dna_coords[:, 0].max():.1f}], Y[{dna_coords[:, 1].min():.1f}, {dna_coords[:, 1].max():.1f}], Z[{dna_coords[:, 2].min():.1f}, {dna_coords[:, 2].max():.1f}]"
     )
 
     # Center all coordinates
@@ -169,9 +169,9 @@ def run_protein_dna_workflow(dna_file: str, protein_file: str, output_dir: str, 
         print(f"           Clamping to minimum 5.0 Å for safety")
 
     for iteration_num in range(n_iterations):
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"ITERATION {iteration_num + 1} of {n_iterations}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         iteration_results = []
 
@@ -382,7 +382,7 @@ def _write_dna_report(output_dir, dna_name, flux_data, flux_analyzer):
                 res_idx = flux_analyzer.residue_indices[idx]
                 base = flux_analyzer.base_types[idx] if idx < len(flux_analyzer.base_types) else "?"
                 flux_val = flux_data["avg_flux"][idx]
-                f.write(f"{i+1}. Position {res_idx} ({base}): Flux = {flux_val:.4f}\n")
+                f.write(f"{i + 1}. Position {res_idx} ({base}): Flux = {flux_val:.4f}\n")
 
         # Sequence context
         f.write("\n--- Sequence Context of High-Flux Regions ---\n")
