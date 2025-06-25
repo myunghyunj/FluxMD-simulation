@@ -618,7 +618,7 @@ class DNABuilder:
             for chain in sorted(chain_atoms.keys()):
                 last_atom = chain_atoms[chain][-1]
                 f.write(
-                    f"TER   {last_atom['index']+1:>5}      {last_atom['res_name']:>3} "
+                    f"TER   {last_atom['index'] + 1:>5}      {last_atom['res_name']:>3} "
                     f"{chain}{last_atom['res_id']:>4}\n"
                 )
 
@@ -643,7 +643,7 @@ class DNABuilder:
                     conect_line = f"CONECT{atom_idx:>5}"
                     for j in range(4):
                         if i + j < len(connected):
-                            conect_line += f"{connected[i+j]:>5}"
+                            conect_line += f"{connected[i + j]:>5}"
                     f.write(conect_line + "\n")
 
             f.write("END\n")
@@ -707,7 +707,7 @@ def main():
     for i in range(len(sequence)):
         base_a = sequence[i]
         base_b = DNABuilder.COMPLEMENT[base_a]
-        print(f"  {i+1}: {base_a}-{base_b}")
+        print(f"  {i + 1}: {base_a}-{base_b}")
 
 
 if __name__ == "__main__":

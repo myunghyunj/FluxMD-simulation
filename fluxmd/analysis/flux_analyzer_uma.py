@@ -191,7 +191,7 @@ class TrajectoryFluxAnalyzer:
         all_flux_tensors = []
 
         for i, iteration_results in enumerate(all_iteration_results):
-            print(f"   Processing iteration {i+1}/{len(all_iteration_results)}...")
+            print(f"   Processing iteration {i + 1}/{len(all_iteration_results)}...")
 
             if not iteration_results:
                 # Empty iteration - add zero flux
@@ -593,7 +593,7 @@ class TrajectoryFluxAnalyzer:
                 ci_upper = flux_data["ci_upper"][idx]
 
                 report_lines.append(
-                    f"{i+1}. Residue {res_id} ({res_name}): "
+                    f"{i + 1}. Residue {res_id} ({res_name}): "
                     f"Flux = {flux_val:.4f} [95% CI: {ci_lower:.4f}-{ci_upper:.4f}]"
                 )
 
@@ -604,7 +604,7 @@ class TrajectoryFluxAnalyzer:
                 "-" * 30,
                 f"Mean flux: {np.mean(avg_flux):.4f} ± {np.std(avg_flux):.4f}",
                 f"Median flux: {np.median(avg_flux):.4f}",
-                f"Non-zero residues: {np.sum(avg_flux > 0)} ({np.sum(avg_flux > 0)/len(avg_flux)*100:.1f}%)",
+                f"Non-zero residues: {np.sum(avg_flux > 0)} ({np.sum(avg_flux > 0) / len(avg_flux) * 100:.1f}%)",
             ]
         )
 
