@@ -12,7 +12,7 @@ This script runs comprehensive physics validation tests to ensure:
 import argparse
 import json
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -141,7 +141,7 @@ class PhysicsValidator:
 
         print(f"  Expected D: {D_expected:.3f} Ų/ps")
         print(f"  Measured D: {D_measured:.3f} Ų/ps")
-        print(f"  Relative error: {relative_error*100:.1f}%")
+        print(f"  Relative error: {relative_error * 100:.1f}%")
         print(f"  R²: {r_value**2:.4f}")
         print(f"  {'✅ PASSED' if passed else '❌ FAILED'}")
 
@@ -292,7 +292,7 @@ class PhysicsValidator:
 
         labels = ["Layer 0 (E=0)", f"Layer 1 (E={delta_E}kT)"]
         ax.bar(labels, layer_counts, alpha=0.7, edgecolor="black")
-        ax.axhline(y=n_steps / 2, color="r", linestyle="--", alpha=0.5, label=f"Equal occupancy")
+        ax.axhline(y=n_steps / 2, color="r", linestyle="--", alpha=0.5, label="Equal occupancy")
 
         # Add expected ratio line
         expected_counts = [
@@ -344,7 +344,7 @@ class PhysicsValidator:
         print(f"  Energy difference: {delta_E} kT")
         print(f"  Expected ratio: {ratio_expected:.3f}")
         print(f"  Measured ratio: {ratio_measured:.3f}")
-        print(f"  Relative error: {relative_error*100:.1f}%")
+        print(f"  Relative error: {relative_error * 100:.1f}%")
         print(f"  {'✅ PASSED' if passed else '❌ FAILED'}")
 
         self.results["boltzmann"] = result
@@ -437,7 +437,7 @@ class PhysicsValidator:
         print(f"  Std deviation: {std_energy:.1f} kJ/mol")
         print(f"  CV: {cv:.3f}")
         print(f"  Drift: {drift_per_frame:.3f} kJ/mol per frame")
-        print(f"  Relative drift: {relative_drift*100:.1f}%")
+        print(f"  Relative drift: {relative_drift * 100:.1f}%")
         print(f"  {'✅ PASSED' if passed else '❌ FAILED'}")
 
         self.results["energy_conservation"] = result

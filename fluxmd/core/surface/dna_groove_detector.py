@@ -1,7 +1,7 @@
 # fluxmd/core/surface/dna_groove_detector.py
 """DNA groove detection for biased surface hopping."""
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 from scipy.spatial import cKDTree

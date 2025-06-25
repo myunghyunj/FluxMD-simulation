@@ -351,7 +351,7 @@ def main():
     protein_flux_pairs = []
 
     for i in range(n_proteins):
-        print(f"\n--- Protein {i+1} ---")
+        print(f"\n--- Protein {i + 1} ---")
         print("Enter paths (drag & drop files or type path):")
 
         # Get PDB file

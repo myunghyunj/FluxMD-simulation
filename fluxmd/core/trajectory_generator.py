@@ -19,14 +19,12 @@ matplotlib.use("Agg")  # Use non-interactive backend for blackbox operation
 import os
 import time
 import warnings
-from datetime import datetime
 from functools import lru_cache
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from mpl_toolkits.mplot3d import Axes3D
-from scipy.spatial import ConvexHull, Delaunay, cKDTree
+from scipy.spatial import ConvexHull, cKDTree
 from scipy.spatial.distance import cdist
 
 warnings.filterwarnings("ignore")
@@ -34,7 +32,6 @@ warnings.filterwarnings("ignore")
 # Import utils
 from .cylindrical_sampler import FastCylindricalSampler
 from .energy_config import DEFAULT_ENERGY_FUNCTION
-from .intelligent_cocoon_sampler import IntelligentCocoonSampler
 
 # Import intra-protein interaction calculator
 from .intra_protein_interactions import IntraProteinInteractions
@@ -186,11 +183,11 @@ class ProteinLigandFluxAnalyzer:
         # Initialize energy function
         self.energy_function = energy_function or DEFAULT_ENERGY_FUNCTION
         if self.energy_function.startswith("ref15"):
-            print(f"\n   Using REF15 energy function")
+            print("\n   Using REF15 energy function")
             self.ref15_calculator = get_ref15_calculator(self.physiological_pH)
             self.intelligent_sampler = None  # Will be initialized after protein loading
         else:
-            print(f"\n   Using legacy energy function")
+            print("\n   Using legacy energy function")
             self.ref15_calculator = None
             self.intelligent_sampler = None
 
@@ -555,7 +552,7 @@ class ProteinLigandFluxAnalyzer:
         # Analyze target geometry
         geometry = self.analyze_molecular_geometry(protein_coords)
 
-        print(f"\n   Molecular geometry analysis:")
+        print("\n   Molecular geometry analysis:")
         print(f"     Shape type: {geometry['shape_type']}")
         print(
             f"     Dimensions: {geometry['dimensions'][0]:.1f} x {geometry['dimensions'][1]:.1f} x {geometry['dimensions'][2]:.1f} Å"
@@ -580,7 +577,7 @@ class ProteinLigandFluxAnalyzer:
 
         # Choose trajectory generation method based on shape
         if geometry["shape_type"] == "linear":
-            print(f"     → Using cylindrical trajectory for linear molecule")
+            print("     → Using cylindrical trajectory for linear molecule")
             return self.generate_uniform_linear_trajectory(geometry, n_steps, target_distance)
         else:
             print(f"     → Using spherical trajectory for {geometry['shape_type']} molecule")
@@ -652,7 +649,7 @@ class ProteinLigandFluxAnalyzer:
         # Determine appropriate mode based on size ratio
         size_ratio = protein_radius / dna_radius
 
-        print(f"\n   Trajectory mode selection:")
+        print("\n   Trajectory mode selection:")
         print(f"     Protein radius: {protein_radius:.1f} Å")
         print(f"     DNA radius: {dna_radius:.1f} Å")
         print(f"     Size ratio: {size_ratio:.2f}")
@@ -660,19 +657,19 @@ class ProteinLigandFluxAnalyzer:
         if size_ratio < 1.5:
             # Small peptides can spiral around DNA
             mode = "spiral"
-            print(f"     Selected mode: SPIRAL (small peptide)")
+            print("     Selected mode: SPIRAL (small peptide)")
         elif size_ratio < 3.0:
             # Medium proteins should follow grooves
             mode = "groove_following"
-            print(f"     Selected mode: GROOVE FOLLOWING (medium protein)")
+            print("     Selected mode: GROOVE FOLLOWING (medium protein)")
         elif size_ratio < 5.0:
             # Larger proteins slide along DNA
             mode = "sliding"
-            print(f"     Selected mode: SLIDING (large protein)")
+            print("     Selected mode: SLIDING (large protein)")
         else:
             # Very large proteins use docking approach
             mode = "docking"
-            print(f"     Selected mode: DOCKING (very large protein)")
+            print("     Selected mode: DOCKING (very large protein)")
 
         return mode
 
@@ -901,11 +898,11 @@ class ProteinLigandFluxAnalyzer:
         times = np.array(times[: len(trajectory)])
 
         # Print statistics
-        print(f"\n   ADAPTIVE SPIRAL trajectory statistics:")
+        print("\n   ADAPTIVE SPIRAL trajectory statistics:")
         print(f"     Total iterations: {i}")
         print(f"     Successful points: {successful_points}")
         print(f"     Collisions handled: {collision_count}")
-        print(f"     Z-progress achieved: {z_progress*100:.1f}%")
+        print(f"     Z-progress achieved: {z_progress * 100:.1f}%")
         print(f"     Points per unit Z: {successful_points / max(z_progress, 0.01):.1f}")
 
         if len(trajectory) > 0:
@@ -921,7 +918,7 @@ class ProteinLigandFluxAnalyzer:
 
             surface_distances = np.array(surface_distances)
 
-            print(f"\n   Coverage and distance statistics:")
+            print("\n   Coverage and distance statistics:")
             print(f"     Z-axis coverage: {z_coverage:.1f}% of DNA length")
             print(f"     Z range: [{min(trajectory_z):.1f}, {max(trajectory_z):.1f}] Å")
             print(
@@ -1015,7 +1012,7 @@ class ProteinLigandFluxAnalyzer:
         length = dimensions[0]
         radius = max(dimensions[1], dimensions[2]) / 2
 
-        print(f"\n   GROOVE-FOLLOWING TRAJECTORY")
+        print("\n   GROOVE-FOLLOWING TRAJECTORY")
         print(f"     DNA length: {length:.1f} Å, radius: {radius:.1f} Å")
 
         trajectory = []
@@ -1103,7 +1100,7 @@ class ProteinLigandFluxAnalyzer:
                 surface_distances.append(min_dist)
 
             surface_distances = np.array(surface_distances)
-            print(f"\n   Groove-following statistics:")
+            print("\n   Groove-following statistics:")
             print(f"     Trajectory points: {len(trajectory)}")
             print(f"     Mean distance from surface: {np.mean(surface_distances):.1f} Å")
             print(f"     Groove type: {groove_type}")
@@ -1138,7 +1135,7 @@ class ProteinLigandFluxAnalyzer:
         length = dimensions[0]
         radius = max(dimensions[1], dimensions[2]) / 2
 
-        print(f"\n   SLIDING TRAJECTORY")
+        print("\n   SLIDING TRAJECTORY")
         print(f"     DNA length: {length:.1f} Å, radius: {radius:.1f} Å")
 
         trajectory = []
@@ -1204,7 +1201,7 @@ class ProteinLigandFluxAnalyzer:
 
         # Print statistics
         if len(trajectory) > 0:
-            print(f"\n   Sliding trajectory statistics:")
+            print("\n   Sliding trajectory statistics:")
             print(f"     Trajectory points: {len(trajectory)}")
             print(
                 f"     Z-range covered: {np.ptp([p.dot(major_axis) for p in trajectory - center]):.1f} Å"
@@ -1240,7 +1237,7 @@ class ProteinLigandFluxAnalyzer:
         length = dimensions[0]
         radius = max(dimensions[1], dimensions[2]) / 2
 
-        print(f"\n   DOCKING TRAJECTORY")
+        print("\n   DOCKING TRAJECTORY")
         print(f"     DNA length: {length:.1f} Å, radius: {radius:.1f} Å")
 
         trajectory = []
@@ -1304,8 +1301,8 @@ class ProteinLigandFluxAnalyzer:
             times = np.array(times[: len(trajectory)])
         else:
             # FALLBACK: If no collision-free positions found, create minimal trajectory
-            print(f"\n   WARNING: No collision-free positions found in docking trajectory")
-            print(f"     Generating fallback trajectory at larger distance")
+            print("\n   WARNING: No collision-free positions found in docking trajectory")
+            print("     Generating fallback trajectory at larger distance")
 
             # Try with much larger distances
             fallback_points = []
@@ -1330,11 +1327,11 @@ class ProteinLigandFluxAnalyzer:
             times = np.linspace(0, n_steps * dt, len(trajectory))
 
         # Print statistics
-        print(f"\n   Docking trajectory statistics:")
+        print("\n   Docking trajectory statistics:")
         print(f"     Trajectory points: {len(trajectory)}")
         print(f"     Docking attempts: {n_docking_attempts}")
         if len(trajectory) < n_steps / 2:
-            print(f"     WARNING: Low success rate, consider increasing target distance")
+            print("     WARNING: Low success rate, consider increasing target distance")
 
         return trajectory, times
 
@@ -1499,7 +1496,7 @@ class ProteinLigandFluxAnalyzer:
 
             surface_distances = np.array(surface_distances)
 
-            print(f"\n   Trajectory distance statistics:")
+            print("\n   Trajectory distance statistics:")
             print(f"     Min distance from surface: {np.min(surface_distances):.1f} Å")
             print(f"     Max distance from surface: {np.max(surface_distances):.1f} Å")
             print(f"     Mean distance from surface: {np.mean(surface_distances):.1f} Å")
@@ -1711,7 +1708,7 @@ class ProteinLigandFluxAnalyzer:
         current_pos = start_pos.copy()
         protein_center = np.array([0.0, 0.0, 0.0])
 
-        print(f"\nGenerating random walk:")
+        print("\nGenerating random walk:")
         print(f"  Molecular weight: {molecular_weight} Da")
         print(f"  Diffusion coefficient: {D:.6f} Å²/fs")
         print(f"  RMS step size: {step_size:.4f} Å per {dt} fs")
@@ -1861,11 +1858,11 @@ class ProteinLigandFluxAnalyzer:
                 return bio_atoms
             else:
                 print(f"  ⚠️  BioPython only parsed {len(bio_atoms)}/{expected_atoms} atoms")
-                print(f"  Switching to manual parsing...")
+                print("  Switching to manual parsing...")
 
         except Exception as e:
             print(f"  BioPython parsing failed: {e}")
-            print(f"  Switching to manual parsing...")
+            print("  Switching to manual parsing...")
 
         # Manual parsing fallback
         manual_atoms = []
@@ -1984,7 +1981,7 @@ class ProteinLigandFluxAnalyzer:
                         }
                     )
 
-                except Exception as e:
+                except Exception:
                     continue
 
         df = pd.DataFrame(manual_atoms)
@@ -2409,7 +2406,7 @@ class ProteinLigandFluxAnalyzer:
         # Handle empty trajectory case
         trajectory = np.array(trajectory)
         if len(trajectory) == 0:
-            print(f"  WARNING: Empty trajectory for visualization, creating placeholder figure")
+            print("  WARNING: Empty trajectory for visualization, creating placeholder figure")
             plt.text(
                 0.5,
                 0.5,
@@ -2662,7 +2659,7 @@ class ProteinLigandFluxAnalyzer:
                 edgecolors="black",
                 linewidth=3,
                 zorder=5,
-                label=f'Start ({"top" if trajectory[0, 2] > 0 else "bottom"})',
+                label=f"Start ({'top' if trajectory[0, 2] > 0 else 'bottom'})",
             )
             if len(trajectory) > 1:
                 ax4.scatter(
@@ -2727,9 +2724,9 @@ class ProteinLigandFluxAnalyzer:
             n_rotations: Number of rotations to try at each trajectory position
             trajectory_step_size: User-defined step size in Angstroms (optional)
         """
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Iteration {iteration_num}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         # Parse structures
         print("Parsing structures...")
@@ -2759,10 +2756,10 @@ class ProteinLigandFluxAnalyzer:
                 print(
                     f"  Ligand file contains both ATOM ({non_hetatm_count}) and HETATM ({hetatm_count}) records"
                 )
-                print(f"  Using HETATM records for ligand")
+                print("  Using HETATM records for ligand")
                 ligand_atoms = ligand_atoms[ligand_atoms["is_hetatm"]]
             elif hetatm_count == 0:
-                print(f"  Note: No HETATM records found in ligand file")
+                print("  Note: No HETATM records found in ligand file")
                 # If no HETATM, use all atoms (might be a non-standard ligand file)
 
         print(f"  Parsed {len(protein_atoms)} protein atoms")
@@ -2866,7 +2863,7 @@ class ProteinLigandFluxAnalyzer:
 
                 # Process on GPU with rotations
                 print(f"\n   Starting GPU processing of {len(full_trajectory)} frames...")
-                print(f"   This may take a few minutes for large systems...")
+                print("   This may take a few minutes for large systems...")
 
                 gpu_results = gpu_calc.process_trajectory_batch_gpu(
                     full_trajectory, ligand_coords, n_rotations=n_rotations
@@ -2973,7 +2970,7 @@ class ProteinLigandFluxAnalyzer:
                         protein_atoms, approach_trajectory, iteration_num, approach_idx, iter_dir
                     )
 
-                print(f"   ✓ GPU processing complete!")
+                print("   ✓ GPU processing complete!")
 
             except Exception as e:
                 print(f"   ⚠️  GPU acceleration failed: {e}")
@@ -3239,7 +3236,7 @@ class ProteinLigandFluxAnalyzer:
                 color=color,
                 alpha=0.9,
                 linewidth=3,
-                label=f"Approach {i+1}",
+                label=f"Approach {i + 1}",
                 solid_capstyle="round",
             )
 
@@ -3356,9 +3353,9 @@ class ProteinLigandFluxAnalyzer:
         iteration_data = []
 
         for iteration in range(n_iterations):
-            print(f"\n{'#'*80}")
+            print(f"\n{'#' * 80}")
             print(f"STARTING ITERATION {iteration + 1} OF {n_iterations}")
-            print(f"{'#'*80}")
+            print(f"{'#' * 80}")
 
             iteration_start = time.time()
 
@@ -3408,7 +3405,7 @@ class ProteinLigandFluxAnalyzer:
             print(f"Total iterations completed: {len(iteration_data)}")
             print(f"Total interactions found: {total_interactions}")
             print(f"Total time: {total_time:.1f} seconds")
-            print(f"Average time per iteration: {total_time/len(iteration_data):.1f} seconds")
+            print(f"Average time per iteration: {total_time / len(iteration_data):.1f} seconds")
 
             # Check for pi-stacking
             pi_stacking_total = 0

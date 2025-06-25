@@ -45,8 +45,6 @@ jobs:
           set -x
           pre-commit install --hook-type pre-commit --hook-type commit-msg
           pre-commit run --all-files --show-diff-on-failure
-      - run: black --check fluxmd/ tests/ --target-version py311
-      - run: flake8 fluxmd/ tests/ --max-line-length=100
       - run: pytest --maxfail=1 --disable-warnings -q
       - name: Functional smoke test
         run: |

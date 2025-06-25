@@ -4,12 +4,11 @@ Adds intelligent sampling capabilities to FluxMD trajectory generation
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 
 import numpy as np
 
 from .intelligent_cocoon_sampler import IntelligentCocoonSampler
-from .ref15_energy import get_ref15_calculator
 from .trajectory_generator import CocoonTrajectoryGenerator
 
 logger = logging.getLogger(__name__)
@@ -251,7 +250,6 @@ class REF15TrajectoryGenerator(CocoonTrajectoryGenerator):
         for (chain, resnum, resname), group in interactions_df.groupby(
             ["protein_chain", "protein_residue", "protein_resname"]
         ):
-
             # Calculate flux as sum of energy magnitudes
             # REF15 energies are properly weighted
             total_flux = np.abs(group["bond_energy"]).sum()

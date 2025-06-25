@@ -3,8 +3,6 @@ REF15 Energy Function Parameters
 Complete parameter set for Rosetta Energy Function 2015
 """
 
-import json
-import os
 from typing import Dict, List, Tuple
 
 import numpy as np

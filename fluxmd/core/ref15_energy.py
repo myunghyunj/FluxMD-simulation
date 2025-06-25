@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from .ref15_params import fade_function, get_ref15_params, sigmoidal_dielectric, switch_function
-from .rosetta_atom_types import AtomTypeInfo, get_atom_typer
+from .rosetta_atom_types import get_atom_typer
 
 logger = logging.getLogger(__name__)
 

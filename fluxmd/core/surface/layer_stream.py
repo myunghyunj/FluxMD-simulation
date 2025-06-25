@@ -1,7 +1,7 @@
 # fluxmd/core/surface/layer_stream.py
 from __future__ import annotations
 
-from typing import Dict, Iterator, Optional, Tuple
+from typing import Dict, Iterator
 
 import numpy as np
 

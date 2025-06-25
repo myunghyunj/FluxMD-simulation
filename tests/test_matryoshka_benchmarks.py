@@ -6,14 +6,12 @@ regression thresholds to prevent performance degradation.
 """
 
 import time
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from fluxmd.core.dynamics.brownian_roller import BrownianSurfaceRoller
-from fluxmd.core.geometry.pca_anchors import extreme_calpha_pairs
 from fluxmd.core.matryoshka_generator import MatryoshkaTrajectoryGenerator
 from fluxmd.core.surface.ses_builder import SESBuilder
 from tests.test_matryoshka_integration import create_synthetic_ligand, create_synthetic_protein

@@ -3,9 +3,7 @@ Core workflow for Protein-DNA interaction analysis using UMA pipeline.
 """
 
 import os
-import sys
 import time
-from collections import defaultdict
 
 import numpy as np
 import pandas as pd
@@ -16,7 +14,6 @@ from ..analysis.flux_analyzer_uma import TrajectoryFluxAnalyzer
 # Import UMA-specific components
 from ..gpu.gpu_accelerated_flux_uma import (
     GPUAcceleratedInteractionCalculator,
-    InteractionResult,
     get_device,
 )
 from ..utils.pdb_parser import PDBParser
@@ -123,7 +120,7 @@ def run_protein_dna_workflow(dna_file: str, protein_file: str, output_dir: str, 
     protein_mw = len(protein_atoms) * 110.0  # Average amino acid MW
 
     # Print protein information for trajectory mode selection
-    print(f"\n   Protein analysis:")
+    print("\n   Protein analysis:")
     print(f"     Number of atoms: {len(protein_atoms)}")
     print(f"     Estimated MW: {protein_mw:.0f} Da")
     print(f"     Radius: {protein_radius:.1f} Å")
@@ -141,7 +138,7 @@ def run_protein_dna_workflow(dna_file: str, protein_file: str, output_dir: str, 
     dna_center = dna_coords.mean(axis=0)
     print(f"\n   DNA center (original): {dna_center}")
     print(
-        f"   DNA coordinate range: X[{dna_coords[:,0].min():.1f}, {dna_coords[:,0].max():.1f}], Y[{dna_coords[:,1].min():.1f}, {dna_coords[:,1].max():.1f}], Z[{dna_coords[:,2].min():.1f}, {dna_coords[:,2].max():.1f}]"
+        f"   DNA coordinate range: X[{dna_coords[:, 0].min():.1f}, {dna_coords[:, 0].max():.1f}], Y[{dna_coords[:, 1].min():.1f}, {dna_coords[:, 1].max():.1f}], Z[{dna_coords[:, 2].min():.1f}, {dna_coords[:, 2].max():.1f}]"
     )
 
     # Center all coordinates
@@ -149,7 +146,7 @@ def run_protein_dna_workflow(dna_file: str, protein_file: str, output_dir: str, 
     dna_ca_coords_centered = dna_ca_coords - dna_center
     protein_coords_centered = protein_coords - dna_center
 
-    print(f"   DNA centered at origin")
+    print("   DNA centered at origin")
     print(f"   Protein distance from DNA center: {np.linalg.norm(protein_com - dna_center):.1f} Å")
 
     # Initialize collision detector with centered DNA coordinates
@@ -166,12 +163,12 @@ def run_protein_dna_workflow(dna_file: str, protein_file: str, output_dir: str, 
     final_distance = starting_distance - (n_approaches - 1) * approach_distance
     if final_distance < 5.0:
         print(f"  WARNING: Final approach distance would be {final_distance:.1f} Å")
-        print(f"           Clamping to minimum 5.0 Å for safety")
+        print("           Clamping to minimum 5.0 Å for safety")
 
     for iteration_num in range(n_iterations):
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"ITERATION {iteration_num + 1} of {n_iterations}")
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         iteration_results = []
 
@@ -192,7 +189,7 @@ def run_protein_dna_workflow(dna_file: str, protein_file: str, output_dir: str, 
             )
 
             # Generate cocoon-style trajectory using the same method as ligand simulations
-            print(f"\n   Generating cocoon trajectory:")
+            print("\n   Generating cocoon trajectory:")
             print(f"     Molecular weight: {protein_mw:.1f} Da")
 
             # Use trajectory generator's cocoon method with CENTERED coordinates
@@ -212,7 +209,7 @@ def run_protein_dna_workflow(dna_file: str, protein_file: str, output_dir: str, 
             # Translate trajectory back to original coordinate frame
             if len(trajectory) > 0:
                 trajectory = trajectory + dna_center
-                print(f"   Trajectory translated back to original frame")
+                print("   Trajectory translated back to original frame")
 
             # Save trajectory visualization using the standard cocoon visualization
             save_trajectories = kwargs.get("save_trajectories", True)
@@ -308,7 +305,7 @@ def _save_dna_parameters(params_file, dna_file, protein_file, output_dir, **kwar
         f.write(f"DNA (target): {dna_file}\n")
         f.write(f"Protein (mobile): {protein_file}\n")
         f.write(f"Output directory: {output_dir}\n")
-        f.write(f"Analysis mode: UMA-optimized (zero-copy GPU)\n\n")
+        f.write("Analysis mode: UMA-optimized (zero-copy GPU)\n\n")
 
         f.write("Simulation parameters:\n")
         f.write(f"  Number of iterations: {kwargs.get('n_iterations', 10)}\n")
@@ -382,7 +379,7 @@ def _write_dna_report(output_dir, dna_name, flux_data, flux_analyzer):
                 res_idx = flux_analyzer.residue_indices[idx]
                 base = flux_analyzer.base_types[idx] if idx < len(flux_analyzer.base_types) else "?"
                 flux_val = flux_data["avg_flux"][idx]
-                f.write(f"{i+1}. Position {res_idx} ({base}): Flux = {flux_val:.4f}\n")
+                f.write(f"{i + 1}. Position {res_idx} ({base}): Flux = {flux_val:.4f}\n")
 
         # Sequence context
         f.write("\n--- Sequence Context of High-Flux Regions ---\n")

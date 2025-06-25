@@ -9,18 +9,11 @@ These tests validate the full Matryoshka pipeline including:
 - DNA groove bias
 """
 
-import shutil
-import tempfile
-import time
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 import pytest
 
-from fluxmd.analysis.flux_analyzer import TrajectoryFluxAnalyzer
 from fluxmd.core.dynamics.brownian_roller import BrownianSurfaceRoller
-from fluxmd.core.geometry.pca_anchors import extreme_calpha_pairs
 from fluxmd.core.matryoshka_generator import MatryoshkaTrajectoryGenerator
 from fluxmd.core.surface.dna_groove_detector import DNAGrooveDetector
 from fluxmd.core.surface.ses_builder import SESBuilder
@@ -183,7 +176,7 @@ def create_synthetic_ligand(center=(0, 0, 0), n_atoms=20):
         atoms.append(
             {
                 "serial": i + 1,
-                "name": f"C{i+1}",
+                "name": f"C{i + 1}",
                 "residue": "LIG",
                 "chain": "L",
                 "residue_number": 1,

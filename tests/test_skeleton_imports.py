@@ -6,7 +6,7 @@ import pytest
 
 def test_surface_imports():
     """Test surface module imports."""
-    from fluxmd.core.surface import MatryoshkaLayerGenerator, SESBuilder, SurfaceMesh
+    from fluxmd.core.surface import MatryoshkaLayerGenerator, SESBuilder
     from fluxmd.core.surface.layer_stream import MatryoshkaLayerGenerator as MLG2
     from fluxmd.core.surface.ses_builder import SESBuilder as SESBuilder2
 

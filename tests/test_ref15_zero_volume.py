@@ -6,7 +6,6 @@ import warnings
 from unittest.mock import Mock, patch
 
 import numpy as np
-import pytest
 
 from fluxmd.core.ref15_energy import AtomContext, REF15EnergyCalculator
 

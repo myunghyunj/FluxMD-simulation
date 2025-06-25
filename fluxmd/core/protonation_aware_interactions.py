@@ -5,11 +5,10 @@ Handles donor/acceptor role swapping and charge-dependent interactions
 
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
-from Bio.PDB.Atom import Atom
 from Bio.PDB.Residue import Residue
 from scipy.spatial.distance import cdist
 
