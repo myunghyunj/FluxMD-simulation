@@ -141,7 +141,7 @@ class PhysicsValidator:
 
         print(f"  Expected D: {D_expected:.3f} Ų/ps")
         print(f"  Measured D: {D_measured:.3f} Ų/ps")
-        print(f"  Relative error: {relative_error*100:.1f}%")
+        print(f"  Relative error: {relative_error * 100:.1f}%")
         print(f"  R²: {r_value**2:.4f}")
         print(f"  {'✅ PASSED' if passed else '❌ FAILED'}")
 
@@ -344,7 +344,7 @@ class PhysicsValidator:
         print(f"  Energy difference: {delta_E} kT")
         print(f"  Expected ratio: {ratio_expected:.3f}")
         print(f"  Measured ratio: {ratio_measured:.3f}")
-        print(f"  Relative error: {relative_error*100:.1f}%")
+        print(f"  Relative error: {relative_error * 100:.1f}%")
         print(f"  {'✅ PASSED' if passed else '❌ FAILED'}")
 
         self.results["boltzmann"] = result
@@ -437,7 +437,7 @@ class PhysicsValidator:
         print(f"  Std deviation: {std_energy:.1f} kJ/mol")
         print(f"  CV: {cv:.3f}")
         print(f"  Drift: {drift_per_frame:.3f} kJ/mol per frame")
-        print(f"  Relative drift: {relative_drift*100:.1f}%")
+        print(f"  Relative drift: {relative_drift * 100:.1f}%")
         print(f"  {'✅ PASSED' if passed else '❌ FAILED'}")
 
         self.results["energy_conservation"] = result

@@ -721,7 +721,7 @@ class TrajectoryFluxAnalyzer:
                     eta_str = "Calculating..."
 
                 print(
-                    f"\n   [{idx+1}/{total_iterations}] Processing {os.path.basename(iter_dir)}... "
+                    f"\n   [{idx + 1}/{total_iterations}] Processing {os.path.basename(iter_dir)}... "
                     f"({progress:.1f}% complete, ETA: {eta_str})"
                 )
 
@@ -987,7 +987,7 @@ class TrajectoryFluxAnalyzer:
                         ci_upper = flux_val + std_flux[idx]
 
                     f.write(
-                        f"{i+1}. Residue {res_id} ({res_name}): "
+                        f"{i + 1}. Residue {res_id} ({res_name}): "
                         f"Flux = {flux_val:.4f} [95% CI: {ci_lower:.4f}-{ci_upper:.4f}]\n"
                     )
 
@@ -999,7 +999,7 @@ class TrajectoryFluxAnalyzer:
             f.write(
                 "Non-zero residues: "
                 f"{np.sum(avg_flux > 0)} "
-                f"({np.sum(avg_flux > 0)/len(avg_flux)*100:.1f}%)\n"
+                f"({np.sum(avg_flux > 0) / len(avg_flux) * 100:.1f}%)\n"
             )
 
         print(f"   ✓ Saved report to: {report_file}")
@@ -1131,7 +1131,7 @@ class TrajectoryFluxAnalyzer:
                     res_id = res_indices[idx]
                     res_name = self.flux_data["protein_resname"][idx]
                     flux_val = avg_flux[idx]
-                    f.write(f"{i+1}. Residue {res_id} ({res_name}): Flux = {flux_val:.4f}\n")
+                    f.write(f"{i + 1}. Residue {res_id} ({res_name}): Flux = {flux_val:.4f}\n")
 
             f.write("\n\nStatistical Summary:\n")
             f.write("-" * 30 + "\n")
@@ -1140,7 +1140,7 @@ class TrajectoryFluxAnalyzer:
             f.write(
                 "Non-zero residues: "
                 f"{np.sum(avg_flux > 0)} "
-                f"({np.sum(avg_flux > 0)/len(avg_flux)*100:.1f}%)\n"
+                f"({np.sum(avg_flux > 0) / len(avg_flux) * 100:.1f}%)\n"
             )
 
         print(f"   ✓ Saved analysis report to: {report_file}")

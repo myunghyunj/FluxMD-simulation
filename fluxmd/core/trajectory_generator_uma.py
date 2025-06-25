@@ -3,6 +3,7 @@
 Modified trajectory_generator.py section for UMA-optimized workflow.
 This shows the key changes needed to integrate the in-memory GPU pipeline.
 """
+
 import os
 
 import numpy as np
@@ -215,12 +216,12 @@ def run_single_iteration_uma(
         save_trajectories: If True, generate and save trajectory visualizations
     """
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     if n_iterations:
         print(f"ITERATION {iteration_num + 1} of {n_iterations}")
     else:
         print(f"ITERATION {iteration_num + 1}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     iteration_results = []
 
@@ -497,10 +498,10 @@ def run_single_iteration_uma(
 
                     f.write("\n  Capping Statistics:\n")
                     f.write(
-                        f"    Energies capped at +10: {capped_high} ({(capped_high/len(energies_array)*100):.1f}%)\n"
+                        f"    Energies capped at +10: {capped_high} ({(capped_high / len(energies_array) * 100):.1f}%)\n"
                     )
                     f.write(
-                        f"    Energies capped at -10: {capped_low} ({(capped_low/len(energies_array)*100):.1f}%)\n"
+                        f"    Energies capped at -10: {capped_low} ({(capped_low / len(energies_array) * 100):.1f}%)\n"
                     )
                     f.write(f"    Total capped: {total_capped} ({capped_percentage:.1f}%)\n")
 
@@ -509,10 +510,10 @@ def run_single_iteration_uma(
                     extended_range = np.sum((energies_array >= -10) & (energies_array <= 10))
                     f.write("\n  Energy Distribution:\n")
                     f.write(
-                        f"    Within physiological range (-5 to +5): {physiological_range} ({(physiological_range/len(energies_array)*100):.1f}%)\n"
+                        f"    Within physiological range (-5 to +5): {physiological_range} ({(physiological_range / len(energies_array) * 100):.1f}%)\n"
                     )
                     f.write(
-                        f"    Within extended range (-10 to +10): {extended_range} ({(extended_range/len(energies_array)*100):.1f}%)\n"
+                        f"    Within extended range (-10 to +10): {extended_range} ({(extended_range / len(energies_array) * 100):.1f}%)\n"
                     )
 
         # Save trajectory data as CSV for this iteration
@@ -693,7 +694,9 @@ def run_complete_analysis_uma(
 
         all_iteration_results.append(iteration_results)
 
-        print(f"\n✓ Iteration {i+1} complete: {len(iteration_results)} trajectory frames processed")
+        print(
+            f"\n✓ Iteration {i + 1} complete: {len(iteration_results)} trajectory frames processed"
+        )
         total_interactions = sum(len(r.energies) for r in iteration_results if r is not None)
         print(f"  Total interactions: {total_interactions}")
 
@@ -758,7 +761,7 @@ def run_complete_analysis_uma(
 
             # Generate per-iteration flux visualization
             if save_trajectories:
-                print(f"  📊 Generating iteration {i+1} flux visualization...")
+                print(f"  📊 Generating iteration {i + 1} flux visualization...")
                 iter_dir = os.path.join(output_dir, f"iteration_{i + 1}")
 
                 # Calculate flux for this iteration only
@@ -790,18 +793,18 @@ def run_complete_analysis_uma(
                     plt.bar(residue_indices, avg_flux, color="steelblue", alpha=0.8)
                     plt.xlabel("Residue Index")
                     plt.ylabel("Flux (normalized)")
-                    plt.title(f"Flux Analysis - Iteration {i+1}")
+                    plt.title(f"Flux Analysis - Iteration {i + 1}")
                     plt.grid(True, alpha=0.3)
 
                     # Save figure
-                    flux_fig_path = os.path.join(iter_dir, f"iteration_{i+1}_flux.png")
+                    flux_fig_path = os.path.join(iter_dir, f"iteration_{i + 1}_flux.png")
                     plt.savefig(flux_fig_path, dpi=150, bbox_inches="tight")
                     plt.close()
 
                     print(f"  📸 Saved flux visualization: {flux_fig_path}")
 
                     # Save flux data for this iteration
-                    flux_csv_path = os.path.join(iter_dir, f"iteration_{i+1}_flux_data.csv")
+                    flux_csv_path = os.path.join(iter_dir, f"iteration_{i + 1}_flux_data.csv")
                     flux_df = pd.DataFrame(
                         {
                             "residue_index": residue_indices,
@@ -934,7 +937,7 @@ def run_complete_analysis_uma(
 
         if residue_counts:
             for i, (res_id, count) in enumerate(residue_counts[:3]):
-                print(f"    {i+1}. Residue {res_id}: {count} interactions")
+                print(f"    {i + 1}. Residue {res_id}: {count} interactions")
         else:
             print(f"    No {type_name} interactions detected")
 

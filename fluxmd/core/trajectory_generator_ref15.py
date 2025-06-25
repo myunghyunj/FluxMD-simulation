@@ -251,7 +251,6 @@ class REF15TrajectoryGenerator(CocoonTrajectoryGenerator):
         for (chain, resnum, resname), group in interactions_df.groupby(
             ["protein_chain", "protein_residue", "protein_resname"]
         ):
-
             # Calculate flux as sum of energy magnitudes
             # REF15 energies are properly weighted
             total_flux = np.abs(group["bond_energy"]).sum()

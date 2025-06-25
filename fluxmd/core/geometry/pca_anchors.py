@@ -61,7 +61,7 @@ def extreme_calpha_pairs(
     # Check for degeneracy
     if λ1 > 0 and (λ1 - λ2) / λ1 < 0.05:
         # Degenerate case: use both PC1 and PC2
-        print(f"PCA degeneracy detected: (λ1-λ2)/λ1 = {(λ1-λ2)/λ1:.3f}")
+        print(f"PCA degeneracy detected: (λ1-λ2)/λ1 = {(λ1 - λ2) / λ1:.3f}")
 
         # Project onto PC1
         proj1 = centered_coords @ v1
