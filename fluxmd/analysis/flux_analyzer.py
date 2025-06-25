@@ -721,7 +721,8 @@ class TrajectoryFluxAnalyzer:
                     eta_str = "Calculating..."
 
                 print(
-                    f"\n   [{idx + 1}/{total_iterations}] Processing {os.path.basename(iter_dir)}... "
+                    f"\n   [{idx + 1}/{total_iterations}] Processing "
+                    f"{os.path.basename(iter_dir)}... "
                     f"({progress:.1f}% complete, ETA: {eta_str})"
                 )
 

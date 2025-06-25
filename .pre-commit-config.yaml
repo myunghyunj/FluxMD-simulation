@@ -5,14 +5,14 @@ repos:
         name: ruff-lint
         entry: ruff
         language: python
-        args: [check, --fix, --select, E,F]
+        args: [check, --fix, --select, E,F, --config, pyproject.toml]
         additional_dependencies: ["ruff==0.8.6"]
 
       - id: ruff-format
         name: ruff-format
         entry: ruff
         language: python
-        args: [format]
+        args: [format, --config, pyproject.toml]
         pass_filenames: false
         additional_dependencies: ["ruff==0.8.6"]
 exclude: "^fluxmd/_ARCHIVE_simplified_version/|^docs/archive/|^legacy/|^preprint/"

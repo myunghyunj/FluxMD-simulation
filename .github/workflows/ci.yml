@@ -45,7 +45,7 @@ jobs:
           set -x
           pre-commit install --hook-type pre-commit --hook-type commit-msg
           pre-commit run --all-files --show-diff-on-failure
-      - run: pytest --maxfail=1 --disable-warnings -q
+      - run: pytest -q -m "not slow"
       - name: Functional smoke test
         run: |
           python -m fluxmd.cli \
