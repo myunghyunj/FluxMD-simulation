@@ -4,15 +4,12 @@ repos:
       - id: ruff-lint
         name: ruff-lint
         entry: ruff
-        language: python
-        args: [check, --fix, --select, E,F, --config, pyproject.toml]
-        additional_dependencies: ["ruff==0.8.6"]
-
+        language: system
+        args: [check, --fix, --select, E,F]
       - id: ruff-format
         name: ruff-format
         entry: ruff
-        language: python
-        args: [format, --config, pyproject.toml]
+        language: system
+        args: [format]
         pass_filenames: false
-        additional_dependencies: ["ruff==0.8.6"]
 exclude: "^fluxmd/_ARCHIVE_simplified_version/|^docs/archive/|^legacy/|^preprint/"

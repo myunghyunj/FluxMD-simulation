@@ -13,3 +13,6 @@ Run the full suite locally with:
 pytest -q          # fast subset
 pytest -q -m slow  # slow tests only
 ```
+
+Developers: ensure 'ruff==0.8.6' is in your dev environment; the
+pre-commit hooks now use the interpreter's global Ruff.

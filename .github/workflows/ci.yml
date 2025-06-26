@@ -32,6 +32,7 @@ jobs:
         with:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-precommit-${{ hashFiles('.pre-commit-config.yaml') }}
+      - run: pip install ruff==0.8.6
       - name: Install dev deps
         run: pip install -e .[dev]
       - name: Prepare mock input files
