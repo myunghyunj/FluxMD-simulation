@@ -1,0 +1,33 @@
+FLUXMD SIMULATION PARAMETERS
+============================================================
+Date: 2025-06-12 07:47:53
+
+INPUT FILES
+----------------------------------------
+Protein: /Users/myunghyun/Desktop/casestudy/1_GPX4_ML162/_protein_ligands/double_AF3.pdb
+Ligand: /Users/myunghyun/Desktop/casestudy/1_GPX4_ML162/_protein_ligands/ML162.pdb
+Protein name: double_AF3
+
+TRAJECTORY PARAMETERS
+----------------------------------------
+Mode: UMA-OPTIMIZED WINDING TRAJECTORY
+Steps per approach: 200
+Number of iterations: 10
+Number of approaches: 10
+Approach distance: 2.5 Angstroms
+Starting distance: 20.0 Angstroms
+Distance range: ~5-50 Angstroms (free variation)
+Rotations per position: 36
+Total steps per iteration: 2000
+Total rotations sampled: 72000
+
+CALCULATION PARAMETERS
+----------------------------------------
+pH: 7.4
+GPU acceleration: ENABLED
+GPU device: mps
+Trajectory visualization: ENABLED
+
+OUTPUT DIRECTORY
+----------------------------------------
+/Users/myunghyun/Desktop/casestudy/1_GPX4_ML162/ML162_GPX4_double

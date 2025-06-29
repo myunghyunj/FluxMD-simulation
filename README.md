@@ -4,6 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Version: 2.0.1](https://img.shields.io/badge/version-2.0.1-blue.svg)](https://github.com/myunghyunj/FluxMD-simulation)
 
+24 Jun 2025 | **[UPDATES](https://www.biorxiv.org/content/10.1101/2025.06.17.659767v1)**: Preprint manuscript detailing capabilities of **FluxMD v1.3** now available on [bioRxiv](https://www.biorxiv.org/content/10.1101/2025.06.17.659767v1).
+Corresponding raw data available at [/preprint](/preprint). Currently v2.0 is under work for rendering appropriate trajectory implementation.
+
 **FluxMD v2.0** introduces the **Matryoshka Engine**, a high-performance, physics-based trajectory generator for mapping biomolecular binding interfaces. Unlike traditional docking or linear-path sampling, the Matryoshka engine simulates a ligand's Brownian motion across nested layers of the protein's solvent-excluded surface (SES), providing a more realistic exploration of the binding landscape.
 
 This major release is intrinsically optimized for modern chip architectures—including GPU and Unified Memory Architecture (UMA)—enabling accelerated, high-throughput screening of molecular dynamics. It applies to protein–protein, protein–ligand, and protein–nucleic acid systems.
@@ -289,11 +292,13 @@ conda install -c conda-forge openbabel
 ## Citation (Archive)
 
 ```bibtex
-@software{fluxmd2025,
-  title={Stress Barcoding Proteins]{FluxMD: High-Throughput Protein Stress Barcoding for Dynamic Structural Analysis},
-  author={Myunghyun J. Jeong},
+@article{jeong2025fluxmd,
+  title={FluxMD: High-Throughput Protein Stress Barcoding for Dynamic Structural Analysis},
+  author={Jeong, Myunghyun Jonathan},
+  journal={bioRxiv},
   year={2025},
-  url={TBD}
+  doi={10.1101/2025.06.17.659767},
+  url={https://www.biorxiv.org/content/10.1101/2025.06.17.659767v1},
 }
 ```
 
