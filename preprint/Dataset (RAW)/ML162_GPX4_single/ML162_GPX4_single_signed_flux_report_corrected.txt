@@ -1,0 +1,35 @@
+SIGNED FLUX ANALYSIS REPORT (CORRECTED COHERENCE)
+============================================================
+Ligand: ML162
+GPX4 Variant: Single
+Analysis Date: 2025-06-12 09:34
+
+COHERENCE CHECK
+------------------------------
+Mean coherence: 0.891 (should be < 1.0)
+Max coherence: 1.000
+Min coherence: 0.600
+
+SUMMARY STATISTICS
+------------------------------
+Total residues analyzed: 120
+Attractive residues: 114
+Repulsive residues: 6
+
+BINDING ENERGETICS
+------------------------------
+Total attractive flux: -58.86 kcal/mol·Å
+Mean interaction energy: -0.215 kcal/mol
+
+TOP 10 BINDING RESIDUES
+------------------------------
+1. Residue 91: Flux=-1.677, Energy=-0.657, Coherence=0.806, N=301
+2. Residue 112: Flux=-1.598, Energy=-0.722, Coherence=0.698, N=685
+3. Residue 157: Flux=-1.551, Energy=-0.593, Coherence=0.778, N=1719
+4. Residue 111: Flux=-1.488, Energy=-0.569, Coherence=0.705, N=525
+5. Residue 88: Flux=-1.427, Energy=-0.569, Coherence=0.788, N=246
+6. Residue 16: Flux=-1.420, Energy=-0.477, Coherence=0.915, N=106
+7. Residue 50: Flux=-1.415, Energy=-0.521, Coherence=0.761, N=166
+8. Residue 24: Flux=-1.318, Energy=-0.498, Coherence=0.844, N=396
+9. Residue 128: Flux=-1.298, Energy=-0.545, Coherence=0.951, N=32
+10. Residue 65: Flux=-1.181, Energy=-0.450, Coherence=0.816, N=150
