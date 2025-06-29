@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  ACTIONS_STEP_DEBUG: false
+
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
@@ -14,12 +17,41 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install dependencies
+      - name: Install git
+        run: sudo apt-get update && sudo apt-get install -y git
+      - name: Configure Git token and PRE_COMMIT_HOME
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
-          pip install black flake8 pytest
+          export PRE_COMMIT_HOME=$HOME
+          echo "PRE_COMMIT_HOME=$PRE_COMMIT_HOME" >> $GITHUB_ENV
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          git config --global credential.helper "!f() { echo username=x-access-token; echo password=${GH_TOKEN}; }; f"
+      - name: Cache pre-commit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-precommit-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Install dev deps
+        run: pip install -e .[dev]
+      - name: Prepare mock input files
+        run: |
+          cp tests/data/* .
+      - name: Run pre-commit (verbose)
+        env:
+          PRE_COMMIT_HOME: ${{ env.PRE_COMMIT_HOME }}
+        run: |
+          set -euo pipefail
+          set -x
+          pre-commit install --hook-type pre-commit --hook-type commit-msg
+          pre-commit run --all-files --show-diff-on-failure
       - run: black --check fluxmd/ tests/ --target-version py311
       - run: flake8 fluxmd/ tests/ --max-line-length=100
       - run: pytest --maxfail=1 --disable-warnings -q
+      - name: Functional smoke test
+        run: |
+          python -m fluxmd.cli \
+            --protein protein.pdb \
+            --ligand ligand.sdf \
+            --params params.yaml \
+            --dry-run
