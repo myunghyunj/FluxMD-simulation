@@ -1,13 +1,14 @@
 repos:
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
-    hooks: [{ id: black }]
-  - repo: https://github.com/PyCQA/isort
-    rev: 6.0.1
-    hooks: [{ id: isort }]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.7
+    hooks:
+      - id: ruff
+        args: [--exit-zero, --no-fix]
+        types: [python]
+        files: "^fluxmd/.*\\.py$"
   - repo: https://github.com/igorshubovych/markdownlint-cli
     rev: v0.45.0
     hooks:
       - id: markdownlint
         files: ^$
-exclude: "^docs/archive/|^legacy/"
+exclude: "^fluxmd/_ARCHIVE_simplified_version/|^docs/archive/|^legacy/"

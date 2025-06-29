@@ -109,20 +109,14 @@ extend-exclude = "fluxmd/_ARCHIVE_simplified_version/*"
 
 [tool.ruff]
 line-length = 100
-extend-exclude = ["fluxmd/_ARCHIVE_simplified_version/*"]
+extend-exclude = [
+    "fluxmd/_ARCHIVE_simplified_version/*",
+    "*.json",
+    "*.json.old",
+    "*.md",
+]
 extend-ignore = []
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-strict_equality = true
-exclude = "fluxmd/_ARCHIVE_simplified_version/*"
-
-ignore_errors = true
+exclude = ["fluxmd/_ARCHIVE_simplified_version/*"]
 
 [tool.bandit]
 exclude_dirs = ["fluxmd/_ARCHIVE_simplified_version/*"]
