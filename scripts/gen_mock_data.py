@@ -1,5 +1,4 @@
 """Generate minimal fixture data for tests."""
-
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parents[1] / "tests" / "data"

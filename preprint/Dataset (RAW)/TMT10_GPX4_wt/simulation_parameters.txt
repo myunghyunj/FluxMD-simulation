@@ -1,0 +1,33 @@
+FLUXMD SIMULATION PARAMETERS
+============================================================
+Date: 2025-06-12 01:55:30
+
+INPUT FILES
+----------------------------------------
+Protein: /Users/myunghyun/Desktop/casestudy/1_GPX4_ML162/_protein_ligands/wt_GPX4_U46C.pdb
+Ligand: /Users/myunghyun/Desktop/casestudy/1_GPX4_ML162/_protein_ligands/TMT10.pdb
+Protein name: wt_GPX4_U46C
+
+TRAJECTORY PARAMETERS
+----------------------------------------
+Mode: UMA-OPTIMIZED WINDING TRAJECTORY
+Steps per approach: 200
+Number of iterations: 10
+Number of approaches: 10
+Approach distance: 2.5 Angstroms
+Starting distance: 20.0 Angstroms
+Distance range: ~5-50 Angstroms (free variation)
+Rotations per position: 36
+Total steps per iteration: 2000
+Total rotations sampled: 72000
+
+CALCULATION PARAMETERS
+----------------------------------------
+pH: 7.4
+GPU acceleration: ENABLED
+GPU device: mps
+Trajectory visualization: ENABLED
+
+OUTPUT DIRECTORY
+----------------------------------------
+/Users/myunghyun/Desktop/casestudy/1_GPX4_ML162/TMT10_GPX4_wt
