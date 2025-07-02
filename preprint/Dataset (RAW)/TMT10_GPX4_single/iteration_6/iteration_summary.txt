@@ -1,0 +1,39 @@
+ITERATION 6 SUMMARY
+==================================================
+Frames with interactions: 129
+Total interactions detected: 2470
+Average interactions per frame: 19.1
+
+ENERGY STATISTICS:
+  Mean: -0.29 kcal/mol
+  Std: 1.10 kcal/mol
+  Min: -7.53 kcal/mol
+  Max: 10.00 kcal/mol
+
+INTERACTION TYPE BREAKDOWN:
+  H-bond: 85 (3.4%)
+  Salt bridge: 12 (0.5%)
+  Pi-pi: 0 (0.0%)
+  Pi-cation: 63 (2.6%)
+  VDW: 2310 (93.5%)
+
+DISTANCE STATISTICS:
+  No distance data available
+
+THERMODYNAMIC SUMMARY:
+  Energy Capping: ±10 kcal/mol
+  Purpose: Prevents numerical singularities while preserving physiological relevance
+  Justification:
+    - Physiological energy scale: -5 to +10 kcal/mol
+    - Capping at ±10 allows capture of high-energy transitions
+    - Prevents 1/r singularities at close contact
+    - Maintains numerical stability for GPU calculations
+
+  Capping Statistics:
+    Energies capped at +10: 1 (0.0%)
+    Energies capped at -10: 0 (0.0%)
+    Total capped: 1 (0.0%)
+
+  Energy Distribution:
+    Within physiological range (-5 to +5): 2429 (98.3%)
+    Within extended range (-10 to +10): 2470 (100.0%)
