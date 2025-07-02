@@ -1,0 +1,35 @@
+SIGNED FLUX ANALYSIS REPORT (CORRECTED COHERENCE)
+============================================================
+Ligand: TMT10
+GPX4 Variant: Double
+Analysis Date: 2025-06-12 09:34
+
+COHERENCE CHECK
+------------------------------
+Mean coherence: 0.890 (should be < 1.0)
+Max coherence: 1.000
+Min coherence: 0.667
+
+SUMMARY STATISTICS
+------------------------------
+Total residues analyzed: 138
+Attractive residues: 135
+Repulsive residues: 2
+
+BINDING ENERGETICS
+------------------------------
+Total attractive flux: -65.14 kcal/mol·Å
+Mean interaction energy: -0.229 kcal/mol
+
+TOP 10 BINDING RESIDUES
+------------------------------
+1. Residue 6: Flux=-1.860, Energy=-0.740, Coherence=0.840, N=134
+2. Residue 21: Flux=-1.819, Energy=-0.624, Coherence=0.853, N=2838
+3. Residue 101: Flux=-1.724, Energy=-0.613, Coherence=0.844, N=807
+4. Residue 23: Flux=-1.626, Energy=-0.551, Coherence=0.842, N=1240
+5. Residue 112: Flux=-1.595, Energy=-0.583, Coherence=0.818, N=274
+6. Residue 149: Flux=-1.421, Energy=-0.546, Coherence=0.943, N=69
+7. Residue 144: Flux=-1.371, Energy=-0.545, Coherence=0.946, N=46
+8. Residue 30: Flux=-1.259, Energy=-0.513, Coherence=0.803, N=319
+9. Residue 158: Flux=-1.191, Energy=-0.463, Coherence=0.821, N=117
+10. Residue 111: Flux=-1.151, Energy=-0.461, Coherence=0.846, N=221
