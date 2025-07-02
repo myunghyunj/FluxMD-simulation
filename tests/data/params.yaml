@@ -1,0 +1,5 @@
+mode: matryoshka
+protein_file: protein.pdb
+ligand_file: ligand.sdf
+n_layers: 1
+n_trajectories_per_layer: 1
