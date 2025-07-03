@@ -18,7 +18,7 @@
   "script": [
     "pre-commit run --all-files --show-diff-on-failure",
     "flake8 fluxmd/ tests/ --max-line-length=100",
-    "pytest tests/ --maxfail=1 --disable-warnings -q",
+    "pytest tests/ --maxfail=1 --disable-warnings -q --strict-markers",
     "python -m fluxmd.cli --protein protein.pdb --ligand ligand.sdf --params params.yaml --dry-run"
   ]
 }
