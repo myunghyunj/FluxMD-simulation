@@ -1,16 +1,24 @@
 {
   "environment": {
-    "python_version": "3.8",
+    "python_version": "3.11",
     "gpu": true,
-    "additional_allowed_domains": [
-      "download.pytorch.org",
-      "nvidia.com"
+    "network_access": [
+      "https://download.pytorch.org/whl",
+      "https://developer.download.nvidia.com"
     ]
   },
-  "setup": [
-    "pip install --upgrade pip",
-    "pip install torch==2.3.0+cu121 torchvision==0.18.0+cu121 --index-url https://download.pytorch.org/whl/cu121",
-    "pip install -e '.[dev,gpu]'"
+  "install": [
+    "pip install torch==2.3.0+cu121 -f https://download.pytorch.org/whl/cu121/torch_stable.html",
+    "pip install -e .[dev]"
   ],
-  "run": "pytest -q tests/"
+  "before_script": [
+    "cp tests/data/* .",
+    "cp tests/data/protein.pdb dummy.pdb"
+  ],
+  "script": [
+    "pre-commit run --all-files --show-diff-on-failure",
+    "flake8 fluxmd/ tests/ --max-line-length=100",
+    "pytest tests/ --maxfail=1 --disable-warnings -q",
+    "python -m fluxmd.cli --protein protein.pdb --ligand ligand.sdf --params params.yaml --dry-run"
+  ]
 }
