@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+
 import numpy as np
 
 from fluxmd.utils.dna_to_pdb import DNABuilder
