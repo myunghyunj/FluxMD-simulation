@@ -1,5 +1,5 @@
 """Solvent utilities for hybrid explicit/implicit simulations."""
 
-from .hybrid_shell import HybridSolventShell, water_count_in_shell
+from .hybrid_shell import build_hybrid_shell
 
-__all__ = ["water_count_in_shell", "HybridSolventShell"]
+__all__ = ["build_hybrid_shell"]
