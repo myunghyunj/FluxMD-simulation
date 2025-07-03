@@ -1,4 +1,5 @@
 """Generate minimal fixture data for tests."""
+
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parents[1] / "tests" / "data"
@@ -55,4 +56,3 @@ n_trajectories_per_layer: 1
 (BASE / "ligand.sdf").write_text(LIGAND)
 (BASE / "params.yaml").write_text(PARAMS)
 print(f"Mock data written to {BASE}")
-
