@@ -2,10 +2,10 @@
 Command-line interface for FluxMD
 """
 
+import argparse
 import importlib.util
 import os
 import sys
-import argparse
 
 # Add parent directory to path for backwards compatibility
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

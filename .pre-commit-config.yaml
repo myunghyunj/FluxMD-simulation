@@ -10,4 +10,4 @@ repos:
     hooks:
       - id: markdownlint
         files: ^$
-exclude: "^docs/archive/|^legacy/"
+exclude: "^docs/archive/|^legacy/|^preprint/|^fluxmd/_ARCHIVE_simplified_version"
