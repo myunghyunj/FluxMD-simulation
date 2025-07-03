@@ -23,4 +23,3 @@ def pytest_addoption(parser):
     except ValueError:
         # Another plugin raced us – ignore.
         pass
-
