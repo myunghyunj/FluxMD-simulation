@@ -39,6 +39,12 @@ def extreme_calpha_pairs(
 
     backbone_coords = coords[backbone_mask]
 
+    if backbone_coords.shape[0] < 2:
+        # Degenerate case: not enough atoms for PCA
+        start = backbone_coords[0].copy()
+        end = start + np.array([1.0, 0.0, 0.0])
+        return start, end
+
     # Center coordinates
     center = backbone_coords.mean(axis=0)
     centered_coords = backbone_coords - center

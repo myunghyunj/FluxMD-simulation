@@ -533,8 +533,9 @@ class BrownianSurfaceRoller:
                 print(f"Reached end anchor after {step} steps")
                 break
 
-            # Energy placeholder (would calculate actual interaction energy)
-            trajectory["energy"].append(0.0)
+            # Record interaction energy if calculator is provided
+            energy = self._calculate_energy_at_position(position, quaternion)
+            trajectory["energy"].append(energy)
 
         # Convert to arrays
         for key in trajectory:

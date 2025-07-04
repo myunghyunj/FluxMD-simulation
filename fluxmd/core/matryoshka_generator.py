@@ -117,7 +117,11 @@ class MatryoshkaTrajectoryGenerator:
 
         # Set up checkpoint directory
         if self.checkpoint_dir:
-            Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
+            try:
+                Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                print(f"Warning: cannot create checkpoint directory {self.checkpoint_dir}: {e}")
+                self.checkpoint_dir = None
 
         print(f"  Workers: {format_workers_info(self.n_workers)}")
 
@@ -492,8 +496,12 @@ class MatryoshkaTrajectoryGenerator:
         checkpoint_path = (
             Path(self.checkpoint_dir) / f"checkpoint_L{layer_idx}_I{iteration_idx}.pkl"
         )
-        with open(checkpoint_path, "wb") as f:
-            pickle.dump(checkpoint, f)
+        try:
+            with open(checkpoint_path, "wb") as f:
+                pickle.dump(checkpoint, f)
+        except OSError as e:
+            print(f"Warning: failed to write checkpoint {checkpoint_path}: {e}")
+            return
 
         print(f"  Checkpoint saved: {checkpoint_path.name}")
 
@@ -514,8 +522,12 @@ class MatryoshkaTrajectoryGenerator:
         latest = max(checkpoints, key=lambda p: p.stat().st_mtime)
 
         print(f"Loading checkpoint: {latest.name}")
-        with open(latest, "rb") as f:
-            checkpoint = pickle.load(f)
+        try:
+            with open(latest, "rb") as f:
+                checkpoint = pickle.load(f)
+        except (pickle.UnpicklingError, EOFError, OSError) as e:
+            print(f"Warning: failed to load checkpoint {latest}: {e}")
+            return [], 0, 0
 
         return (checkpoint["trajectories"], checkpoint["layer_idx"], checkpoint["iteration_idx"])
 

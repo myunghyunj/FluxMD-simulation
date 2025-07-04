@@ -17,6 +17,7 @@ import pytest
 from fluxmd.core.dynamics.brownian_roller import BrownianSurfaceRoller
 from fluxmd.core.matryoshka_generator import MatryoshkaTrajectoryGenerator
 from fluxmd.core.ref15_energy import AtomContext, REF15EnergyCalculator
+from fluxmd.core.surface.layer_stream import MatryoshkaLayerGenerator
 from fluxmd.core.surface.ses_builder import SESBuilder, SurfaceMesh
 
 

@@ -179,6 +179,9 @@ class MatryoshkaLayerGenerator:
         Returns:
             Offset surface mesh
         """
+        if layer_idx < 0:
+            raise ValueError("Layer index must be non-negative")
+
         if layer_idx == 0:
             return self.base
 
