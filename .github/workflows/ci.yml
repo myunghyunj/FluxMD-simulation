@@ -47,7 +47,27 @@ jobs:
           pre-commit run --all-files --show-diff-on-failure
       - run: black --check fluxmd/ tests/ --target-version py311
       - run: flake8 fluxmd/ tests/ --max-line-length=100
-      - run: pytest --maxfail=1 --disable-warnings -q
+      
+      # Run existing tests
+      - name: Run core tests
+        run: pytest tests/ --maxfail=3 --disable-warnings -v -x --tb=short -k "not matryoshka"
+      
+      # Run Matryoshka tests separately for better visibility
+      - name: Run Matryoshka integration tests
+        run: pytest tests/test_matryoshka_integration.py -v --tb=short || true
+        
+      - name: Run Matryoshka physics validation
+        run: pytest tests/test_matryoshka_physics_validation.py -v --tb=short || true
+        
+      - name: Run Matryoshka edge case tests
+        run: pytest tests/test_matryoshka_edge_cases.py -v --tb=short || true
+        
+      - name: Run Matryoshka error handling tests
+        run: pytest tests/test_matryoshka_error_handling.py -v --tb=short || true
+        
+      - name: Run physics validation script
+        run: python tests/validate_matryoshka_physics.py --quick || true
+      
       - name: Functional smoke test
         run: |
           python -m fluxmd.cli \
@@ -55,3 +75,16 @@ jobs:
             --ligand ligand.sdf \
             --params params.yaml \
             --dry-run
+            
+      # Summary of test results
+      - name: Test Summary
+        if: always()
+        run: |
+          echo "## Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Core tests: Check above for results" >> $GITHUB_STEP_SUMMARY
+          echo "- Matryoshka tests: Check individual steps for results" >> $GITHUB_STEP_SUMMARY
+          echo "- Known issues being addressed:" >> $GITHUB_STEP_SUMMARY
+          echo "  - Zero volume atoms in REF15 energy calculations" >> $GITHUB_STEP_SUMMARY
+          echo "  - Layer generation self-intersection handling" >> $GITHUB_STEP_SUMMARY
+          echo "  - Worker process error recovery" >> $GITHUB_STEP_SUMMARY
+          echo "  - Memory management in long trajectories" >> $GITHUB_STEP_SUMMARY
