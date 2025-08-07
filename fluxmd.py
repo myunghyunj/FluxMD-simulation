@@ -104,6 +104,19 @@ def print_banner(text):
     print("=" * 80 + "\n")
 
 
+def print_backend_info(seed: int | None) -> None:
+    """Print computation backend, dtype and seed."""
+    try:
+        backend = get_device()
+    except Exception:
+        backend = "cpu"
+    print_banner("FLUXMD BACKEND")
+    print(f"Backend: {backend}")
+    print(f"Dtype: float64")
+    if seed is not None:
+        print(f"Seed: {seed}")
+
+
 def convert_cif_to_pdb(cif_file):
     """Convert CIF/mmCIF to PDB format using OpenBabel"""
     pdb_file = cif_file.rsplit(".", 1)[0] + ".pdb"
@@ -2201,6 +2214,7 @@ def run_batch_mode(config: dict):
             "viscosity": config.get("viscosity", 0.00089),
             "max_steps": config.get("max_steps", 1_000_000),
             "use_gpu": config.get("use_gpu", True),
+            "seed": config.get("seed"),
         }
 
         # Run Matryoshka workflow directly
@@ -2397,6 +2411,15 @@ Examples:
         help="Run in non-interactive mode (requires --config)",
     )
 
+    parser.add_argument("--seed", type=int, help="Random seed for reproducibility")
+    parser.add_argument("--steps", type=int, help="Number of simulation steps")
+    parser.add_argument("--out", type=str, help="Output directory override")
+    parser.add_argument(
+        "--print-backend",
+        action="store_true",
+        help="Print backend, dtype and seed information",
+    )
+
     return parser.parse_args()
 
 
@@ -2414,6 +2437,16 @@ def main():
         try:
             config = load_config(args.config)
             config["_config_file"] = args.config
+
+            # Override with CLI options
+            if args.seed is not None:
+                config["seed"] = args.seed
+            if args.steps is not None:
+                config["max_steps"] = args.steps
+            if args.out is not None:
+                config["output_dir"] = args.out
+            if args.print_backend:
+                print_backend_info(config.get("seed"))
 
             # Dry run mode
             if args.dry_run:

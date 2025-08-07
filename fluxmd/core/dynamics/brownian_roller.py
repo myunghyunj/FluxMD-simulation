@@ -7,6 +7,7 @@ from typing import Dict, Tuple
 import numpy as np
 from scipy.spatial import cKDTree
 
+from ...utils.rng import create_generator
 from ..surface.ses_builder import SurfaceMesh
 
 __all__ = ["BrownianSurfaceRoller", "quaternion_multiply"]
@@ -78,8 +79,10 @@ class BrownianSurfaceRoller:
         self.dt_fs = self._calculate_adaptive_timestep()
         self.dt_ps = self.dt_fs / 1000.0  # Convert to picoseconds
 
-        # Initialize RNG
-        self.rng = np.random.default_rng(kwargs.get("seed", None))
+        # Initialize RNG – prefer explicitly provided generator
+        self.rng = kwargs.get("rng")
+        if self.rng is None:
+            self.rng = create_generator(kwargs.get("seed", None))
 
         # Friction coefficients
         self.gamma_t = self.kT / self.D_t

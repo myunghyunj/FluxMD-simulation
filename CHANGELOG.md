@@ -5,6 +5,8 @@
 - docs/ARCHITECTURAL_REVIEW.md integrated in MkDocs.
 - Scaffold `build_hybrid_shell()` and placeholder test.
 - GPU-enabled Codex CI integration using CUDA-enabled PyTorch wheels.
+- Centralised RNG utilities and CLI backend banner.
+- Config parser now accepts `matroshika` as alias for `matryoshka`.
 
 ### Known Issues
 - 5 tests currently marked as expected failures (xfail); see issue tracker for details.
