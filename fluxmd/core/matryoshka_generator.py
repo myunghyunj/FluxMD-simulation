@@ -11,6 +11,7 @@ import numpy as np
 from tqdm import tqdm
 
 from ..utils.cpu import format_workers_info, parse_workers
+from ..utils.rng import create_generator
 from .dynamics.brownian_roller import BrownianSurfaceRoller
 from .dynamics.brownian_roller import quaternion_multiply as _quat_mul
 from .geometry.pca_anchors import extreme_calpha_pairs
@@ -40,6 +41,9 @@ class MatryoshkaTrajectoryGenerator:
         self.protein_atoms = protein_atoms
         self.ligand_atoms = ligand_atoms
         self.params = params
+
+        # Central random generator for the whole workflow
+        self.rng = params.get("rng", create_generator(params.get("seed", None)))
 
         # Extract parameters with defaults
         self.temperature = params.get("T", 298.15)
@@ -288,11 +292,11 @@ class MatryoshkaTrajectoryGenerator:
         # Generate small rotations
         for i in range(1, n_variants):
             # Random small rotation axis
-            axis = np.random.randn(3)
+            axis = self.rng.normal(size=3)
             axis /= np.linalg.norm(axis)
 
             # Small angle (5-15 degrees)
-            angle = np.random.uniform(5, 15) * np.pi / 180
+            angle = self.rng.uniform(5, 15) * np.pi / 180
 
             # Create rotation quaternion
             half_angle = angle / 2
@@ -330,7 +334,7 @@ class MatryoshkaTrajectoryGenerator:
         # Subsample protein atoms for speed
         n_protein = len(self.protein_atoms["coords"])
         n_sample = max(100, int(n_protein * sample_fraction))
-        sample_indices = np.random.choice(n_protein, n_sample, replace=False)
+        sample_indices = self.rng.choice(n_protein, n_sample, replace=False)
 
         protein_coords_sample = self.protein_atoms["coords"][sample_indices]
         protein_names_sample = self.protein_atoms["names"][sample_indices]
@@ -369,9 +373,10 @@ class MatryoshkaTrajectoryGenerator:
         # Get the appropriate surface layer
         surface = self.layer_generator.get_layer(layer_idx)
 
-        # Create roller with unique seed
+        # Create roller with unique seed using central RNG
         if seed is None:
-            seed = hash((layer_idx, iteration_idx, time.time())) % 2**32
+            seed = int(self.rng.integers(0, 2**32))
+        roller_rng = create_generator(seed)
 
         # Create energy calculator function for layer hopping
         def energy_calculator(pos, quat, layer):
@@ -395,7 +400,7 @@ class MatryoshkaTrajectoryGenerator:
             hop_probability=0.1,
             groove_detector=self.ses_builder.groove_detector,
             groove_preference=self.params.get("groove_preference", "major"),
-            seed=seed,
+            rng=roller_rng,
         )
 
         # Run trajectory
@@ -571,8 +576,9 @@ class MatryoshkaTrajectoryGenerator:
                         if layer_idx == start_layer and iteration_idx < start_iteration:
                             continue
 
-                        # Generate seed for reproducibility
-                        seed = hash((layer_idx, iteration_idx, 42)) % 2**32
+                        # Generate seed for reproducibility based on user seed
+                        base_seed = self.params.get("seed", 0)
+                        seed = hash((layer_idx, iteration_idx, base_seed)) % 2**32
 
                         # Run trajectory
                         trajectory = self._run_single_trajectory(layer_idx, iteration_idx, seed)
@@ -620,7 +626,8 @@ class MatryoshkaTrajectoryGenerator:
                 if layer_idx == start_layer and iteration_idx < start_iteration:
                     continue
 
-                seed = hash((layer_idx, iteration_idx, 42)) % 2**32
+                base_seed = self.params.get("seed", 0)
+                seed = hash((layer_idx, iteration_idx, base_seed)) % 2**32
                 work_queue.put((layer_idx, iteration_idx, seed))
                 n_items += 1
 

@@ -37,6 +37,10 @@ def load_config(config_path: str) -> Dict[str, Any]:
         else:
             raise ValueError(f"Unsupported config format: {config_path.suffix}")
 
+    # Normalise legacy mode names
+    if config.get("mode") == "matroshika":
+        config["mode"] = "matryoshka"
+
     # Validate configuration
     validate_config(config)
 

@@ -12,6 +12,7 @@ from .config_parser import create_example_config, load_config, print_derived_con
 from .cpu import format_workers_info, get_optimal_workers, parse_workers
 from .dna_to_pdb import DNABuilder
 from .pdb_parser import PDBParser
+from .rng import create_generator
 
 __all__ = [
     "DNABuilder",
@@ -22,4 +23,5 @@ __all__ = [
     "load_config",
     "print_derived_constants",
     "create_example_config",
+    "create_generator",
 ]
