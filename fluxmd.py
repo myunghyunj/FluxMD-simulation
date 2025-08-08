@@ -18,24 +18,35 @@ import pandas as pd
 
 warnings.filterwarnings("ignore")
 
-from fluxmd.analysis.flux_analyzer import TrajectoryFluxAnalyzer
+try:  # optional heavy modules
+    from fluxmd.analysis.flux_analyzer import TrajectoryFluxAnalyzer
+except Exception:  # pragma: no cover
+    TrajectoryFluxAnalyzer = None
 
-# Import our modules
-from fluxmd.core.trajectory_generator import ProteinLigandFluxAnalyzer
-from fluxmd.gpu.gpu_accelerated_flux import get_device
+# Import our modules lazily to avoid heavy deps when not needed
+try:
+    from fluxmd.core.trajectory_generator import ProteinLigandFluxAnalyzer
+except Exception:  # pragma: no cover
+    ProteinLigandFluxAnalyzer = None
 from fluxmd.utils.config_parser import create_example_config, load_config, print_derived_constants
 from fluxmd.utils.cpu import format_workers_info, parse_workers
 from fluxmd.utils.pdb_parser import PDBParser
 
 
+def _safe_get_device():
+    try:
+        from fluxmd.gpu.gpu_accelerated_flux import get_device
+
+        return get_device()
+    except Exception:
+        return "cpu"
+
+
 def check_gpu_availability():
     """Check if GPU is available for computation"""
-    try:
-        device = get_device()
-        if "mps" in str(device) or "cuda" in str(device):
-            return True
-    except:
-        pass
+    device = _safe_get_device()
+    if device and ("mps" in str(device) or "cuda" in str(device)):
+        return True
     return False
 
 
@@ -48,12 +59,9 @@ def benchmark_performance(protein_atoms, ligand_atoms, n_test_frames=5, n_test_r
 
     from fluxmd.gpu.gpu_accelerated_flux import GPUAcceleratedInteractionCalculator
 
-    try:
-        device = get_device()
-        if "cpu" in str(device):
-            return False, "no GPU available"
-    except:
-        return False, "GPU initialization failed"
+    device = _safe_get_device()
+    if "cpu" in str(device):
+        return False, "no GPU available"
 
     print("\nRunning performance benchmark...")
 
@@ -102,6 +110,16 @@ def print_banner(text):
     print("\n" + "=" * 80)
     print(text.center(80))
     print("=" * 80 + "\n")
+
+
+def print_backend_info(seed: int | None) -> None:
+    """Print computation backend, dtype and seed."""
+    backend = _safe_get_device()
+    print_banner("FLUXMD BACKEND")
+    print(f"Backend: {backend}")
+    print(f"Dtype: float64")
+    if seed is not None:
+        print(f"Seed: {seed}")
 
 
 def convert_cif_to_pdb(cif_file):
@@ -704,12 +722,9 @@ def run_complete_workflow():
     gpu_available = False
     device = None
 
-    try:
-        device = get_device()
-        if "mps" in str(device) or "cuda" in str(device):
-            gpu_available = True
-    except:
-        gpu_available = False
+    device = _safe_get_device()
+    if "mps" in str(device) or "cuda" in str(device):
+        gpu_available = True
 
     # Calculate system complexity
     # Parse structures temporarily to get atom counts
@@ -1638,7 +1653,7 @@ def run_protein_dna_uma_workflow():
         print(f"\nSystem size: {len(protein_atoms)} protein atoms, {len(dna_atoms)} DNA atoms")
 
         # Get device and recommended parameters
-        device = get_device()
+        device = _safe_get_device()
         recommended = get_recommended_parameters(protein_atoms, dna_atoms, device)
 
         # Check if we have loaded parameters and ask to use them
@@ -2201,6 +2216,7 @@ def run_batch_mode(config: dict):
             "viscosity": config.get("viscosity", 0.00089),
             "max_steps": config.get("max_steps", 1_000_000),
             "use_gpu": config.get("use_gpu", True),
+            "seed": config.get("seed"),
         }
 
         # Run Matryoshka workflow directly
@@ -2397,6 +2413,15 @@ Examples:
         help="Run in non-interactive mode (requires --config)",
     )
 
+    parser.add_argument("--seed", type=int, help="Random seed for reproducibility")
+    parser.add_argument("--steps", type=int, help="Number of simulation steps")
+    parser.add_argument("--out", type=str, help="Output directory override")
+    parser.add_argument(
+        "--print-backend",
+        action="store_true",
+        help="Print backend, dtype and seed information",
+    )
+
     return parser.parse_args()
 
 
@@ -2414,6 +2439,16 @@ def main():
         try:
             config = load_config(args.config)
             config["_config_file"] = args.config
+
+            # Override with CLI options
+            if args.seed is not None:
+                config["seed"] = args.seed
+            if args.steps is not None:
+                config["max_steps"] = args.steps
+            if args.out is not None:
+                config["output_dir"] = args.out
+            if args.print_backend:
+                print_backend_info(config.get("seed"))
 
             # Dry run mode
             if args.dry_run:
