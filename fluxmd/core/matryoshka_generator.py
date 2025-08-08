@@ -398,6 +398,7 @@ class MatryoshkaTrajectoryGenerator:
         # Create roller with unique seed using central RNG
         if seed is None:
             seed = int(self.rng.integers(0, 2**32))
+            
         derived_seed = (seed * 0x9E3779B97F4A7C15) ^ (layer_idx << 16) ^ iteration_idx
         roller_rng = create_generator(derived_seed & 0xFFFFFFFF)
 
