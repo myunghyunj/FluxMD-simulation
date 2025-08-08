@@ -84,12 +84,9 @@ class BrownianSurfaceRoller:
         if self.rng is None:
             self.rng = create_generator(kwargs.get("seed", None))
 
-        # Friction coefficients
-        self.gamma_t = self.kT / self.D_t
-        self.gamma_r = self.kT / self.D_r
-
-        # BAOAB integrator constants
-        self._setup_baoab_constants()
+        # Rotational OU constants for orientation diffusion
+        self.ou_decay_rot = np.exp(-(self.kT / self.D_r) * self.dt_ps / self.ligand_inertia)
+        self.ou_noise_rot = np.sqrt(self.kT * (1 - self.ou_decay_rot**2) / self.ligand_inertia)
 
         # Guidance activation tracking
         self.guidance_active = False
@@ -117,20 +114,22 @@ class BrownianSurfaceRoller:
         return (2.0 / 5.0) * self.ligand_mass * self.ligand_radius**2
 
     def _calculate_diffusion_coefficients(self) -> Tuple[float, float]:
-        """Calculate translational and rotational diffusion coefficients.
+        """Return translational and rotational diffusion coefficients.
 
-        Returns:
-            (D_t, D_r) in Å²/ps and rad²/ps
+        Results are in Å²/ps (D_t) and rad²/ps (D_r).
         """
-        # Convert viscosity from Pa·s to kcal·ps/mol/Å²
-        # 1 Pa·s = 1 kg/(m·s) = 6.022e23 amu·Å/(mol·ps)
-        # Then multiply by energy conversion
-        eta_converted = self.viscosity * 1.439e-4  # Approximate conversion
+        KB_KCAL = self.KB_KCAL
+        KCALMOL_TO_J = 4184.0 / 6.02214076e23
+        ANG_TO_M = 1e-10
+        PS_TO_S = 1e-12
 
-        # Stokes-Einstein relations
-        D_t = self.kT / (6 * np.pi * eta_converted * self.ligand_radius)
-        D_r = self.kT / (8 * np.pi * eta_converted * self.ligand_radius**3)
+        kT_J = KB_KCAL * self.T * KCALMOL_TO_J
+        R_m = self.ligand_radius * ANG_TO_M
+        Dt_m2_s = kT_J / (6.0 * np.pi * self.viscosity * R_m)
+        Dr_s = kT_J / (8.0 * np.pi * self.viscosity * (R_m**3))
 
+        D_t = Dt_m2_s / (ANG_TO_M**2) * PS_TO_S
+        D_r = Dr_s * PS_TO_S
         return D_t, D_r
 
     def _calculate_adaptive_timestep(self) -> float:
@@ -149,15 +148,9 @@ class BrownianSurfaceRoller:
         # Clamp to reasonable range, adjusted for tests
         return np.clip(dt_fs, 5.0, 50.0)
 
-    def _setup_baoab_constants(self) -> None:
-        """Precompute constants for BAOAB integrator."""
-        # Ornstein-Uhlenbeck process constants
-        self.ou_decay = np.exp(-self.gamma_t * self.dt_ps / self.ligand_mass)
-        self.ou_noise = np.sqrt(self.kT * (1 - self.ou_decay**2) / self.ligand_mass)
-
-        # Rotational OU constants
-        self.ou_decay_rot = np.exp(-self.gamma_r * self.dt_ps / self.ligand_inertia)
-        self.ou_noise_rot = np.sqrt(self.kT * (1 - self.ou_decay_rot**2) / self.ligand_inertia)
+    def _setup_baoab_constants(self) -> None:  # pragma: no cover - kept for API compat
+        """Deprecated: translational BAOAB no longer used (overdamped BD)."""
+        pass
 
     def _compute_geodesic_distance(self) -> float:
         """Compute geodesic distance between anchors on surface mesh using Dijkstra.
@@ -388,36 +381,31 @@ class BrownianSurfaceRoller:
         current_time: float,
         total_length: float | None = None,
     ) -> np.ndarray:
-        """Calculate late-stage guidance force with soft time-based ramp-up.
-
-        Args:
-            position: Current position
-            path_length: Distance traveled so far
-            current_time: Current simulation time in ps
-            total_length: Deprecated argument, kept for backward compatibility with tests
-
-        Returns:
-            Force vector in kcal/mol/Å
-        """
-        # The 'total_length' argument is ignored and kept only for backward compatibility with tests.
-        # Check if we should activate guidance (75% of geodesic distance)
+        """Helical guidance via radial PD control and tangential bias."""
         if not self.guidance_active and path_length >= 0.75 * self.geodesic_distance:
             self.guidance_active = True
             self.guidance_activation_time = current_time
-
-        # Return zero force if not active
         if not self.guidance_active:
             return np.zeros(3)
 
-        # Time-based soft ramp-up over ~1 ps
+        axis = self.end_anchor - self.start_anchor
+        axis /= np.linalg.norm(axis) + 1e-12
+        anchor_proj = self.start_anchor + np.dot(position - self.start_anchor, axis) * axis
+        r_vec = position - anchor_proj
+        r = np.linalg.norm(r_vec) + 1e-12
+        r_hat = r_vec / r
+        r_star = self.ligand_radius + 2.0
+        drdt = (r - getattr(self, "_r_prev", r)) / (self.dt_ps if current_time > 0 else 1.0)
+        self._r_prev = r
+        k_r = self.k_guid
+        c_r = 0.5 * self.k_guid
+        F_radial = (-k_r * (r - r_star) - c_r * drdt) * r_hat
+        t_hat = np.cross(axis, r_hat)
+        t_hat /= np.linalg.norm(t_hat) + 1e-12
+        F_tan = 0.1 * self.k_guid * t_hat
         time_since_activation = current_time - self.guidance_activation_time
-        ramp_factor = min(1.0, time_since_activation / self.guidance_anneal_time)
-        k_effective = self.k_guid * ramp_factor
-
-        # Harmonic force: F = -k * (r - r_target)
-        # Since displacement = r_target - r, we get F = k * displacement
-        displacement = self.end_anchor - position
-        return k_effective * displacement
+        ramp = min(1.0, time_since_activation / self.guidance_anneal_time)
+        return ramp * (F_radial + F_tan)
 
     def _quaternion_from_axis_angle(self, axis: np.ndarray, angle: float) -> np.ndarray:
         """Create quaternion from axis and angle."""
@@ -447,8 +435,6 @@ class BrownianSurfaceRoller:
         # Initialize at start anchor with surface offset
         closest_point, dist, normal = self._find_closest_point_on_surface(self.start_anchor)
         position = self.start_anchor + normal * (self.ligand_radius + 2.0)
-        velocity = np.zeros(3)
-
         # Initialize orientation (identity quaternion)
         quaternion = np.array([1.0, 0.0, 0.0, 0.0])
         angular_velocity = np.zeros(3)
@@ -472,37 +458,31 @@ class BrownianSurfaceRoller:
             f_guidance = self._guidance_force(position, path_length, current_time)
             total_force = f_surface + f_guidance
 
-            # BAOAB integration
-            # B step (velocity update - half)
-            velocity += (0.5 * self.dt_ps / self.ligand_mass) * total_force
+            # Force capping to avoid blow-ups
+            max_F = 50.0
+            F_norm = np.linalg.norm(total_force)
+            if F_norm > max_F:
+                total_force *= max_F / (F_norm + 1e-12)
 
-            # A step (position update - half)
-            position += (0.5 * self.dt_ps) * velocity
+            drift = (self.D_t / self.kT) * total_force * self.dt_ps
+            thermal = np.sqrt(2.0 * self.D_t * self.dt_ps) * self.rng.normal(size=3)
+            proposed = position + drift + thermal
+            if self._collides(position, proposed):
+                n = self._collision_normal(position, proposed)
+                step_vec = proposed - position
+                step_vec = step_vec - 2 * np.dot(step_vec, n) * n
+                proposed = position + step_vec
+            position = proposed
 
-            # O step (Ornstein-Uhlenbeck)
-            velocity = self.ou_decay * velocity + self.ou_noise * self.rng.normal(size=3)
             angular_velocity = (
                 self.ou_decay_rot * angular_velocity + self.ou_noise_rot * self.rng.normal(size=3)
             )
-
-            # A step (position update - half)
-            position += (0.5 * self.dt_ps) * velocity
-
-            # Update orientation
             if np.linalg.norm(angular_velocity) > 1e-10:
                 angle = np.linalg.norm(angular_velocity) * self.dt_ps
                 axis = angular_velocity / np.linalg.norm(angular_velocity)
                 rotation = self._quaternion_from_axis_angle(axis, angle)
                 quaternion = quaternion_multiply(rotation, quaternion)
-                quaternion /= np.linalg.norm(quaternion)  # Normalize
-
-            # Recalculate forces at new position
-            f_surface = self._surface_force(position, self.ligand_radius)
-            f_guidance = self._guidance_force(position, path_length, current_time)
-            total_force = f_surface + f_guidance
-
-            # B step (velocity update - half)
-            velocity += (0.5 * self.dt_ps / self.ligand_mass) * total_force
+                quaternion /= np.linalg.norm(quaternion)
 
             # Attempt layer hop periodically
             if (
@@ -523,8 +503,7 @@ class BrownianSurfaceRoller:
             if displacement < 0.001:  # Less than 0.001 Å
                 stuck_counter += 1
                 if stuck_counter > 1000:  # ~1 ps
-                    # Re-thermalize
-                    velocity = self.ou_noise * self.rng.normal(size=3) * 3.0
+                    position += np.sqrt(2.0 * self.D_t * self.dt_ps) * self.rng.normal(size=3) * 3.0
                     stuck_counter = 0
             else:
                 stuck_counter = 0
@@ -554,6 +533,19 @@ class BrownianSurfaceRoller:
         )
 
         return trajectory
+
+    def _collides(self, p0: np.ndarray, p1: np.ndarray) -> bool:
+        """Placeholder for segment–triangle collision detection."""
+        return False
+
+    def _collision_normal(self, p0: np.ndarray, p1: np.ndarray) -> np.ndarray:
+        """Approximate surface normal at proposed point."""
+        _, idx = self.surface_kdtree.query(p1)
+        tri = self.surface.faces[idx % len(self.surface.faces)]
+        v0, v1, v2 = self.surface.vertices[tri]
+        n = np.cross(v1 - v0, v2 - v0)
+        n /= np.linalg.norm(n) + 1e-12
+        return n
 
     @staticmethod
     def _quaternion_multiply(q1, q2):

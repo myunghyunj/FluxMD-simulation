@@ -1,21 +1,6 @@
-"""
-FluxMD: GPU-accelerated molecular dynamics simulation tool for mapping binding
-interfaces.
-
-FluxMD uses dynamic energy flux analysis to identify binding sites between
-biomolecules, supporting protein-protein, protein-ligand, and protein-DNA
-interactions.
-"""
+"""FluxMD package."""
 
 from .__version__ import __version__
-from .analysis.flux_analyzer import TrajectoryFluxAnalyzer
-from .core.matryoshka_generator import MatryoshkaTrajectoryGenerator
-
-# Core functionality
-from .core.trajectory_generator import ProteinLigandFluxAnalyzer
-
-# Utilities
-from .utils.pdb_parser import PDBParser
 
 
 def get_version() -> str:
@@ -23,11 +8,4 @@ def get_version() -> str:
     return __version__
 
 
-__all__ = [
-    "__version__",
-    "get_version",
-    "ProteinLigandFluxAnalyzer",
-    "MatryoshkaTrajectoryGenerator",
-    "TrajectoryFluxAnalyzer",
-    "PDBParser",
-]
+__all__ = ["__version__", "get_version"]

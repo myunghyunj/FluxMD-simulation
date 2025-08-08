@@ -8,7 +8,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-from tqdm import tqdm
+
+try:  # Optional dependency
+    from tqdm import tqdm
+except Exception:  # pragma: no cover
+
+    def tqdm(iterable, **kwargs):
+        return iterable
+
 
 from ..utils.cpu import format_workers_info, parse_workers
 from ..utils.rng import create_generator
@@ -124,6 +131,21 @@ class MatryoshkaTrajectoryGenerator:
             Path(self.checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
         print(f"  Workers: {format_workers_info(self.n_workers)}")
+
+    def _hysteretic_shell_index(
+        self, r: float, prev_idx: int | None, radii: np.ndarray, tau: float = 0.1
+    ) -> int:
+        """Map radius to shell index with hysteresis to prevent jitter."""
+        bounds = np.array(radii, float)
+        if prev_idx is not None:
+            bounds[prev_idx] += tau
+            if prev_idx + 1 < len(bounds):
+                bounds[prev_idx + 1] -= tau
+        idx = np.searchsorted(bounds[::-1], r, side="right")
+        idx = len(radii) - 1 - idx
+        if prev_idx is not None:
+            idx = max(prev_idx, idx)
+        return int(np.clip(idx, 0, len(radii) - 1))
 
     def _calculate_ligand_sphere(self) -> Dict[str, Any]:
         """Calculate ligand pseudo-sphere properties.
@@ -376,7 +398,9 @@ class MatryoshkaTrajectoryGenerator:
         # Create roller with unique seed using central RNG
         if seed is None:
             seed = int(self.rng.integers(0, 2**32))
-        roller_rng = create_generator(seed)
+            
+        derived_seed = (seed * 0x9E3779B97F4A7C15) ^ (layer_idx << 16) ^ iteration_idx
+        roller_rng = create_generator(derived_seed & 0xFFFFFFFF)
 
         # Create energy calculator function for layer hopping
         def energy_calculator(pos, quat, layer):

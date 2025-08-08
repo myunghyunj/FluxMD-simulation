@@ -6,11 +6,28 @@ FIXED: H-bond and salt bridge calculations now match reference implementation
 
 import platform
 from dataclasses import dataclass
-from typing import Dict
+from typing import Any, Dict
 
 import numpy as np
 import pandas as pd
-import torch
+
+try:  # Optional dependency
+    import torch  # type: ignore
+except Exception:  # torch not installed
+
+    class _TorchStub:
+        Tensor = Any
+
+        def __getattr__(self, name):  # noqa: D401 - simple passthrough
+            return self
+
+        def is_available(self, *args, **kwargs):
+            return False
+
+        def __call__(self, *a, **k):  # mimic torch.device
+            return "cpu"
+
+    torch = _TorchStub()
 
 from ..core.protonation_aware_interactions import ProtonationAwareInteractionDetector
 
@@ -18,35 +35,31 @@ from ..core.protonation_aware_interactions import ProtonationAwareInteractionDet
 # Check for Apple Silicon and available backends
 def get_device():
     """Detect and return the best available device (MPS, CUDA, or CPU)"""
-    # First check for Apple Silicon MPS
     if platform.system() == "Darwin":
-        # Check if MPS is available (more reliable than processor check)
-        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        if (
+            hasattr(torch, "backends")
+            and hasattr(torch.backends, "mps")
+            and torch.backends.mps.is_available()
+        ):
             device = torch.device("mps")
             print("🚀 Apple Silicon GPU (Metal Performance Shaders) detected!")
-            print("   Unified memory architecture - optimal for large proteins")
-            # Additional info
             try:
                 print(f"   Platform: {platform.platform()}")
                 print(f"   PyTorch version: {torch.__version__}")
-            except:
+            except Exception:
                 pass
             return device
-        else:
-            print("⚠️  macOS detected but MPS not available.")
-            print("   Ensure PyTorch 2.0+ is installed: pip install torch>=2.0")
-            print(f"   Current PyTorch version: {torch.__version__}")
-
-    # Check for NVIDIA CUDA
-    if torch.cuda.is_available():
+    if hasattr(torch, "cuda") and torch.cuda.is_available():
         device = torch.device("cuda")
         print("🚀 NVIDIA GPU detected!")
-        print(f"   GPU: {torch.cuda.get_device_name()}")
-        print(f"   Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+        try:
+            print(f"   GPU: {torch.cuda.get_device_name()}")
+            print(f"   Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+        except Exception:
+            pass
         return device
-
     print("💻 Using CPU (GPU not available)")
-    return torch.device("cpu")
+    return "cpu"
 
 
 @dataclass

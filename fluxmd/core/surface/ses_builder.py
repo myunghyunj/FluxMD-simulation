@@ -178,6 +178,8 @@ class SESBuilder:
         # vertices are in grid indices, need to multiply by spacing and add origin
         mesh.vertices = mesh.vertices * spacing + origin
 
+        mesh = self.ensure_outward_normals(mesh)
+
         # Label DNA grooves if detector available
         if self.groove_detector is not None and self.groove_detector.has_dna:
             print("  Detecting DNA grooves on surface...")
@@ -186,4 +188,18 @@ class SESBuilder:
             )
             mesh.groove_labels = groove_labels
 
+        return mesh
+
+    def ensure_outward_normals(self, mesh: SurfaceMesh) -> SurfaceMesh:
+        """Flip faces so that normals point outward from the surface COM."""
+        com = mesh.vertices.mean(axis=0)
+        v0 = mesh.vertices[mesh.faces[:, 0]]
+        v1 = mesh.vertices[mesh.faces[:, 1]]
+        v2 = mesh.vertices[mesh.faces[:, 2]]
+        n = np.cross(v1 - v0, v2 - v0)
+        face_centers = (v0 + v1 + v2) / 3.0
+        sign = np.sign(np.sum((face_centers - com) * n, axis=1))
+        flip = sign < 0
+        if np.any(flip):
+            mesh.faces[flip] = mesh.faces[flip][:, [0, 2, 1]]
         return mesh

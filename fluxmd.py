@@ -18,24 +18,35 @@ import pandas as pd
 
 warnings.filterwarnings("ignore")
 
-from fluxmd.analysis.flux_analyzer import TrajectoryFluxAnalyzer
+try:  # optional heavy modules
+    from fluxmd.analysis.flux_analyzer import TrajectoryFluxAnalyzer
+except Exception:  # pragma: no cover
+    TrajectoryFluxAnalyzer = None
 
-# Import our modules
-from fluxmd.core.trajectory_generator import ProteinLigandFluxAnalyzer
-from fluxmd.gpu.gpu_accelerated_flux import get_device
+# Import our modules lazily to avoid heavy deps when not needed
+try:
+    from fluxmd.core.trajectory_generator import ProteinLigandFluxAnalyzer
+except Exception:  # pragma: no cover
+    ProteinLigandFluxAnalyzer = None
 from fluxmd.utils.config_parser import create_example_config, load_config, print_derived_constants
 from fluxmd.utils.cpu import format_workers_info, parse_workers
 from fluxmd.utils.pdb_parser import PDBParser
 
 
+def _safe_get_device():
+    try:
+        from fluxmd.gpu.gpu_accelerated_flux import get_device
+
+        return get_device()
+    except Exception:
+        return "cpu"
+
+
 def check_gpu_availability():
     """Check if GPU is available for computation"""
-    try:
-        device = get_device()
-        if "mps" in str(device) or "cuda" in str(device):
-            return True
-    except:
-        pass
+    device = _safe_get_device()
+    if device and ("mps" in str(device) or "cuda" in str(device)):
+        return True
     return False
 
 
@@ -48,12 +59,9 @@ def benchmark_performance(protein_atoms, ligand_atoms, n_test_frames=5, n_test_r
 
     from fluxmd.gpu.gpu_accelerated_flux import GPUAcceleratedInteractionCalculator
 
-    try:
-        device = get_device()
-        if "cpu" in str(device):
-            return False, "no GPU available"
-    except:
-        return False, "GPU initialization failed"
+    device = _safe_get_device()
+    if "cpu" in str(device):
+        return False, "no GPU available"
 
     print("\nRunning performance benchmark...")
 
@@ -106,10 +114,7 @@ def print_banner(text):
 
 def print_backend_info(seed: int | None) -> None:
     """Print computation backend, dtype and seed."""
-    try:
-        backend = get_device()
-    except Exception:
-        backend = "cpu"
+    backend = _safe_get_device()
     print_banner("FLUXMD BACKEND")
     print(f"Backend: {backend}")
     print(f"Dtype: float64")
@@ -717,12 +722,9 @@ def run_complete_workflow():
     gpu_available = False
     device = None
 
-    try:
-        device = get_device()
-        if "mps" in str(device) or "cuda" in str(device):
-            gpu_available = True
-    except:
-        gpu_available = False
+    device = _safe_get_device()
+    if "mps" in str(device) or "cuda" in str(device):
+        gpu_available = True
 
     # Calculate system complexity
     # Parse structures temporarily to get atom counts
@@ -1651,7 +1653,7 @@ def run_protein_dna_uma_workflow():
         print(f"\nSystem size: {len(protein_atoms)} protein atoms, {len(dna_atoms)} DNA atoms")
 
         # Get device and recommended parameters
-        device = get_device()
+        device = _safe_get_device()
         recommended = get_recommended_parameters(protein_atoms, dna_atoms, device)
 
         # Check if we have loaded parameters and ask to use them
